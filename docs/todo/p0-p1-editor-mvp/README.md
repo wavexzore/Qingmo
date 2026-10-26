@@ -20,15 +20,15 @@ schema_version: "1.0"
 feature_id: "p0-p1-editor-mvp"
 feature_name: "P0–P1 编辑器 MVP 骨架"
 status: "in_progress"             # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-007"             # 当前应执行的任务；无则写 none
-last_completed_task: "T-006"      # 最近完成任务；无则写 none
-next_action: "T-006 已完成（2026-10-26 14:25）；执行 T-007：IpcPort/PlatformPort/fake adapter"
-verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-006 全部 PASS；P1 闭环未完成）
+current_task: "T-008"             # 当前应执行的任务；无则写 none
+last_completed_task: "T-007"      # 最近完成任务；无则写 none
+next_action: "T-007 已完成（2026-10-26 14:35）；执行 T-008：EditorSession/打开流程/CM6 EditorState"
+verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-007 全部 PASS；P1 闭环未完成）
 research_status: "pass"           # not_run | pass | partial | skipped
-call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架直接边已索引；读/写路径已建，待 T-012 后重建关闭链并重跑 GitNexus）
-code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-006 后已重新校准）
-last_verification_command: "cargo test --manifest-path src-tauri/Cargo.toml --all-targets"
-last_updated: "2026-10-26T14:25:00+08:00"
+call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架/读写直接边已索引；前端 IPC 调用者与关闭链待 T-012 后重建）
+code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-007 后已重新校准）
+last_verification_command: "pnpm depcruise"
+last_updated: "2026-10-26T14:35:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -81,7 +81,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 
 ## 1. 一句话结论
 
-Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存。当前 `6/20` 任务完成，编辑器 UI、保存协调器与关闭守卫尚未接入；下一步 `T-007` IpcPort。
+Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存；`T-007` 建立可测试的 IpcPort/PlatformPort 与浏览器 fake adapter。当前 `7/20` 任务完成，编辑器 UI、保存协调器与关闭守卫尚未接入；下一步 `T-008` EditorSession。
 
 ---
 
@@ -176,8 +176,8 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 | T-004 | UI token / App Shell / i18n / 状态栏 / Registry 核心 | done | T-001 | C-032~C-036 | T-005 |
 | T-005 | Rust dialog + DocumentRegistry + `document_open/reload` + 编码 | done | T-003 | C-037~C-044 | T-006 |
 | T-006 | 原子写 + 冲突 + `document_write_atomic` | done | T-005 | C-045~C-050 | T-007 |
-| T-007 | IpcPort/PlatformPort + 错误归一化 + fake adapter | todo | T-003/T-005/T-006 | none | 下一步 |
-| T-008 | 文档会话 + 打开流程 + CM6 EditorState | todo | T-004/T-007 | none | T-007 后 |
+| T-007 | IpcPort/PlatformPort + 错误归一化 + fake adapter | done | T-003/T-005/T-006 | C-052~C-056 | T-008 |
+| T-008 | 文档会话 + 打开流程 + CM6 EditorState | todo | T-004/T-007 | none | 下一步 |
 | T-009 | CM6 扩展组合（Markdown/语言/readOnly facet） | todo | T-008 | none | T-008 后 |
 | T-010 | React 绑定 + 唯一 EditorView + session store | todo | T-009 | none | T-009 后 |
 | T-011 | `SaveCoordinator` + flush 循环 + 错误分类 | todo | T-010 | none | T-010 后 |
@@ -278,7 +278,7 @@ P1 只有 1 个自定义事件；关闭不再使用前端 `onCloseRequested` 作
 | AC-009 | 契约不漂移 | T-003/T-019 | C-028/C-029/C-030：命令/权限/DTO/生成文件已覆盖；六方完整版待 T-019 | partial |
 | AC-010 | 主题切换不重建 view | T-016 | token 已就绪（C-035）；主题服务/CM6 Compartment 待 T-016 | partial |
 | AC-011 | i18n 无硬编码 | T-004 | C-032/C-033：key 对齐 + 13 个错误码文案 + 无 raw key | PASS |
-| AC-012 | 浏览器 E2E 可跑（fake dialog） | T-018 | `pnpm test:e2e` | todo |
+| AC-012 | 浏览器 E2E 可跑（fake dialog） | T-007/T-018 | C-052：FakeIpc/FakePlatform 已可驱动打开/保存/冲突/关闭；Playwright 待 T-018 | partial |
 | AC-013 | 命令注册表/面板/快捷键 | T-004/T-015 | C-032：Registry 核心 7 条测试；面板/快捷键待 T-015 | partial |
 | AC-014 | 性能基线 | T-017 | `pnpm bench`（open/decorate/key p95/save/RSS） | todo |
 | AC-015 | 关闭守卫（红叉/Cmd+Q） | T-012 | CloseGuard 集成 + 手动 | todo |
@@ -299,6 +299,7 @@ pnpm vitest run apps/desktop/src/features/editor/save/SaveCoordinator.test.ts
 # 最终全量验证（T-019）
 pnpm install --frozen-lockfile
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
+pnpm format:check && pnpm depcruise
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -332,7 +333,9 @@ pnpm bench
 | C-022 | `cargo fmt --check` / `pnpm format:check` | T-001（已运行） | PASS |
 | C-023 | `git tag --list` | T-001（已运行） | `p0-docs-baseline`、`p1-baseline` |
 | C-024 | `pnpm tauri build --debug` | T-002/T-019 | PASS（单平台） |
-| C-025 | `gitnexus analyze --skip-agents-md` | T-001（已运行）/T-003 后 | 466 nodes / 610 edges；直接边已记录 |
+| C-025 | `gitnexus analyze --skip-agents-md` | T-001（已运行）/T-006 后 | 1,011 nodes / 1,804 edges；直接边已记录 |
+| C-052 | `pnpm vitest run apps/desktop/src/lib` | T-007（已运行） | PASS：28 条端口/fake 测试 |
+| C-053 | `pnpm depcruise` | T-007（已运行） | PASS：Tauri import 仅两个 adapter |
 | C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | SKIPPED |
 
 ---
@@ -386,3 +389,4 @@ pnpm bench
 | 2026-10-26T13:35:00+08:00 | T-004 完成：UI token/App Shell/i18n/状态栏/CommandRegistry；21 条 TS 测试、生产预览与 Tauri 窗口冒烟 | OpenCode / DeepSeek V4.1 | `02 §3/C-032~C-036`；`01 §6` |
 | 2026-10-26T14:05:00+08:00 | T-005 完成：Rust dialog/DocumentRegistry、严格编码/EOL/10MiB、token 边界；31 条 Rust 测试与原生 dialog 手动读取 | OpenCode / DeepSeek V4.1 | `02 §3/C-037~C-044`；`01 §6` |
 | 2026-10-26T14:25:00+08:00 | T-006 完成：原子写/冲突/UTF-16 字节级保存；atomic_writer 10 + conflict 7 + 全量 52 测试；SIGKILL 故障注入通过 | OpenCode / DeepSeek V4.1 | `02 §3/C-045~C-050`；`01 §6` |
+| 2026-10-26T14:35:00+08:00 | T-007 完成：IpcPort/PlatformPort/错误归一化/fake adapter；28 条端口测试 + depcruise 0 violations + 越界探针 | OpenCode / DeepSeek V4.1 | `02 §3/C-052~C-056`；`01 §6` |
