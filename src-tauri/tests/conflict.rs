@@ -2,10 +2,10 @@ mod common;
 
 use std::fs;
 
-use common::{open_file, save, temp_siblings, write_file};
+use common::{invoke, open_file, save, temp_siblings, write_file};
 use qingmo_lib::error::AppErrorCode;
 use qingmo_lib::state::DocumentRegistry;
-use serde_json::{json, Value};
+use serde_json::json;
 use tempfile::TempDir;
 
 #[test]
@@ -166,30 +166,6 @@ fn a_missing_file_returns_not_found_without_recreating_it() {
     assert_eq!(error.code, AppErrorCode::NotFound);
     assert!(!target.exists());
     assert!(temp_siblings(&target).is_empty());
-}
-
-fn invoke(
-    webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
-    command: &str,
-    body: Value,
-) -> Result<Value, Value> {
-    tauri::test::get_ipc_response(
-        webview,
-        tauri::webview::InvokeRequest {
-            cmd: command.into(),
-            callback: tauri::ipc::CallbackFn(0),
-            error: tauri::ipc::CallbackFn(1),
-            url: "tauri://localhost".parse().expect("valid URL"),
-            body: tauri::ipc::InvokeBody::Json(body),
-            headers: Default::default(),
-            invoke_key: tauri::test::INVOKE_KEY.to_string(),
-        },
-    )
-    .map(|response| {
-        response
-            .deserialize::<Value>()
-            .expect("response must be valid JSON")
-    })
 }
 
 #[test]

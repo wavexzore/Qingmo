@@ -7,6 +7,7 @@ use qingmo_lib::error::AppError;
 use qingmo_lib::ipc::dto::{FilePayload, SaveResult};
 use qingmo_lib::services::AtomicWriter;
 use qingmo_lib::state::DocumentRegistry;
+use serde_json::Value;
 use tempfile::TempDir;
 
 pub fn write_file(dir: &TempDir, name: &str, bytes: &[u8]) -> PathBuf {
@@ -68,4 +69,31 @@ pub fn temp_siblings(target: &Path) -> Vec<PathBuf> {
                 .then_some(path)
         })
         .collect()
+}
+
+/// Invokes a Tauri command through the mock webview, exactly like the real IPC
+/// boundary serializes it. Kept here so command-level integration tests share
+/// one wire helper instead of copying `InvokeRequest` details.
+pub fn invoke(
+    webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+    command: &str,
+    body: Value,
+) -> Result<Value, Value> {
+    tauri::test::get_ipc_response(
+        webview,
+        tauri::webview::InvokeRequest {
+            cmd: command.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid URL"),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        },
+    )
+    .map(|response| {
+        response
+            .deserialize::<Value>()
+            .expect("response must be valid JSON")
+    })
 }
