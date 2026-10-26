@@ -6,3 +6,5 @@ docs
 *.md
 src-tauri/target
 src-tauri/gen
+.gitnexus
+.claude
