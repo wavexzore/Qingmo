@@ -1,5 +1,5 @@
-import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import type { EditorState, Extension } from "@codemirror/state";
+import { createEditorState } from "@qingmo/editor-core";
 import type { FilePayload, ReadOnlyReason, TextFormat } from "@qingmo/shared";
 
 import type { SaveState } from "../../lib/save-state";
@@ -82,13 +82,10 @@ export class EditorSession {
   private constructor(payload: FilePayload, options: EditorSessionOptions) {
     this.docToken = payload.docToken;
 
-    this.state = EditorState.create({
+    this.state = createEditorState({
       doc: payload.text,
-      extensions: [
-        EditorState.readOnly.of(payload.readOnly),
-        EditorView.editable.of(!payload.readOnly),
-        ...(options.extensions ?? []),
-      ],
+      readOnly: payload.readOnly,
+      extraExtensions: options.extensions ?? [],
     });
 
     const selection = this.state.selection.main;
