@@ -20,15 +20,15 @@ schema_version: "1.0"
 feature_id: "p0-p1-editor-mvp"
 feature_name: "P0–P1 编辑器 MVP 骨架"
 status: "in_progress"             # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-003"             # 当前应执行的任务；无则写 none
-last_completed_task: "T-002"      # 最近完成任务；无则写 none
-next_action: "T-002 已完成（2026-10-26 14:20）；执行 T-003：DTO/错误/4 命令 + 1 事件/stub/ts-rs/六方契约"
-verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001/T-002 全部 PASS；P1 闭环未完成）
+current_task: "T-004"             # 当前应执行的任务；无则写 none
+last_completed_task: "T-003"      # 最近完成任务；无则写 none
+next_action: "T-003 已完成（2026-10-26 14:45）；执行 T-004：UI token/App Shell/i18n/状态栏/CommandRegistry"
+verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-003 全部 PASS；P1 闭环未完成）
 research_status: "pass"           # not_run | pass | partial | skipped
-call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架直接边已索引；IPC/业务链待 T-003 后重建）
-code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001/T-002 后已重新校准）
-last_verification_command: "cargo test --test security_config"
-last_updated: "2026-10-26T14:20:00+08:00"
+call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架直接边已索引；IPC DTO/命令已建，待 T-005/T-006/T-012 后重建业务链）
+code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-003 后已重新校准）
+last_verification_command: "cargo test --test commands_contract"
+last_updated: "2026-10-26T14:45:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -172,8 +172,8 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了可安装、可构�
 |---|---|---|---|---|---|
 | T-001 | pnpm workspace + Git 基线 + Vite/React/TS/Tauri 骨架 | done | none | C-011~C-013/C-017/C-020~C-023/C-025 | T-002 |
 | T-002 | Tauri 安全基线（CSP/最小 core 权限） | done | T-001 | C-024/C-026/C-027 | T-003 |
-| T-003 | IPC 契约（DTO/错误/4 命令/1 事件/stub/ts-rs/六方契约） | todo | T-002 | none | 下一步 |
-| T-004 | UI token / App Shell / i18n / 状态栏 / Registry 核心 | todo | T-001 | none | 可与 T-002 并行 |
+| T-003 | IPC 契约（DTO/错误/4 命令/1 事件/stub/ts-rs/六方契约） | done | T-002 | C-014/C-028~C-031 | T-004 |
+| T-004 | UI token / App Shell / i18n / 状态栏 / Registry 核心 | todo | T-001 | none | 下一步 |
 | T-005 | Rust dialog + DocumentRegistry + `document_open/reload` + 编码 | todo | T-003 | none | T-003 后 |
 | T-006 | 原子写 + 冲突 + `document_write_atomic` | todo | T-005 | none | T-005 后 |
 | T-007 | IpcPort/PlatformPort + 错误归一化 + fake adapter | todo | T-003/T-005/T-006 | none | T-006 后 |
@@ -382,3 +382,4 @@ pnpm bench
 | 2026-10-26T11:35:00+08:00 | Q-001~Q-015 全部按推荐确认；解除 T-001 门禁 | OpenCode / DeepSeek V4.1 | `01 §12`、`02 E-011/B-005` |
 | 2026-10-26T13:02:00+08:00 | T-001 完成：workspace/Vite/React/TS/Tauri 骨架、双基线 tag、质量命令全绿、GitNexus 直接边复核 | OpenCode / DeepSeek V4.1 | `02 §3/C-011~C-013/C-017/C-020~C-023/C-025`；`01 §6` |
 | 2026-10-26T14:20:00+08:00 | T-002 完成：窗口 label/CSP/assetProtocol/最小 core 权限 + 3 条配置测试；dev 与生产二进制均冒烟 | OpenCode / DeepSeek V4.1 | `02 §3/C-024/C-026/C-027`；`01 §6` |
+| 2026-10-26T14:45:00+08:00 | T-003 完成：DTO/错误/4 命令 + 1 事件/stub/ts-rs；Rust 6 条、TS 4 条契约测试通过 | OpenCode / DeepSeek V4.1 | `02 §3/C-014/C-028~C-031`；`01 §6` |

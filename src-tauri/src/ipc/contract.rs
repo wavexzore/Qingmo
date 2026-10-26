@@ -1,0 +1,26 @@
+// Single source of truth for command and event names.
+//
+// This file is also included by `build.rs`, so it must remain dependency-free
+// (besides the standard library) and must not reference `crate::`.
+
+pub const COMMANDS: &[&str] = &[
+    "document_open",
+    "document_reload",
+    "document_write_atomic",
+    "app_close_confirm",
+];
+
+pub const EVENTS: &[&str] = &["app://close-requested"];
+
+/// Tauri turns `document_open` into the ACL permission `allow-document-open`.
+pub fn command_permission(command: &str) -> String {
+    format!("allow-{}", command.replace('_', "-"))
+}
+
+/// All application command permissions, in command order.
+pub fn command_permissions() -> Vec<String> {
+    COMMANDS
+        .iter()
+        .map(|command| command_permission(command))
+        .collect()
+}

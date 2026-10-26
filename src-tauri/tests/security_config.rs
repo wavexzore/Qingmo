@@ -15,7 +15,7 @@ fn read_json(relative: &str) -> Value {
 }
 
 #[test]
-fn capability_contains_only_close_guard_event_permissions() {
+fn capability_contains_only_expected_permissions() {
     let capability = read_json("capabilities/default.json");
     let permissions = capability["permissions"]
         .as_array()
@@ -24,9 +24,29 @@ fn capability_contains_only_close_guard_event_permissions() {
         .map(|value| value.as_str().expect("permission must be a string"))
         .collect::<Vec<_>>();
 
+    let core_permissions = permissions
+        .iter()
+        .copied()
+        .filter(|permission| permission.starts_with("core:"))
+        .collect::<Vec<_>>();
     assert_eq!(
-        permissions,
+        core_permissions,
         vec!["core:event:allow-listen", "core:event:allow-unlisten"]
+    );
+
+    let app_permissions = permissions
+        .iter()
+        .copied()
+        .filter(|permission| !permission.starts_with("core:"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        app_permissions,
+        vec![
+            "allow-document-open",
+            "allow-document-reload",
+            "allow-document-write-atomic",
+            "allow-app-close-confirm",
+        ]
     );
 
     let forbidden_prefixes = [
