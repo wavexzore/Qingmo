@@ -1,0 +1,106 @@
+/*
+ * Qingmo design tokens.
+ *
+ * One source of colour truth: every component consumes these CSS variables
+ * (directly or through Tailwind's @theme mapping). Theme switching only
+ * changes `color-scheme`; it never duplicates a palette in JavaScript.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --qm-font-sans:
+    "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei",
+    sans-serif;
+  --qm-font-serif:
+    "Iowan Old Style", "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+  --qm-font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+
+  /* Light values double as fallbacks for engines without light-dark(). */
+  --qm-paper: #f4efe5;
+  --qm-paper: light-dark(#f4efe5, #151714);
+  --qm-surface: #fbf8f1;
+  --qm-surface: light-dark(#fbf8f1, #1c1f1b);
+  --qm-surface-raised: #fffdf8;
+  --qm-surface-raised: light-dark(#fffdf8, #23271f);
+  --qm-surface-muted: #ece5d8;
+  --qm-surface-muted: light-dark(#ece5d8, #20241e);
+  --qm-ink: #1d1c19;
+  --qm-ink: light-dark(#1d1c19, #ece7dc);
+  --qm-ink-muted: #6f675b;
+  --qm-ink-muted: light-dark(#6f675b, #b4ada0);
+  --qm-ink-faint: #938a7c;
+  --qm-ink-faint: light-dark(#938a7c, #857e72);
+  --qm-line: rgba(48, 42, 32, 0.14);
+  --qm-line: light-dark(rgba(48, 42, 32, 0.14), rgba(236, 231, 220, 0.14));
+  --qm-line-strong: rgba(48, 42, 32, 0.24);
+  --qm-line-strong: light-dark(rgba(48, 42, 32, 0.24), rgba(236, 231, 220, 0.24));
+  --qm-accent: #2c6a5a;
+  --qm-accent: light-dark(#2c6a5a, #7fb5a2);
+  --qm-accent-strong: #1f5145;
+  --qm-accent-strong: light-dark(#1f5145, #a5d0c1);
+  --qm-accent-soft: rgba(44, 106, 90, 0.12);
+  --qm-accent-soft: light-dark(rgba(44, 106, 90, 0.12), rgba(127, 181, 162, 0.16));
+  --qm-danger: #a33a2b;
+  --qm-danger: light-dark(#a33a2b, #e08b7c);
+  --qm-warning: #8a641c;
+  --qm-warning: light-dark(#8a641c, #d4ac63);
+  --qm-success: #2f6b4f;
+  --qm-success: light-dark(#2f6b4f, #8fc7a8);
+
+  --qm-radius-sm: 6px;
+  --qm-radius-md: 10px;
+  --qm-radius-lg: 16px;
+  --qm-radius-card: 24px;
+
+  --qm-shadow-card: 0 24px 70px rgba(53, 43, 27, 0.12), 0 2px 8px rgba(53, 43, 27, 0.05);
+  --qm-shadow-float: 0 18px 40px rgba(20, 18, 14, 0.18);
+
+  --qm-duration-fast: 120ms;
+  --qm-duration-base: 160ms;
+  --qm-duration-slow: 240ms;
+  --qm-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --qm-status-height: 30px;
+  --qm-content-max: 72ch;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--qm-paper);
+  --color-surface: var(--qm-surface);
+  --color-surface-raised: var(--qm-surface-raised);
+  --color-surface-muted: var(--qm-surface-muted);
+  --color-ink: var(--qm-ink);
+  --color-ink-muted: var(--qm-ink-muted);
+  --color-ink-faint: var(--qm-ink-faint);
+  --color-line: var(--qm-line);
+  --color-line-strong: var(--qm-line-strong);
+  --color-accent: var(--qm-accent);
+  --color-accent-strong: var(--qm-accent-strong);
+  --color-accent-soft: var(--qm-accent-soft);
+  --color-danger: var(--qm-danger);
+  --color-warning: var(--qm-warning);
+  --color-success: var(--qm-success);
+
+  --font-sans: var(--qm-font-sans);
+  --font-serif: var(--qm-font-serif);
+  --font-mono: var(--qm-font-mono);
+
+  --radius-sm: var(--qm-radius-sm);
+  --radius-md: var(--qm-radius-md);
+  --radius-lg: var(--qm-radius-lg);
+  --radius-card: var(--qm-radius-card);
+
+  --shadow-card: var(--qm-shadow-card);
+  --shadow-float: var(--qm-shadow-float);
+
+  --ease-out: var(--qm-ease-out);
+}
