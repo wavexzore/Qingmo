@@ -32,8 +32,8 @@ export const common = {
   saveState: {
     clean: "Synced",
     dirty: "Unsaved",
+    scheduled: "Save pending",
     saving: "Saving",
-    saved: "Saved",
     error: "Save failed",
     conflict: "Conflict",
     readonly: "Read-only",

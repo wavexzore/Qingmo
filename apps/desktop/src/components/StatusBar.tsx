@@ -29,8 +29,8 @@ export const EMPTY_STATUS_SNAPSHOT: StatusBarSnapshot = {
 
 const saveStateTone: Record<SaveState, string> = {
   clean: "bg-success",
-  saved: "bg-success",
   dirty: "bg-warning",
+  scheduled: "bg-accent",
   saving: "bg-accent",
   error: "bg-danger",
   conflict: "bg-danger",

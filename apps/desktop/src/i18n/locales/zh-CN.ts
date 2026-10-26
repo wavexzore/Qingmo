@@ -32,8 +32,8 @@ export const common = {
   saveState: {
     clean: "已同步",
     dirty: "未保存",
+    scheduled: "等待保存",
     saving: "保存中",
-    saved: "已保存",
     error: "保存失败",
     conflict: "有冲突",
     readonly: "只读",

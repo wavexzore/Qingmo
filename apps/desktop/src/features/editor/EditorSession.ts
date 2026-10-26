@@ -1,7 +1,7 @@
 import { StateEffect, type EditorState, type Extension } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { createEditorState } from "@qingmo/editor-core";
-import type { FilePayload, ReadOnlyReason, TextFormat } from "@qingmo/shared";
+import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
 
 import type { SaveState } from "../../lib/save-state";
 
@@ -17,7 +17,10 @@ export interface EditorCursorSnapshot {
   column: number;
 }
 
-/** Immutable metadata; never changes while the document stays open. */
+/**
+ * Metadata mirror. It is replaced when a save updates size/mtime or a reload
+ * replaces the payload; the document body never lives here.
+ */
 export interface EditorMetadataSnapshot {
   /** Canonical path; P1 document identity. */
   docId: string;
@@ -64,6 +67,21 @@ function freezeFormat(format: TextFormat): TextFormat {
   });
 }
 
+function metadataOf(payload: FilePayload): EditorMetadataSnapshot {
+  return Object.freeze({
+    docId: payload.path,
+    fileName: fileNameOf(payload.path),
+    docToken: payload.docToken,
+    readOnly: payload.readOnly,
+    readOnlyReason: payload.readOnlyReason,
+    format: freezeFormat(payload.format),
+    hash: payload.hash,
+    size: payload.size,
+    textUnits: payload.textUnits,
+    mtimeMs: payload.mtimeMs,
+  });
+}
+
 function selectionOf(state: EditorState): EditorSelectionSnapshot {
   const selection = state.selection.main;
   return Object.freeze({ anchor: selection.anchor, head: selection.head });
@@ -98,8 +116,9 @@ export class EditorSession {
   private readonly listeners = new Set<() => void>();
   private readonly statusListeners = new Set<() => void>();
   private readonly docChangedListeners = new Set<() => void>();
-  private readonly metadata: EditorMetadataSnapshot;
+  private readonly extraExtensions: readonly Extension[];
   private readonly statusThrottleMs: number;
+  private metadata: EditorMetadataSnapshot;
   private state: EditorState;
   private snapshot: EditorSessionSnapshot;
   private view: EditorView | null = null;
@@ -109,27 +128,17 @@ export class EditorSession {
   private constructor(payload: FilePayload, options: EditorSessionOptions) {
     this.docToken = payload.docToken;
     this.statusThrottleMs = options.statusThrottleMs ?? STATUS_THROTTLE_MS;
+    this.extraExtensions = options.extensions ?? [];
 
     this.state = createEditorState({
       doc: payload.text,
       readOnly: payload.readOnly,
-      extraExtensions: options.extensions ?? [],
+      extraExtensions: this.extraExtensions,
     });
 
     const selection = selectionOf(this.state);
     const saveState: SaveState = payload.readOnly ? "readonly" : "clean";
-    this.metadata = Object.freeze({
-      docId: payload.path,
-      fileName: fileNameOf(payload.path),
-      docToken: payload.docToken,
-      readOnly: payload.readOnly,
-      readOnlyReason: payload.readOnlyReason,
-      format: freezeFormat(payload.format),
-      hash: payload.hash,
-      size: payload.size,
-      textUnits: payload.textUnits,
-      mtimeMs: payload.mtimeMs,
-    });
+    this.metadata = metadataOf(payload);
 
     this.snapshot = Object.freeze({
       ...this.metadata,
@@ -161,6 +170,72 @@ export class EditorSession {
   getMetadataSnapshot = (): EditorMetadataSnapshot => this.metadata;
 
   /**
+   * Mirrors successful save metadata for the status bar. The hash remains
+   * informational: every save still sends only docToken/text and lets Rust
+   * compare against its own base hash.
+   */
+  applySaveResult(result: SaveResult): void {
+    if (this.disposed) {
+      return;
+    }
+    const metadata: EditorMetadataSnapshot = Object.freeze({
+      ...this.metadata,
+      hash: result.hash,
+      size: result.size,
+      mtimeMs: result.mtimeMs,
+      textUnits: this.currentState.doc.length,
+    });
+    this.metadata = metadata;
+    this.snapshot = Object.freeze({
+      ...this.snapshot,
+      ...metadata,
+    });
+  }
+
+  /**
+   * Rebuilds the state from a reloaded payload. A fresh EditorState also
+   * clears undo history, which is the required conflict-reload semantic.
+   */
+  replacePayload(payload: FilePayload): void {
+    if (this.disposed) {
+      return;
+    }
+    if (payload.docToken !== this.docToken) {
+      throw new Error("reload returned a different docToken");
+    }
+
+    const state = createEditorState({
+      doc: payload.text,
+      readOnly: payload.readOnly,
+      extraExtensions: this.extraExtensions,
+    });
+    this.metadata = metadataOf(payload);
+
+    if (this.view) {
+      this.view.setState(state);
+      this.attachUpdateListener(this.view);
+    } else {
+      this.state = state;
+    }
+
+    const current = this.currentState;
+    const selection = selectionOf(current);
+    this.snapshot = Object.freeze({
+      ...this.metadata,
+      saveState: payload.readOnly ? "readonly" : "clean",
+      dirty: false,
+      selection,
+      cursor: cursorAt(current, selection.head),
+      version: this.snapshot.version + 1,
+    });
+
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
+    this.flushStatus();
+  }
+
+  /**
    * Attaches the single view created by EditorHost. A second attach without a
    * detach is a programming error, so it fails loudly rather than silently
    * creating two update listeners.
@@ -172,11 +247,7 @@ export class EditorSession {
     if (this.view) {
       throw new Error("EditorSession already has an attached EditorView");
     }
-    this.view = view;
-    this.state = view.state;
-    const listener = EditorView.updateListener.of((update) => this.handleUpdate(update));
-    view.dispatch({ effects: StateEffect.appendConfig.of(listener) });
-    this.state = view.state;
+    this.attachUpdateListener(view);
     return () => this.detach(view);
   }
 
@@ -261,6 +332,14 @@ export class EditorSession {
     this.view = null;
   }
 
+  private attachUpdateListener(view: EditorView): void {
+    this.view = view;
+    this.state = view.state;
+    const listener = EditorView.updateListener.of((update) => this.handleUpdate(update));
+    view.dispatch({ effects: StateEffect.appendConfig.of(listener) });
+    this.state = view.state;
+  }
+
   private get currentState(): EditorState {
     return this.view?.state ?? this.state;
   }
@@ -277,22 +356,23 @@ export class EditorSession {
     let saveState = this.snapshot.saveState;
     let immediateStatus = false;
 
-    if (update.docChanged) {
-      for (const listener of [...this.docChangedListeners]) {
-        listener();
-      }
-      if (
-        !this.snapshot.readOnly &&
-        (saveState === "clean" || saveState === "saved" || saveState === "error")
-      ) {
-        saveState = "dirty";
-        immediateStatus = true;
-      }
+    if (update.docChanged && !this.snapshot.readOnly && saveState === "clean") {
+      saveState = "dirty";
+      immediateStatus = true;
     }
 
     const selection = selectionOf(update.state);
     const cursor = cursorAt(update.state, selection.head);
     this.publish({ saveState, selection, cursor }, immediateStatus);
+
+    // Notify after the dirty snapshot is visible, so SaveCoordinator can move
+    // the same store from dirty to scheduled without being overwritten by the
+    // editor's own state transition.
+    if (update.docChanged) {
+      for (const listener of [...this.docChangedListeners]) {
+        listener();
+      }
+    }
   }
 
   private publish(
