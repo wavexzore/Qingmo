@@ -7,6 +7,7 @@ import { FakePlatform } from "../lib/platform/fake";
 import type { PlatformPort } from "../lib/platform/port";
 import { isTauriRuntime } from "../lib/platform/runtime";
 import { createTauriPlatform } from "../lib/platform/tauri";
+import { createE2eServices, isE2eMode } from "../e2e/bridge";
 
 export interface AppServices {
   ipc: IpcPort;
@@ -19,6 +20,10 @@ export interface AppServices {
  * provider or a dedicated test entry; T-008 only needs the boundary.
  */
 export function createAppServices(): AppServices {
+  if (isE2eMode()) {
+    return createE2eServices();
+  }
+
   if (isTauriRuntime()) {
     return {
       ipc: createTauriIpc(),
