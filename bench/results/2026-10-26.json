@@ -1,7 +1,7 @@
 {
   "task": "T-017",
-  "capturedAt": "2026-10-26T10:25:24.067Z",
-  "commit": "d0431ea-dirty",
+  "capturedAt": "2026-10-26T10:26:37.534Z",
+  "commit": "8b2f905",
   "environment": {
     "platform": "darwin arm64",
     "release": "25.1.0",
@@ -27,74 +27,74 @@
       "open_ms": {
         "summary": {
           "count": 20,
-          "min": 0.607,
-          "p50": 1.079,
-          "p95": 3.772,
-          "max": 4.091,
-          "mean": 1.339
+          "min": 0.689,
+          "p50": 1.103,
+          "p95": 6.821,
+          "max": 20.853,
+          "mean": 2.48
         },
         "source": "EditorSession.create -> createEditorState (fake IPC payload)"
       },
       "ipc_copy_ms": {
         "summary": {
           "count": 20,
-          "min": 0.016,
-          "p50": 0.036,
-          "p95": 0.057,
-          "max": 0.181,
-          "mean": 0.042
+          "min": 0.021,
+          "p50": 0.034,
+          "p95": 0.077,
+          "max": 0.2,
+          "mean": 0.045
         },
         "source": "JSON round-trip of FilePayload; proxy, not the Tauri transport"
       },
       "decorate_ms": {
         "summary": {
           "count": 20,
-          "min": 0.171,
-          "p50": 0.254,
-          "p95": 0.45,
-          "max": 0.621,
-          "mean": 0.294
+          "min": 0.176,
+          "p50": 0.326,
+          "p95": 0.577,
+          "max": 0.604,
+          "mean": 0.335
         },
         "skipped": false,
         "skipReason": null,
         "specs": 174,
         "viewportLines": 80,
-        "viewMountMs": 66.22504199999997,
+        "viewMountMs": 68.104333,
         "source": "ensureSyntaxTree(8ms) + buildLivePreviewDecorations"
       },
       "key_p95_ms": {
-        "value": 0.853,
-        "p50": 0.377,
+        "value": 0.96,
+        "p50": 0.407,
         "count": 80,
         "source": "EditorView.dispatch (real view, LP on)"
       },
       "save_ms": {
         "summary": {
           "count": 30,
-          "max": 12.937,
-          "mean": 5.53,
-          "min": 4.4,
-          "p50": 5.157,
-          "p95": 10.578
+          "max": 6.157,
+          "mean": 4.934,
+          "min": 4.158,
+          "p50": 4.9,
+          "p95": 5.439
         },
         "source": "AtomicWriter::write (real temp file, release build)"
       },
       "fake_save_ms": {
         "summary": {
           "count": 30,
-          "min": 0.071,
-          "p50": 0.114,
-          "p95": 0.147,
-          "max": 1.849,
-          "mean": 0.169
+          "min": 0.075,
+          "p50": 0.115,
+          "p95": 0.161,
+          "max": 2.428,
+          "mean": 0.194
         },
         "readTextMs": {
           "count": 30,
           "min": 0.005,
           "p50": 0.008,
-          "p95": 0.039,
-          "max": 0.046,
-          "mean": 0.014
+          "p95": 0.038,
+          "max": 0.044,
+          "mean": 0.013
         },
         "source": "FakeIpc.documentWriteAtomic (encode + FNV hash + copy)"
       },
@@ -103,7 +103,7 @@
         "source": "ps -o rss= after opening the file in the real Tauri app"
       },
       "node_peak_rss_mb": {
-        "value": 201.4,
+        "value": 203.5,
         "source": "process.resourceUsage().maxRSS"
       },
       "manual_tauri": {
@@ -139,74 +139,74 @@
       "open_ms": {
         "summary": {
           "count": 8,
-          "min": 2.374,
-          "p50": 2.849,
-          "p95": 6.119,
-          "max": 6.119,
-          "mean": 3.398
+          "min": 2.416,
+          "p50": 2.812,
+          "p95": 6.215,
+          "max": 6.215,
+          "mean": 3.556
         },
         "source": "EditorSession.create -> createEditorState (fake IPC payload)"
       },
       "ipc_copy_ms": {
         "summary": {
           "count": 8,
-          "min": 1.265,
-          "p50": 1.547,
-          "p95": 1.717,
-          "max": 1.717,
-          "mean": 1.546
+          "min": 1.472,
+          "p50": 1.568,
+          "p95": 1.675,
+          "max": 1.675,
+          "mean": 1.584
         },
         "source": "JSON round-trip of FilePayload; proxy, not the Tauri transport"
       },
       "decorate_ms": {
         "summary": {
           "count": 10,
-          "min": 0.332,
-          "p50": 0.384,
-          "p95": 0.637,
-          "max": 0.637,
-          "mean": 0.406
+          "min": 0.285,
+          "p50": 0.39,
+          "p95": 0.62,
+          "max": 0.62,
+          "mean": 0.417
         },
         "skipped": false,
         "skipReason": null,
         "specs": 174,
         "viewportLines": 80,
-        "viewMountMs": 67.22233299999999,
+        "viewMountMs": 67.209833,
         "source": "ensureSyntaxTree(8ms) + buildLivePreviewDecorations"
       },
       "key_p95_ms": {
-        "value": 1.231,
-        "p50": 0.47,
+        "value": 1.361,
+        "p50": 0.528,
         "count": 40,
         "source": "EditorView.dispatch (real view, LP on)"
       },
       "save_ms": {
         "summary": {
           "count": 12,
-          "max": 7.357,
-          "mean": 6.59,
-          "min": 5.93,
-          "p50": 6.53,
-          "p95": 7.357
+          "max": 6.253,
+          "mean": 5.99,
+          "min": 5.582,
+          "p50": 5.978,
+          "p95": 6.253
         },
         "source": "AtomicWriter::write (real temp file, release build)"
       },
       "fake_save_ms": {
         "summary": {
           "count": 12,
-          "min": 6.571,
-          "p50": 6.768,
-          "p95": 6.91,
-          "max": 6.91,
-          "mean": 6.762
+          "min": 6.791,
+          "p50": 6.97,
+          "p95": 7.302,
+          "max": 7.302,
+          "mean": 7.029
         },
         "readTextMs": {
           "count": 12,
           "min": 0.401,
-          "p50": 0.443,
-          "p95": 1.211,
-          "max": 1.211,
-          "mean": 0.557
+          "p50": 0.416,
+          "p95": 1.143,
+          "max": 1.143,
+          "mean": 0.545
         },
         "source": "FakeIpc.documentWriteAtomic (encode + FNV hash + copy)"
       },
@@ -215,7 +215,7 @@
         "source": "ps -o rss= after opening the file in the real Tauri app"
       },
       "node_peak_rss_mb": {
-        "value": 233,
+        "value": 236.5,
         "source": "process.resourceUsage().maxRSS"
       },
       "manual_tauri": {
@@ -264,22 +264,22 @@
       "open_ms": {
         "summary": {
           "count": 4,
-          "min": 16.868,
-          "p50": 23.695,
-          "p95": 43.99,
-          "max": 43.99,
-          "mean": 27.408
+          "min": 19.387,
+          "p50": 25.9,
+          "p95": 70.169,
+          "max": 70.169,
+          "mean": 37.15
         },
         "source": "EditorSession.create -> createEditorState (fake IPC payload)"
       },
       "ipc_copy_ms": {
         "summary": {
           "count": 4,
-          "min": 13.709,
-          "p50": 14.002,
-          "p95": 14.248,
-          "max": 14.248,
-          "mean": 14.048
+          "min": 14.446,
+          "p50": 17.451,
+          "p95": 94.95,
+          "max": 94.95,
+          "mean": 37.929
         },
         "source": "JSON round-trip of FilePayload; proxy, not the Tauri transport"
       },
@@ -288,8 +288,8 @@
           "count": 5,
           "min": 0.001,
           "p50": 0.001,
-          "p95": 0.004,
-          "max": 0.004,
+          "p95": 0.003,
+          "max": 0.003,
           "mean": 0.002
         },
         "skipped": true,
@@ -300,38 +300,38 @@
         "source": "ensureSyntaxTree(8ms) + buildLivePreviewDecorations"
       },
       "key_p95_ms": {
-        "value": 0.753,
-        "p50": 0.275,
+        "value": 0.766,
+        "p50": 0.261,
         "count": 20,
         "source": "EditorState.update (LP off, no EditorView)"
       },
       "save_ms": {
         "summary": {
           "count": 5,
-          "max": 23.247,
-          "mean": 23.052,
-          "min": 22.799,
-          "p50": 23.138,
-          "p95": 23.247
+          "max": 20.481,
+          "mean": 20.303,
+          "min": 20.013,
+          "p50": 20.31,
+          "p95": 20.481
         },
         "source": "AtomicWriter::write (real temp file, release build)"
       },
       "fake_save_ms": {
         "summary": {
           "count": 5,
-          "min": 67.739,
-          "p50": 69.564,
-          "p95": 79.585,
-          "max": 79.585,
-          "mean": 71.082
+          "min": 68.644,
+          "p50": 71.465,
+          "p95": 83.515,
+          "max": 83.515,
+          "mean": 73.09
         },
         "readTextMs": {
           "count": 5,
-          "min": 3.666,
-          "p50": 4.372,
-          "p95": 7.099,
-          "max": 7.099,
-          "mean": 4.759
+          "min": 3.86,
+          "p50": 4.057,
+          "p95": 7.886,
+          "max": 7.886,
+          "mean": 5.344
         },
         "source": "FakeIpc.documentWriteAtomic (encode + FNV hash + copy)"
       },
@@ -340,7 +340,7 @@
         "source": "ps -o rss= after opening the file in the real Tauri app"
       },
       "node_peak_rss_mb": {
-        "value": 371.2,
+        "value": 370.8,
         "source": "process.resourceUsage().maxRSS"
       },
       "manual_tauri": {
