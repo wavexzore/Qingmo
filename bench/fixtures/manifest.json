@@ -1,0 +1,24 @@
+{
+  "generatedBy": "bench/generate-fixtures.mjs",
+  "note": "Deterministic; regenerate with `pnpm bench:fixtures`.",
+  "fixtures": {
+    "small": {
+      "file": "small.md",
+      "bytes": 10240,
+      "sha256": "f2b1a535acbbea91f6daece14e2de871d212b6d175a7cdba031821a7eff7f9d4",
+      "lines": 419
+    },
+    "medium": {
+      "file": "medium.md",
+      "bytes": 1048576,
+      "sha256": "76bac1fd0465fb409b1d559b31c8c0c2a752e9e5bf61bf14596f7252f14e63c4",
+      "lines": 41618
+    },
+    "large": {
+      "file": "large.md",
+      "bytes": 10485760,
+      "sha256": "0accc1ac10228dff36a85bc7ffd2b35cf6ff21d2888c304ac4d70942bfbf5409",
+      "lines": 408423
+    }
+  }
+}
