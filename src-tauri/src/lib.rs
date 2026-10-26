@@ -1,4 +1,6 @@
-use tauri::menu::{Menu, MenuItem, MenuItemKind};
+use tauri::menu::Menu;
+#[cfg(target_os = "macos")]
+use tauri::menu::{MenuItem, MenuItemKind};
 use tauri::{AppHandle, Manager, RunEvent, Runtime, WindowEvent};
 use tracing_subscriber::EnvFilter;
 
