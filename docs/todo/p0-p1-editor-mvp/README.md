@@ -20,15 +20,15 @@ schema_version: "1.0"
 feature_id: "p0-p1-editor-mvp"
 feature_name: "P0–P1 编辑器 MVP 骨架"
 status: "in_progress"             # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-005"             # 当前应执行的任务；无则写 none
-last_completed_task: "T-004"      # 最近完成任务；无则写 none
-next_action: "T-004 已完成（2026-10-26 15:05）；执行 T-005：Rust dialog/DocumentRegistry/编码/EOL"
-verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-004 全部 PASS；P1 闭环未完成）
+current_task: "T-006"             # 当前应执行的任务；无则写 none
+last_completed_task: "T-005"      # 最近完成任务；无则写 none
+next_action: "T-005 已完成（2026-10-26 16:10）；执行 T-006：Rust 原子写/冲突/document_write_atomic"
+verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-005 全部 PASS；P1 闭环未完成）
 research_status: "pass"           # not_run | pass | partial | skipped
-call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架直接边已索引；IPC DTO/命令已建，待 T-005/T-006/T-012 后重建业务链）
-code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-004 后已重新校准）
-last_verification_command: "pnpm test"
-last_updated: "2026-10-26T15:05:00+08:00"
+call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架直接边已索引；读路径已建，待 T-006/T-012 后重建保存/关闭业务链）
+code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-005 后已重新校准）
+last_verification_command: "cargo test --manifest-path src-tauri/Cargo.toml --all-targets"
+last_updated: "2026-10-26T16:10:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -81,7 +81,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 
 ## 1. 一句话结论
 
-Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry。当前 `4/20` 任务完成，文件 IO、编辑器、保存与冲突尚未接入；下一步 `T-005`。
+Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取。当前 `5/20` 任务完成，编辑器、保存与冲突尚未接入；下一步 `T-006` 原子写。
 
 ---
 
@@ -174,8 +174,8 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 | T-002 | Tauri 安全基线（CSP/最小 core 权限） | done | T-001 | C-024/C-026/C-027 | T-003 |
 | T-003 | IPC 契约（DTO/错误/4 命令/1 事件/stub/ts-rs/六方契约） | done | T-002 | C-014/C-028~C-031 | T-004 |
 | T-004 | UI token / App Shell / i18n / 状态栏 / Registry 核心 | done | T-001 | C-032~C-036 | T-005 |
-| T-005 | Rust dialog + DocumentRegistry + `document_open/reload` + 编码 | todo | T-003 | none | 下一步 |
-| T-006 | 原子写 + 冲突 + `document_write_atomic` | todo | T-005 | none | T-005 后 |
+| T-005 | Rust dialog + DocumentRegistry + `document_open/reload` + 编码 | done | T-003 | C-037~C-044 | T-006 |
+| T-006 | 原子写 + 冲突 + `document_write_atomic` | todo | T-005 | none | 下一步 |
 | T-007 | IpcPort/PlatformPort + 错误归一化 + fake adapter | todo | T-003/T-005/T-006 | none | T-006 后 |
 | T-008 | 文档会话 + 打开流程 + CM6 EditorState | todo | T-004/T-007 | none | T-007 后 |
 | T-009 | CM6 扩展组合（Markdown/语言/readOnly facet） | todo | T-008 | none | T-008 后 |
@@ -267,19 +267,19 @@ P1 只有 1 个自定义事件；关闭不再使用前端 `onCloseRequested` 作
 
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
-| AC-001 | 启动与空窗口 | T-001/T-002 | C-021：窗口出现、控制台 0 error；T-002 未做 | partial |
-| AC-002 | 打开/编辑/保存闭环 | T-008~T-012 | E2E + Rust 集成 + store 形状测试 | todo |
+| AC-001 | 启动与空窗口 | T-001/T-002 | C-021/C-024/C-027：dev 与生产二进制均渲染；控制台 0 error | PASS |
+| AC-002 | 打开/编辑/保存闭环 | T-008~T-012 | 打开已验证（C-037/C-041/C-042）；编辑/保存待 T-008~T-012 | partial |
 | AC-003 | 原子写无半写 | T-006 | Rust 单测 + 故障注入 | todo |
 | AC-004 | 自动保存状态机 | T-011 | Vitest fake timers | todo |
 | AC-005 | 冲突不静默覆盖（含二次冲突） | T-006/T-012 | Rust + E2E | todo |
 | AC-006 | 10MiB 可编辑/降级 | T-014 | bench + 手动（5MB/10MiB） | todo |
 | AC-007 | Live Preview 正确（多选区/IME） | T-013 | 快照测试 + 手动 | todo |
-| AC-008 | 安全边界（无 fs/shell/http、CSP、token） | T-002/T-005 | 契约 + 运行时负例 | todo |
-| AC-009 | 契约不漂移 | T-003/T-019 | 六方契约测试 + 生成文件 diff | todo |
-| AC-010 | 主题切换不重建 view | T-016 | 组件测试 | todo |
-| AC-011 | i18n 无硬编码 | T-004 | key 对齐测试 | todo |
+| AC-008 | 安全边界（无 fs/shell/http、CSP、token） | T-002/T-005 | C-026 + C-037：最小权限、严格 CSP、token 伪造/过期、符号链接替换 | PASS |
+| AC-009 | 契约不漂移 | T-003/T-019 | C-028/C-029/C-030：命令/权限/DTO/生成文件已覆盖；六方完整版待 T-019 | partial |
+| AC-010 | 主题切换不重建 view | T-016 | token 已就绪（C-035）；主题服务/CM6 Compartment 待 T-016 | partial |
+| AC-011 | i18n 无硬编码 | T-004 | C-032/C-033：key 对齐 + 13 个错误码文案 + 无 raw key | PASS |
 | AC-012 | 浏览器 E2E 可跑（fake dialog） | T-018 | `pnpm test:e2e` | todo |
-| AC-013 | 命令注册表/面板/快捷键 | T-004/T-015 | Registry 单测 + Palette E2E | todo |
+| AC-013 | 命令注册表/面板/快捷键 | T-004/T-015 | C-032：Registry 核心 7 条测试；面板/快捷键待 T-015 | partial |
 | AC-014 | 性能基线 | T-017 | `pnpm bench`（open/decorate/key p95/save/RSS） | todo |
 | AC-015 | 关闭守卫（红叉/Cmd+Q） | T-012 | CloseGuard 集成 + 手动 | todo |
 
@@ -323,17 +323,17 @@ pnpm bench
 | C-013 | `cargo check --manifest-path src-tauri/Cargo.toml` | T-001 后（已运行） | PASS |
 | C-014 | `cargo test --manifest-path src-tauri/Cargo.toml --test commands_contract` | T-003/T-019 | PASS |
 | C-015 | `cargo test --manifest-path src-tauri/Cargo.toml --test document_open` | T-005 | PASS |
-| C-016 | `cargo test --manifest-path src-tauri/Cargo.toml --test atomic_writer` / `--test conflict` | T-006 | PASS |
+| C-016 | `cargo test --manifest-path src-tauri/Cargo.toml --test atomic_writer` / `--test conflict` | T-006 | SKIPPED |
 | C-017 | `pnpm test` | 每个前端任务后（T-001 已运行） | PASS |
-| C-018 | `pnpm test:e2e` | T-018/T-019 | PASS |
-| C-019 | `pnpm bench` | T-017 | 记录基线 |
+| C-018 | `pnpm test:e2e` | T-018/T-019 | SKIPPED |
+| C-019 | `pnpm bench` | T-017 | SKIPPED |
 | C-020 | `pnpm build` | T-001（已运行） | PASS |
 | C-021 | `pnpm tauri dev` | T-001/T-002（T-001 已运行） | PASS（手动） |
 | C-022 | `cargo fmt --check` / `pnpm format:check` | T-001（已运行） | PASS |
 | C-023 | `git tag --list` | T-001（已运行） | `p0-docs-baseline`、`p1-baseline` |
 | C-024 | `pnpm tauri build --debug` | T-002/T-019 | PASS（单平台） |
 | C-025 | `gitnexus analyze --skip-agents-md` | T-001（已运行）/T-003 后 | 466 nodes / 610 edges；直接边已记录 |
-| C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | PASS |
+| C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | SKIPPED |
 
 ---
 
@@ -384,3 +384,4 @@ pnpm bench
 | 2026-10-26T14:20:00+08:00 | T-002 完成：窗口 label/CSP/assetProtocol/最小 core 权限 + 3 条配置测试；dev 与生产二进制均冒烟 | OpenCode / DeepSeek V4.1 | `02 §3/C-024/C-026/C-027`；`01 §6` |
 | 2026-10-26T14:45:00+08:00 | T-003 完成：DTO/错误/4 命令 + 1 事件/stub/ts-rs；Rust 6 条、TS 4 条契约测试通过 | OpenCode / DeepSeek V4.1 | `02 §3/C-014/C-028~C-031`；`01 §6` |
 | 2026-10-26T15:05:00+08:00 | T-004 完成：UI token/App Shell/i18n/状态栏/CommandRegistry；21 条 TS 测试、生产预览与 Tauri 窗口冒烟 | OpenCode / DeepSeek V4.1 | `02 §3/C-032~C-036`；`01 §6` |
+| 2026-10-26T16:10:00+08:00 | T-005 完成：Rust dialog/DocumentRegistry、严格编码/EOL/10MiB、token 边界；31 条 Rust 测试与原生 dialog 手动读取 | OpenCode / DeepSeek V4.1 | `02 §3/C-037~C-044`；`01 §6` |

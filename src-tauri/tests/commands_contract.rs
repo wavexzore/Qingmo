@@ -124,9 +124,30 @@ fn error_wire_shape_is_stable() {
     assert_eq!(value["details"]["currentHash"], "abc");
 }
 
+fn invoke(
+    webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+    command: &str,
+    body: Value,
+) -> Result<Value, Value> {
+    tauri::test::get_ipc_response(
+        webview,
+        tauri::webview::InvokeRequest {
+            cmd: command.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid URL"),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        },
+    )
+    .map(|response| response.deserialize::<Value>().expect("valid JSON"))
+}
+
 #[test]
-fn invoke_handler_registers_all_four_stubs() {
+fn invoke_handler_registers_every_contract_command() {
     let app = tauri::test::mock_builder()
+        .manage(qingmo_lib::state::DocumentRegistry::new())
         .invoke_handler(qingmo_lib::commands::handler())
         .build(tauri::generate_context!())
         .expect("mock app must build");
@@ -134,29 +155,26 @@ fn invoke_handler_registers_all_four_stubs() {
         .build()
         .expect("mock webview must build");
 
+    // `document_open` is registered but cannot be invoked here: it opens a
+    // native dialog. Registration is asserted from the single handler source.
+    let handler_source = read_text("src/commands/mod.rs");
+    assert!(handler_source.contains("document::document_open"));
+    assert!(handler_source.contains("document::document_reload"));
+    assert!(handler_source.contains("stub::document_write_atomic"));
+    assert!(handler_source.contains("stub::app_close_confirm"));
+
+    let error = invoke(&webview, "document_reload", json!({"docToken": "fake"}))
+        .expect_err("reload with a fake token must fail");
+    assert_eq!(error["code"], "INVALID_PATH", "unexpected error: {error}");
+
     for (command, body) in [
-        ("document_open", json!({})),
-        ("document_reload", json!({"docToken": "fake"})),
         (
             "document_write_atomic",
             json!({"docToken": "fake", "text": "", "expectedCurrentHash": null}),
         ),
         ("app_close_confirm", json!({"allow": false})),
     ] {
-        let response = tauri::test::get_ipc_response(
-            &webview,
-            tauri::webview::InvokeRequest {
-                cmd: command.into(),
-                callback: tauri::ipc::CallbackFn(0),
-                error: tauri::ipc::CallbackFn(1),
-                url: "tauri://localhost".parse().expect("valid URL"),
-                body: tauri::ipc::InvokeBody::Json(body),
-                headers: Default::default(),
-                invoke_key: tauri::test::INVOKE_KEY.to_string(),
-            },
-        );
-
-        let error = response.expect_err("stub must return an error");
+        let error = invoke(&webview, command, body).expect_err("stub must return an error");
         assert_eq!(
             error["code"], "IO",
             "{command} was not registered or returned an unexpected error: {error}"
