@@ -7,6 +7,8 @@ coverage/
 .idea/
 .vscode/
 .playwright-mcp/
+.gitnexus/
+.claude/
 
 .env
 .env.*

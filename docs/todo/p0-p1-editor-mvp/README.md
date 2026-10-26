@@ -4,7 +4,7 @@
 > **功能 ID：** `p0-p1-editor-mvp`
 > **对应 SDD Spec：** 无（Qingmo 尚未接入 `.jssdd`）
 > **对应需求：** `R-001 ~ R-015`（本文 §2.1）
-> **功能分支：** 无（当前目录不是 Git 仓库；Q-013 已同意，T-001 初始化）
+> **功能分支：** `main`（本地仓库；已有 `p0-docs-baseline`、`p1-baseline` 两个 tag，未推送远端）
 > **优先级：** P0 + P1（垂直切片）
 > **负责人：** 待定
 > **最新代码校准日期：** 2026-10-26
@@ -19,16 +19,16 @@
 schema_version: "1.0"
 feature_id: "p0-p1-editor-mvp"
 feature_name: "P0–P1 编辑器 MVP 骨架"
-status: "todo"                    # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-001"             # 当前应执行的任务；无则写 none
-last_completed_task: "none"       # 最近完成任务；无则写 none
-next_action: "Q-001~Q-015 已按推荐确认（2026-10-26）；执行 T-001 建立 pnpm workspace、Git 基线与 Tauri 2 骨架"
-verification_status: "not_run"    # not_run | pass | fail | partial | skipped
+status: "in_progress"             # todo | in_progress | blocked | partial | done | rolled_back | cancelled
+current_task: "T-002"             # 当前应执行的任务；无则写 none
+last_completed_task: "T-001"      # 最近完成任务；无则写 none
+next_action: "T-001 已完成（2026-10-26 12:56）；执行 T-002：窗口/CSP/最小 core 权限 + security_config 负例"
+verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001 全部 PASS；P1 闭环未完成）
 research_status: "pass"           # not_run | pass | partial | skipped
-call_chain_status: "partial"      # not_run | pass | partial | skipped（目标无代码；参考项目已有直接调用边证据）
-code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（已确认目标目录无代码、非 Git 仓库）
-last_verification_command: "none"
-last_updated: "2026-10-26T11:35:00+08:00"
+call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架直接边已索引；IPC/业务链待 T-003 后重建）
+code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001 后已重新校准）
+last_verification_command: "pnpm tauri dev"
+last_updated: "2026-10-26T13:02:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -81,7 +81,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 
 ## 1. 一句话结论
 
-Qingmo 目前只有蓝图/调研/拓扑文档，没有代码也不是 Git 仓库；本方案已冻结 P0–P1 垂直切片的设计与 20 个任务，并于 2026-10-26 获得 Q-001~Q-015 全部推荐项确认，当前处于 `todo`，待从 `T-001` 开始建立可运行骨架与 Git 基线。
+Qingmo 已从纯文档阶段进入实施：`T-001` 建立了可安装、可构建、可启动的 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架，并建立 `p0-docs-baseline` / `p1-baseline` 两个本地基线 tag。当前 `1/20` 任务完成，编辑器、文件 IO、保存与冲突尚未接入；下一步 `T-002` 安全基线。
 
 ---
 
@@ -91,7 +91,7 @@ Qingmo 目前只有蓝图/调研/拓扑文档，没有代码也不是 Git 仓库
 
 | R-ID | 目标 | 验收方式 | 状态 |
 |---|---|---|---|
-| R-001 | 建立可启动的 Tauri 2 + React + Vite + CM6 工程 | `pnpm tauri dev` + 三平台 `cargo check` | todo |
+| R-001 | 建立可启动的 Tauri 2 + React + Vite + CM6 工程 | `pnpm tauri dev` + 三平台 `cargo check` | partial（T-001 已启动；CM6 待 T-009） |
 | R-002 | 打开 `.md/.markdown`；`.mdx` 只读 | Rust 侧 dialog + `docToken`；文件信息正确 | todo |
 | R-003 | CM6 `EditorState` 是唯一文档真源 | 代码审查 + store 形状测试 | todo |
 | R-004 | 最小 Live Preview（标题/强调/行内代码/链接/引用/列表） | 装饰快照 + 1MB 手动 | todo |
@@ -132,8 +132,8 @@ Qingmo 目前只有蓝图/调研/拓扑文档，没有代码也不是 Git 仓库
 |---|---|---|---|
 | 官方文档调研 | pass | `01-实施计划.md §2.4.1`；`02 E-001~E-003` | Tauri 2 capabilities/CSP/commands/core 权限/window、CM6 decoration/ref/composition、atomic-write-file、ts-rs、encoding_rs UTF-16 限制已核对；tauri-specta v2 仍为 RC，P1 拒绝 |
 | GitHub 开源实现调研 | pass | `01-实施计划.md §2.4.2`；`02 E-004~E-005` | MarkEdit 的 ViewPlugin+Lezer、NoteGen/MarkFlowy 的自定义命令/保存、create-tauri-app 的 Vite 约定已对比；均不复制代码 |
-| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006~E-007`；`05` | 目标无代码无法索引；参考项目 `wavexzore-ledger` 的 `call -> rawInvoke` 直接边与契约测试已验证；全局 process 图被截断，不作完整拓扑断言；R1/R2/R3 已执行 |
-| 当前代码实时校准 | pass | `02-实施状态与验证.md §8`；`02 E-008` | 已确认目标只有文档、非 Git 仓库、无 `apps/packages/src-tauri`；计划按“从零创建”编写 |
+| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012`；`05` | Qingmo 骨架已索引（466 nodes/610 edges）；`main.tsx -> App -> cx`、`main.rs::main -> run -> init_tracing` 直接边已验证；IPC/保存链待 T-003+；参考项目 `call -> rawInvoke` 仅作方法参考 |
+| 当前代码实时校准 | pass | `02-实施状态与验证.md §8`；`02 E-008/C-021` | T-001 前确认无代码、非 Git；T-001 后已有 `apps/desktop`、`packages/*`、`src-tauri` 骨架与双基线 tag |
 
 ### 3.2 目标调用链
 
@@ -170,8 +170,8 @@ Qingmo 目前只有蓝图/调研/拓扑文档，没有代码也不是 Git 仓库
 
 | T-ID | 任务 | Status | DependsOn | Evidence | Next |
 |---|---|---|---|---|---|
-| T-001 | pnpm workspace + Git 基线 + Vite/React/TS/Tauri 骨架 | todo | none | none | Q 门禁已确认，可启动 |
-| T-002 | Tauri 安全基线（CSP/最小 core 权限） | todo | T-001 | none | T-001 后 |
+| T-001 | pnpm workspace + Git 基线 + Vite/React/TS/Tauri 骨架 | done | none | C-011~C-013/C-017/C-020~C-023/C-025 | T-002 |
+| T-002 | Tauri 安全基线（CSP/最小 core 权限） | todo | T-001 | none | 下一步 |
 | T-003 | IPC 契约（DTO/错误/4 命令/1 事件/stub/ts-rs/六方契约） | todo | T-002 | none | T-002 后 |
 | T-004 | UI token / App Shell / i18n / 状态栏 / Registry 核心 | todo | T-001 | none | 可与 T-002 并行 |
 | T-005 | Rust dialog + DocumentRegistry + `document_open/reload` + 编码 | todo | T-003 | none | T-003 后 |
@@ -199,17 +199,17 @@ Qingmo 目前只有蓝图/调研/拓扑文档，没有代码也不是 Git 仓库
 
 | 类型 | 路径/对象 | 预期变更 | 状态 | 证据 |
 |---|---|---|---|---|
-| Code | `apps/desktop/**` | 新增 | todo | none |
-| Code | `packages/shared/**` | 新增（DTO/常量） | todo | none |
-| Code | `packages/editor-core/**` | 新增（CM6/Live Preview/主题） | todo | none |
-| Code | `packages/ui/**` | 新增（token/原语） | todo | none |
-| Code | `src-tauri/**` | 新增（命令/服务/状态/契约） | todo | none |
+| Code | `apps/desktop/**` | 新增 | partial（T-001 壳） | C-021 |
+| Code | `packages/shared/**` | 新增（DTO/常量） | partial（常量） | C-017 |
+| Code | `packages/editor-core/**` | 新增（CM6/Live Preview/主题） | partial（mode 契约） | C-017 |
+| Code | `packages/ui/**` | 新增（token/原语） | partial（`cx`） | C-017 |
+| Code | `src-tauri/**` | 新增（命令/服务/状态/契约） | partial（空壳） | C-013/C-021 |
 | Test | `src-tauri/tests/**` | 新增（契约/读写/冲突） | todo | none |
-| Test | `apps/desktop/**/*.test.*`、`e2e/**` | 新增 | todo | none |
+| Test | `apps/desktop/**/*.test.*`、`e2e/**` | 新增 | partial（smoke） | C-017 |
 | Config | localStorage `qingmo.ui.theme` | 新增（默认 `system`，Q-005 已确认） | todo | none |
 | Config | `src-tauri/capabilities/default.json` | 新增（最小权限） | todo | none |
 | Doc | `docs/adr/0001~0003` | 新增 | todo | none |
-| Doc | `README.md` 状态段落 | 修改 | todo | none |
+| Doc | `README.md` 状态段落 | 修改 | done（T-001） | 本文件 §0/§1 |
 
 > **数据表：P1 不新增任何数据表。** 唯一新增持久化键为 `qingmo.ui.theme`，见 §6.2 与 Q-005。
 
@@ -267,7 +267,7 @@ P1 只有 1 个自定义事件；关闭不再使用前端 `onCloseRequested` 作
 
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
-| AC-001 | 启动与空窗口 | T-001/T-002 | `pnpm tauri dev` + 手动 | todo |
+| AC-001 | 启动与空窗口 | T-001/T-002 | C-021：窗口出现、控制台 0 error；T-002 未做 | partial |
 | AC-002 | 打开/编辑/保存闭环 | T-008~T-012 | E2E + Rust 集成 + store 形状测试 | todo |
 | AC-003 | 原子写无半写 | T-006 | Rust 单测 + 故障注入 | todo |
 | AC-004 | 自动保存状态机 | T-011 | Vitest fake timers | todo |
@@ -318,16 +318,21 @@ pnpm bench
 | C-008 | `git diff 0571bc2..HEAD -- ...` | 方案基线（已运行） | 无输出 |
 | C-009 | DeepWiki 查询 | 方案基线（已运行） | 记录摘要 |
 | C-010 | Exa 查询 | 方案基线（已运行） | 记录摘要 |
-| C-011 | `pnpm install` -> `pnpm install --frozen-lockfile` | T-001 | PASS |
-| C-012 | `pnpm typecheck && pnpm lint` | 每个前端任务后 | PASS |
-| C-013 | `cargo check --manifest-path src-tauri/Cargo.toml` | T-001 后 | PASS |
+| C-011 | `pnpm install` -> `pnpm install --frozen-lockfile` | T-001（已运行） | PASS |
+| C-012 | `pnpm typecheck && pnpm lint` | 每个前端任务后（T-001 已运行） | PASS |
+| C-013 | `cargo check --manifest-path src-tauri/Cargo.toml` | T-001 后（已运行） | PASS |
 | C-014 | `cargo test --manifest-path src-tauri/Cargo.toml --test commands_contract` | T-003/T-019 | PASS |
 | C-015 | `cargo test --manifest-path src-tauri/Cargo.toml --test document_open` | T-005 | PASS |
 | C-016 | `cargo test --manifest-path src-tauri/Cargo.toml --test atomic_writer` / `--test conflict` | T-006 | PASS |
-| C-017 | `pnpm test` | 每个前端任务后 | PASS |
+| C-017 | `pnpm test` | 每个前端任务后（T-001 已运行） | PASS |
 | C-018 | `pnpm test:e2e` | T-018/T-019 | PASS |
 | C-019 | `pnpm bench` | T-017 | 记录基线 |
-| C-020 | `pnpm tauri dev` / `pnpm tauri build --debug` | T-002/T-019 | PASS（手动/单平台） |
+| C-020 | `pnpm build` | T-001（已运行） | PASS |
+| C-021 | `pnpm tauri dev` | T-001/T-002（T-001 已运行） | PASS（手动） |
+| C-022 | `cargo fmt --check` / `pnpm format:check` | T-001（已运行） | PASS |
+| C-023 | `git tag --list` | T-001（已运行） | `p0-docs-baseline`、`p1-baseline` |
+| C-024 | `pnpm tauri build --debug` | T-002/T-019 | PASS（单平台） |
+| C-025 | `gitnexus analyze --skip-agents-md` | T-001（已运行）/T-003 后 | 466 nodes / 610 edges；直接边已记录 |
 | C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | PASS |
 
 ---
@@ -346,7 +351,7 @@ pnpm bench
 | RK-008 | 契约漂移 | 中 | 六方契约 + 生成文件检查 | 回退命令表 |
 | RK-009 | 自动保存风暴 | 中 | 单飞/分类退避/最多 5 次/clean 判断 | 禁用自动保存 |
 | RK-010 | 关闭丢内容 | 高 | CloseGuard + flush 循环 + 确认 | 阻止关闭 |
-| RK-011 | 版本不兼容 | 中 | T-001 锁版本/Node 22/Rust 1.90 + 冒烟 | 回退版本集 |
+| RK-011 | 版本不兼容 | 中 | T-001 已锁版本（Node 26.12.1/Rust 1.91.1）+ 启动冒烟 | 回退 `p1-baseline`/版本集 |
 | RK-012 | 过早抽象 | 低 | 只建 3 包；P1 不抽 PathPolicy trait | 删除空包 |
 | RK-013 | token 生命周期/伪造 | 中 | 单文档 token；open 替换；伪造/过期测试 | 重新打开文件 |
 
@@ -375,3 +380,4 @@ pnpm bench
 | 2026-10-26T11:30:00+08:00 | 补充调研/调用链证据摘要与 Q 项门禁 | OpenCode / DeepSeek V4.1 | `01 §2–3`、`02 E-001~E-010` |
 | 2026-10-26T12:40:00+08:00 | v1.1：同步 R1/R2/R3 回改（token/CloseGuard/LF wire/任务依赖/AC-013~015/Q-013~015/C-ID） | OpenCode / DeepSeek V4.1 | `05`、`01 §14` |
 | 2026-10-26T11:35:00+08:00 | Q-001~Q-015 全部按推荐确认；解除 T-001 门禁 | OpenCode / DeepSeek V4.1 | `01 §12`、`02 E-011/B-005` |
+| 2026-10-26T13:02:00+08:00 | T-001 完成：workspace/Vite/React/TS/Tauri 骨架、双基线 tag、质量命令全绿、GitNexus 直接边复核 | OpenCode / DeepSeek V4.1 | `02 §3/C-011~C-013/C-017/C-020~C-023/C-025`；`01 §6` |
