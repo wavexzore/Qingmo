@@ -1,0 +1,2357 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#fbf8f1">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <title>青墨 · 本地优先 Markdown 编辑器</title>
+  <style>
+    /* =========================================================
+       青墨 / Qingmo — high-fidelity prototype
+       Editorial luxury × local-first writing desk
+       ========================================================= */
+
+    :root {
+      --font-ui: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      --font-serif: "Iowan Old Style", "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+      --font-mono: "SFMono-Regular", "Cascadia Code", "Menlo", "Consolas", monospace;
+      --ease-out: cubic-bezier(.22, 1, .36, 1);
+      --ease-soft: cubic-bezier(.32, .72, 0, 1);
+    }
+
+    html[data-theme="light"] {
+      color-scheme: light;
+      --stage: #e7e1d5;
+      --stage-2: #d8e3dc;
+      --surface: #fbf8f1;
+      --surface-raised: #fffdf8;
+      --surface-soft: #f2ede3;
+      --ink: #1d1c19;
+      --ink-soft: #555047;
+      --muted: #8b8377;
+      --line: rgba(44, 39, 31, .10);
+      --line-strong: rgba(44, 39, 31, .17);
+      --jade: #2c6a5a;
+      --jade-strong: #1d4d40;
+      --jade-soft: #e0ece6;
+      --jade-wash: rgba(44, 106, 90, .08);
+      --copper: #a25f31;
+      --copper-soft: #f4e5d6;
+      --copper-ink: #6b3a1b;
+      --on-jade: #fbf8f1;
+      --on-copper: #fffaf4;
+      --shadow: 0 36px 90px rgba(53, 43, 27, .18), 0 2px 10px rgba(53, 43, 27, .06);
+      --shadow-soft: 0 18px 50px rgba(53, 43, 27, .12);
+      --focus: rgba(44, 106, 90, .32);
+      --shell-bg: linear-gradient(145deg, rgba(255, 255, 255, .50), rgba(255, 255, 255, .08));
+      --shell-border: rgba(255, 255, 255, .44);
+      --ambient-a: rgba(44, 106, 90, .16);
+      --ambient-b: rgba(162, 95, 49, .10);
+      --ambient-c: rgba(44, 106, 90, .08);
+      --noise-opacity: .045;
+      --noise-blend: multiply;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --stage: #080b09;
+      --stage-2: #101813;
+      --surface: #151916;
+      --surface-raised: #1a1f1b;
+      --surface-soft: #202721;
+      --ink: #eee9dc;
+      --ink-soft: #c7c0b2;
+      --muted: #8e978c;
+      --line: rgba(238, 233, 220, .10);
+      --line-strong: rgba(238, 233, 220, .18);
+      --jade: #8cc6b3;
+      --jade-strong: #b6dfd0;
+      --jade-soft: #22352e;
+      --jade-wash: rgba(140, 198, 179, .08);
+      --copper: #d59b6b;
+      --copper-soft: #332419;
+      --copper-ink: #f0c9a8;
+      --on-jade: #0e1512;
+      --on-copper: #1a100a;
+      --shadow: 0 36px 90px rgba(0, 0, 0, .60), 0 2px 10px rgba(0, 0, 0, .35);
+      --shadow-soft: 0 18px 50px rgba(0, 0, 0, .40);
+      --focus: rgba(140, 198, 179, .35);
+      --shell-bg: linear-gradient(145deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02));
+      --shell-border: rgba(255, 255, 255, .10);
+      --ambient-a: rgba(94, 160, 138, .14);
+      --ambient-b: rgba(213, 155, 107, .08);
+      --ambient-c: rgba(94, 160, 138, .06);
+      --noise-opacity: .035;
+      --noise-blend: screen;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 18%, var(--ambient-a), transparent 32%),
+        radial-gradient(circle at 86% 12%, var(--ambient-b), transparent 28%),
+        radial-gradient(circle at 50% 110%, var(--ambient-c), transparent 46%),
+        linear-gradient(135deg, var(--stage), var(--stage-2));
+      font-family: var(--font-ui);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      pointer-events: none;
+      opacity: var(--noise-opacity);
+      mix-blend-mode: var(--noise-blend);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+    ::selection { background: var(--jade-soft); color: var(--ink); }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    [hidden] { display: none !important; }
+
+    .stage {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+
+    /* Double-bezel: aluminum tray + paper window */
+    .app-shell {
+      width: min(1440px, 100%);
+      height: min(900px, calc(100dvh - 56px));
+      padding: 7px;
+      border-radius: 25px;
+      background: var(--shell-bg);
+      border: 1px solid var(--shell-border);
+      box-shadow: var(--shadow);
+      animation: windowIn .9s var(--ease-out) both;
+    }
+
+    .app-window {
+      position: relative;
+      isolation: isolate;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38);
+    }
+
+    html[data-theme="dark"] .app-window {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+    }
+
+    .app-window::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 18% 0%, var(--jade-wash), transparent 28%),
+        radial-gradient(circle at 94% 8%, rgba(162, 95, 49, .04), transparent 24%);
+    }
+
+    .app-window > * { position: relative; z-index: 1; }
+
+    /* =========================
+       Window chrome
+       ========================= */
+
+    .titlebar {
+      flex: 0 0 54px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 14px;
+      padding: 0 15px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      z-index: 6;
+    }
+
+    .titlebar-left,
+    .titlebar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .titlebar-actions { justify-self: end; }
+    .window-controls { display: flex; align-items: center; gap: 8px; padding-right: 4px; }
+    .traffic-light {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, .10);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35);
+    }
+    .traffic-light.close { background: #ff5f57; }
+    .traffic-light.minimize { background: #febc2e; }
+    .traffic-light.maximize { background: #28c840; }
+
+    .brand-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      padding: 4px 6px 4px 4px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      cursor: pointer;
+      transition: background .3s var(--ease-out), transform .3s var(--ease-out);
+    }
+    .brand-button:hover { background: var(--surface-soft); }
+    .brand-button:active { transform: scale(.985); }
+
+    .brand-mark {
+      width: 27px;
+      height: 27px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--jade);
+      color: var(--on-jade);
+      font-family: var(--font-serif);
+      font-size: 14px;
+      line-height: 1;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .24), 0 5px 14px rgba(44, 106, 90, .16);
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      min-width: 0;
+    }
+    .brand-name {
+      font-family: var(--font-serif);
+      font-size: 16px;
+      line-height: 1;
+      letter-spacing: .06em;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+    .brand-meta {
+      font-size: 8px;
+      line-height: 1;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .brand-badge {
+      margin-left: 3px;
+      padding: 4px 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 8px;
+      line-height: 1;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .titlebar-center {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--ink-soft);
+    }
+    .doc-name {
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 500;
+      letter-spacing: .01em;
+    }
+    .doc-state {
+      font-size: 10px;
+      letter-spacing: .03em;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .dirty-dot {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--copper);
+      box-shadow: 0 0 0 3px var(--copper-soft);
+    }
+
+    .icon-button,
+    .text-button,
+    .save-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border-radius: 9px;
+      cursor: pointer;
+      transition:
+        background .28s var(--ease-out),
+        color .28s var(--ease-out),
+        border-color .28s var(--ease-out),
+        transform .28s var(--ease-out),
+        box-shadow .28s var(--ease-out);
+    }
+    .icon-button:active,
+    .text-button:active,
+    .save-button:active { transform: scale(.97); }
+
+    .icon-button {
+      width: 33px;
+      height: 33px;
+      padding: 0;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--ink-soft);
+    }
+    .icon-button:hover { background: var(--surface-soft); color: var(--ink); }
+
+    .text-button {
+      height: 32px;
+      padding: 0 9px 0 11px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--ink-soft);
+      font-size: 11px;
+    }
+    .text-button:hover { background: var(--surface-soft); color: var(--ink); }
+
+    .save-button {
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      background: var(--jade);
+      color: var(--on-jade);
+      font-size: 11px;
+      font-weight: 600;
+      box-shadow: 0 5px 14px rgba(44, 106, 90, .16);
+    }
+    .save-button:hover { background: var(--jade-strong); box-shadow: 0 7px 20px rgba(44, 106, 90, .22); }
+    .save-button[disabled] { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
+    .icon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-sm { width: 14px; height: 14px; }
+
+    kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 17px;
+      height: 17px;
+      padding: 0 4px;
+      border: 1px solid var(--line);
+      border-bottom-color: var(--line-strong);
+      border-radius: 4px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 9px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    /* =========================
+       Views
+       ========================= */
+
+    .app-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .view { flex: 1; min-height: 0; }
+    .app[data-view="welcome"] .editor-only { display: none !important; }
+    .app[data-view="editor"] .welcome-only { display: none !important; }
+
+    /* =========================
+       Welcome
+       ========================= */
+
+    .welcome-view {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+      padding: clamp(32px, 5.2vw, 76px);
+    }
+
+    .welcome-grid {
+      width: 100%;
+      max-width: 1180px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.06fr) minmax(320px, .94fr);
+      gap: clamp(36px, 7vw, 100px);
+      align-items: center;
+    }
+
+    .welcome-copy { max-width: 640px; }
+    .welcome-copy > * {
+      animation: riseIn .8s var(--ease-out) both;
+    }
+    .welcome-copy > :nth-child(1) { animation-delay: .08s; }
+    .welcome-copy > :nth-child(2) { animation-delay: .16s; }
+    .welcome-copy > :nth-child(3) { animation-delay: .24s; }
+    .welcome-copy > :nth-child(4) { animation-delay: .32s; }
+    .welcome-copy > :nth-child(5) { animation-delay: .40s; }
+    .welcome-copy > :nth-child(6) { animation-delay: .48s; }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .22em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .seal {
+      width: 23px;
+      height: 23px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: var(--jade);
+      color: var(--on-jade);
+      font-family: var(--font-serif);
+      font-size: 12px;
+      letter-spacing: 0;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .24);
+    }
+
+    .welcome-title {
+      margin: 0 0 28px;
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-size: clamp(50px, 6.2vw, 82px);
+      font-weight: 500;
+      line-height: 1.04;
+      letter-spacing: -.055em;
+      text-wrap: balance;
+    }
+    .welcome-title em {
+      color: var(--jade);
+      font-style: normal;
+      font-weight: 600;
+    }
+
+    .lede {
+      max-width: 520px;
+      margin: 0 0 36px;
+      color: var(--ink-soft);
+      font-size: 17px;
+      line-height: 1.92;
+      letter-spacing: .005em;
+      text-wrap: pretty;
+    }
+
+    .welcome-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .open-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 18px;
+      padding: 13px 15px 13px 22px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--ink);
+      color: var(--surface);
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: .01em;
+      cursor: pointer;
+      box-shadow: 0 16px 34px rgba(29, 28, 25, .18);
+      transition:
+        transform .55s var(--ease-out),
+        background .35s var(--ease-out),
+        box-shadow .35s var(--ease-out);
+    }
+    .open-button:hover {
+      transform: translateY(-2px);
+      background: var(--ink-soft);
+      box-shadow: 0 20px 42px rgba(29, 28, 25, .22);
+    }
+    .open-button:active { transform: translateY(0) scale(.985); }
+    .open-button .button-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .12);
+      transition: transform .55s var(--ease-out), background .35s var(--ease-out);
+    }
+    .open-button:hover .button-icon {
+      transform: translate(2px, -2px) scale(1.04);
+      background: rgba(255, 255, 255, .18);
+    }
+
+    .shortcut-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .format-note,
+    .trust-note {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.8;
+    }
+    .format-note { margin-top: 26px; }
+    .trust-note { margin-top: 14px; }
+    .mini-dot {
+      width: 5px;
+      height: 5px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--jade);
+      box-shadow: 0 0 0 3px var(--jade-wash);
+    }
+    .note-sep { opacity: .55; }
+    .trust-note .icon { color: var(--jade); }
+
+    .welcome-art {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 460px;
+      animation: riseIn 1s .25s var(--ease-out) both;
+    }
+
+    .paper-stack {
+      position: relative;
+      width: min(382px, 92%);
+      aspect-ratio: .78;
+      transform: rotate(-2.2deg);
+      animation: float 9s var(--ease-soft) infinite;
+    }
+
+    .paper-shell {
+      position: absolute;
+      inset: 0;
+      padding: 11px;
+      border: 1px solid var(--line-strong);
+      border-radius: 25px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, .06));
+      box-shadow: var(--shadow-soft);
+    }
+
+    .paper-sheet {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 42px 38px 38px 46px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--surface-raised);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55);
+    }
+    .paper-sheet::before {
+      content: "";
+      position: absolute;
+      top: 44px;
+      bottom: 42px;
+      left: 25px;
+      width: 1px;
+      background: var(--jade);
+      opacity: .32;
+    }
+
+    .sheet-kicker {
+      margin-bottom: 36px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+    }
+    .sheet-title {
+      margin: 0 0 24px;
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-size: 38px;
+      font-weight: 500;
+      line-height: 1.24;
+      letter-spacing: -.045em;
+    }
+    .sheet-text {
+      margin: 0;
+      color: var(--ink-soft);
+      font-family: var(--font-serif);
+      font-size: 12.5px;
+      line-height: 2;
+    }
+    .sheet-rule {
+      width: 48px;
+      height: 1px;
+      margin: 28px 0;
+      background: var(--jade);
+      opacity: .65;
+    }
+    .sheet-quote {
+      margin: 0;
+      color: var(--muted);
+      font-family: var(--font-serif);
+      font-size: 12px;
+      line-height: 1.9;
+    }
+    .sheet-mark {
+      position: absolute;
+      right: 26px;
+      bottom: 22px;
+      color: var(--jade);
+      font-family: var(--font-serif);
+      font-size: 76px;
+      line-height: 1;
+      opacity: .08;
+      user-select: none;
+    }
+    .paper-glow {
+      position: absolute;
+      inset: 12% 4% 2%;
+      z-index: -1;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--jade-wash), transparent 68%);
+      filter: blur(32px);
+    }
+
+    /* =========================
+       Editor
+       ========================= */
+
+    .editor-view {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--surface);
+    }
+
+    .conflict-banner {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 10px 17px;
+      border-bottom: 1px solid rgba(162, 95, 49, .18);
+      background: var(--copper-soft);
+      color: var(--copper-ink);
+      animation: bannerIn .5s var(--ease-out) both;
+    }
+    .conflict-icon {
+      width: 27px;
+      height: 27px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: rgba(162, 95, 49, .12);
+      color: var(--copper);
+    }
+    .conflict-copy { flex: 1; min-width: 0; }
+    .conflict-title {
+      margin-bottom: 2px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .01em;
+    }
+    .conflict-desc {
+      color: var(--copper-ink);
+      font-size: 11px;
+      line-height: 1.5;
+      opacity: .74;
+    }
+    .conflict-actions { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+    .conflict-button {
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid rgba(162, 95, 49, .20);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--copper-ink);
+      font-size: 10px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .25s var(--ease-out), border-color .25s var(--ease-out), transform .25s var(--ease-out);
+    }
+    .conflict-button:hover { background: rgba(162, 95, 49, .08); }
+    .conflict-button:active { transform: scale(.97); }
+    .conflict-button.primary {
+      border-color: transparent;
+      background: var(--copper);
+      color: var(--on-copper);
+    }
+    .conflict-button.primary:hover { background: var(--copper-ink); }
+    .conflict-button.ghost { border-color: transparent; opacity: .72; }
+
+    .editor-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-behavior: smooth;
+      background:
+        radial-gradient(circle at 50% -10%, var(--jade-wash), transparent 34%),
+        var(--surface);
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+    .editor-scroll::-webkit-scrollbar { width: 7px; }
+    .editor-scroll::-webkit-scrollbar-track { background: transparent; }
+    .editor-scroll::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 99px;
+      background-clip: padding-box;
+      background-color: var(--line-strong);
+    }
+
+    .manuscript {
+      width: min(720px, 100%);
+      min-height: 100%;
+      margin: 0 auto;
+      padding: 74px 48px 164px;
+      outline: none;
+      caret-color: var(--jade);
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-size: 18px;
+      line-height: 1.95;
+      letter-spacing: .004em;
+    }
+    .manuscript:focus { outline: none; }
+    .manuscript.is-readonly { opacity: .9; }
+
+    .manuscript-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+      color: var(--muted);
+      font-family: var(--font-ui);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: .20em;
+      line-height: 1;
+      text-transform: uppercase;
+      user-select: none;
+    }
+    .meta-dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--jade);
+      opacity: .7;
+    }
+
+    .manuscript h1 {
+      margin: 0 0 13px;
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-size: clamp(42px, 4.8vw, 55px);
+      font-weight: 500;
+      line-height: 1.1;
+      letter-spacing: -.052em;
+      text-wrap: balance;
+    }
+    .manuscript h2 {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      margin: 52px 0 16px;
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-size: 26px;
+      font-weight: 500;
+      line-height: 1.4;
+      letter-spacing: -.028em;
+    }
+    .manuscript p {
+      margin: 0 0 24px;
+      color: var(--ink);
+      text-wrap: pretty;
+    }
+    .manuscript strong { font-weight: 600; color: var(--ink); }
+    .manuscript em { font-style: italic; }
+    .doc-subtitle {
+      margin: 0 0 36px !important;
+      color: var(--muted) !important;
+      font-family: var(--font-ui);
+      font-size: 13px;
+      line-height: 1.7;
+      letter-spacing: .01em;
+    }
+
+    .manuscript blockquote {
+      margin: 36px 0;
+      padding: 4px 0 4px 23px;
+      border-left: 1px solid var(--jade);
+      color: var(--ink-soft);
+      font-size: 19px;
+      line-height: 1.9;
+    }
+    .manuscript ul {
+      display: grid;
+      gap: 9px;
+      margin: 0 0 28px;
+      padding: 0;
+      list-style: none;
+    }
+    .manuscript li {
+      position: relative;
+      padding-left: 25px;
+      color: var(--ink);
+    }
+    .manuscript li::before {
+      content: "—";
+      position: absolute;
+      left: 0;
+      top: .08em;
+      color: var(--jade);
+      font-family: var(--font-ui);
+      font-size: 11px;
+      font-weight: 500;
+      opacity: .8;
+    }
+    .manuscript code {
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--surface-soft);
+      color: var(--jade-strong);
+      font-family: var(--font-mono);
+      font-size: .82em;
+      letter-spacing: -.01em;
+    }
+    .manuscript a {
+      color: var(--jade-strong);
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 4px;
+      text-decoration-color: rgba(44, 106, 90, .38);
+      transition: background .2s var(--ease-out);
+    }
+    .manuscript a:hover { background: var(--jade-soft); }
+
+    .md-mark {
+      color: var(--jade);
+      font-family: var(--font-mono);
+      font-size: .72em;
+      font-weight: 400;
+      letter-spacing: -.02em;
+      opacity: 0;
+      white-space: pre;
+      user-select: none;
+      transition: opacity .2s var(--ease-out);
+    }
+    .active-line .md-mark,
+    .app.lp-off .md-mark { opacity: 1; }
+    .app.lp-off .manuscript li::before { opacity: 0; }
+    .active-line { position: relative; }
+
+    .caret {
+      display: inline-block;
+      width: 1.5px;
+      height: 1.05em;
+      margin-left: 2px;
+      border-radius: 2px;
+      background: var(--jade);
+      vertical-align: -.16em;
+      animation: blink 1.15s steps(2, start) infinite;
+    }
+    .manuscript:focus .caret { display: none; }
+
+    .manuscript-end {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      margin-top: 58px !important;
+      opacity: .35;
+    }
+    .manuscript-end span {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--jade);
+    }
+
+    .manuscript.flash-reload { animation: flashReload .6s var(--ease-out); }
+
+    /* =========================
+       Status bar
+       ========================= */
+
+    .statusbar {
+      flex: 0 0 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 15px;
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      font-family: var(--font-ui);
+      font-size: 9.5px;
+      letter-spacing: .045em;
+      user-select: none;
+      z-index: 5;
+    }
+    .status-left,
+    .status-right {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .status-right { justify-content: flex-end; }
+    .status-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .status-divider {
+      width: 1px;
+      height: 10px;
+      flex: 0 0 auto;
+      background: var(--line-strong);
+    }
+    .status-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 3px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      letter-spacing: inherit;
+      cursor: pointer;
+      transition: color .2s var(--ease-out), background .2s var(--ease-out);
+    }
+    .status-button:hover { background: var(--surface-soft); color: var(--ink-soft); }
+    .live-dot {
+      width: 5px;
+      height: 5px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--jade);
+      box-shadow: 0 0 0 3px var(--jade-wash);
+    }
+    .status-button.is-off .live-dot { background: var(--muted); box-shadow: none; }
+    .warning-dot { background: var(--copper); box-shadow: 0 0 0 3px var(--copper-soft); }
+
+    /* =========================
+       Command palette
+       ========================= */
+
+    .palette-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 70;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 10vh 16px 16px;
+      background: rgba(14, 13, 11, .34);
+      backdrop-filter: blur(10px) saturate(.9);
+      animation: fadeIn .3s var(--ease-out) both;
+    }
+    html[data-theme="dark"] .palette-layer { background: rgba(0, 0, 0, .56); }
+
+    .palette {
+      width: min(640px, 100%);
+      max-height: min(560px, 80vh);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 18px;
+      background: var(--surface-raised);
+      box-shadow: var(--shadow);
+      animation: paletteIn .45s var(--ease-out) both;
+    }
+
+    .palette-search {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 17px;
+      min-height: 58px;
+      border-bottom: 1px solid var(--line);
+    }
+    .palette-search .icon { color: var(--muted); }
+    .palette-search input {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+      font-family: var(--font-ui);
+      font-size: 16px;
+      letter-spacing: .005em;
+    }
+    .palette-search input::placeholder { color: var(--muted); opacity: .8; }
+
+    .palette-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 8px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+    .palette-list::-webkit-scrollbar { width: 7px; }
+    .palette-list::-webkit-scrollbar-track { background: transparent; }
+    .palette-list::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 99px;
+      background-clip: padding-box;
+      background-color: var(--line-strong);
+    }
+
+    .palette-group {
+      padding: 10px 10px 5px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: .20em;
+      text-transform: uppercase;
+    }
+    .palette-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--ink-soft);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+      transition: background .18s var(--ease-out), color .18s var(--ease-out);
+    }
+    .palette-item:hover,
+    .palette-item.is-selected {
+      background: var(--jade-soft);
+      color: var(--jade-strong);
+    }
+    .item-icon {
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      transition: background .18s var(--ease-out), color .18s var(--ease-out);
+    }
+    .palette-item:hover .item-icon,
+    .palette-item.is-selected .item-icon {
+      background: var(--surface-raised);
+      color: var(--jade);
+    }
+    .item-label { flex: 1; min-width: 0; }
+    .palette-item kbd { margin-left: auto; }
+    .palette-empty {
+      padding: 36px 20px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+    .palette-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 9px 14px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 9px;
+      letter-spacing: .04em;
+    }
+    .palette-footer .keys { display: flex; align-items: center; gap: 10px; }
+    .palette-footer .key-group { display: inline-flex; align-items: center; gap: 4px; }
+
+    /* =========================
+       Prototype controls
+       ========================= */
+
+    .prototype-panel {
+      position: fixed;
+      right: 24px;
+      bottom: 84px;
+      z-index: 80;
+    }
+    .prototype-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--surface-raised);
+      color: var(--ink-soft);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .10em;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(14px);
+      transition: transform .35s var(--ease-out), background .35s var(--ease-out);
+    }
+    .prototype-toggle:hover { transform: translateY(-1px); background: var(--surface); }
+    .prototype-toggle:active { transform: translateY(0) scale(.98); }
+    .proto-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--jade);
+      box-shadow: 0 0 0 3px var(--jade-wash);
+    }
+
+    .prototype-card {
+      position: absolute;
+      right: 0;
+      bottom: 45px;
+      width: 268px;
+      padding: 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 17px;
+      background: var(--surface-raised);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      transform-origin: bottom right;
+      animation: panelIn .45s var(--ease-out) both;
+    }
+    .prototype-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .prototype-title {
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .prototype-kicker {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: .20em;
+    }
+    .icon-button.small { width: 27px; height: 27px; border-radius: 7px; }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .control-label {
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .seg {
+      display: flex;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface-soft);
+    }
+    .seg button {
+      flex: 1;
+      height: 27px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 10px;
+      cursor: pointer;
+      transition: background .22s var(--ease-out), color .22s var(--ease-out), box-shadow .22s var(--ease-out);
+    }
+    .seg button:hover { color: var(--ink-soft); }
+    .seg button.is-active {
+      background: var(--surface-raised);
+      color: var(--ink);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .07);
+    }
+    .state-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .state-grid button,
+    .prototype-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--ink-soft);
+      font-size: 10px;
+      cursor: pointer;
+      transition: background .22s var(--ease-out), color .22s var(--ease-out), border-color .22s var(--ease-out);
+    }
+    .state-grid button:hover,
+    .prototype-action:hover { background: var(--surface-soft); }
+    .state-grid button.is-active {
+      border-color: rgba(162, 95, 49, .24);
+      background: var(--copper-soft);
+      color: var(--copper-ink);
+    }
+    .prototype-action { width: 100%; margin-top: 7px; padding: 0 9px; }
+    .prototype-action kbd { margin-left: auto; }
+    .prototype-note {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 8.5px;
+      line-height: 1.65;
+    }
+
+    /* =========================
+       Toast
+       ========================= */
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 64px;
+      z-index: 90;
+      max-width: min(420px, calc(100vw - 40px));
+      padding: 10px 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--ink);
+      color: var(--surface);
+      font-size: 11px;
+      line-height: 1.4;
+      letter-spacing: .015em;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 14px);
+      box-shadow: var(--shadow-soft);
+      transition: opacity .25s var(--ease-out), transform .45s var(--ease-out);
+    }
+    .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+    html[data-theme="dark"] .toast { background: var(--surface-raised); color: var(--ink); }
+
+    /* =========================
+       Motion
+       ========================= */
+
+    @keyframes windowIn {
+      from { opacity: 0; transform: translateY(16px) scale(.992); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes float {
+      0%, 100% { transform: rotate(-2.2deg) translateY(0); }
+      50% { transform: rotate(-1.2deg) translateY(-9px); }
+    }
+    @keyframes blink {
+      0%, 45% { opacity: 1; }
+      46%, 100% { opacity: 0; }
+    }
+    @keyframes bannerIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes paletteIn {
+      from { opacity: 0; transform: translateY(10px) scale(.988); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes panelIn {
+      from { opacity: 0; transform: translateY(8px) scale(.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes flashReload {
+      0% { background: var(--jade-wash); }
+      100% { background: transparent; }
+    }
+
+    /* =========================
+       Responsive
+       ========================= */
+
+    @media (max-width: 1040px) {
+      .welcome-grid { grid-template-columns: 1fr; gap: 44px; }
+      .welcome-art { display: none; }
+      .welcome-view { align-items: flex-start; }
+      .welcome-copy { max-width: 720px; }
+    }
+
+    @media (max-width: 760px) {
+      .stage { padding: 0; }
+      .app-shell {
+        width: 100%;
+        height: 100dvh;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      .app-window { border: 0; border-radius: 0; }
+      .titlebar {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 8px;
+        padding: 0 11px;
+      }
+      .window-controls { display: none; }
+      .brand-badge,
+      .brand-meta,
+      .doc-state { display: none; }
+      .brand-name { font-size: 14px; }
+      .brand-mark { width: 25px; height: 25px; font-size: 13px; }
+      .titlebar-center { justify-content: flex-start; }
+      .doc-name { max-width: 160px; font-size: 11px; }
+      .titlebar-actions { gap: 4px; }
+      .text-button span { display: none; }
+      .save-button span { display: none; }
+      .save-button { padding: 0 9px; }
+      .welcome-view { padding: 42px 24px; }
+      .welcome-title { font-size: 46px; }
+      .lede { font-size: 15.5px; }
+      .open-button { width: 100%; justify-content: space-between; }
+      .shortcut-hint { display: none; }
+      .manuscript { padding: 44px 23px 120px; font-size: 17px; line-height: 1.9; }
+      .manuscript h1 { font-size: 40px; }
+      .manuscript h2 { margin-top: 42px; font-size: 23px; }
+      .manuscript blockquote { font-size: 17px; }
+      .statusbar { padding: 0 11px; gap: 8px; font-size: 9px; }
+      .status-left, .status-right { gap: 8px; }
+      .hide-sm { display: none !important; }
+      .conflict-banner { align-items: flex-start; flex-wrap: wrap; }
+      .conflict-actions { width: 100%; justify-content: flex-end; }
+      .prototype-panel { right: 12px; bottom: 56px; }
+      .prototype-card { width: min(268px, calc(100vw - 24px)); }
+      .palette-layer { padding: 5vh 10px 10px; }
+      .palette { max-height: 88vh; }
+      .toast { bottom: 58px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Inline icon sprite: light, precise lines -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-open" viewBox="0 0 24 24">
+      <path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.1l1.8 2H18a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z"/>
+      <path d="M3.8 9h16.4"/>
+    </symbol>
+    <symbol id="i-save" viewBox="0 0 24 24">
+      <path d="M5 4h11l3 3v13H5z"/>
+      <path d="M8 4v6h8V4"/>
+      <path d="M8 20v-6h8v6"/>
+    </symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>
+    </symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24">
+      <path d="M20 15.2A8.2 8.2 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2z"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24">
+      <path d="M7 17 17 7M9 7h8v8"/>
+    </symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24">
+      <rect x="5" y="10" width="14" height="10" rx="2"/>
+      <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"/>
+    </symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24">
+      <path d="M12 3 21 20H3z"/>
+      <path d="M12 9v5M12 17h.01"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24">
+      <circle cx="10.8" cy="10.8" r="6.3"/>
+      <path d="m16 16 4.2 4.2"/>
+    </symbol>
+    <symbol id="i-file" viewBox="0 0 24 24">
+      <path d="M6 3h8l4 4v14H6z"/>
+      <path d="M14 3v5h4M9 12h6M9 16h4"/>
+    </symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24">
+      <path d="M20 11a8 8 0 1 0-2.1 5.4"/>
+      <path d="M20 5v6h-6"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24">
+      <path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6z"/>
+      <circle cx="12" cy="12" r="2.7"/>
+    </symbol>
+    <symbol id="i-code" viewBox="0 0 24 24">
+      <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>
+    </symbol>
+    <symbol id="i-close" viewBox="0 0 24 24">
+      <path d="m6 6 12 12M18 6 6 18"/>
+    </symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24">
+      <rect x="4" y="4" width="6" height="6" rx="1"/>
+      <rect x="14" y="4" width="6" height="6" rx="1"/>
+      <rect x="4" y="14" width="6" height="6" rx="1"/>
+      <rect x="14" y="14" width="6" height="6" rx="1"/>
+    </symbol>
+    <symbol id="i-command" viewBox="0 0 24 24">
+      <path d="M9 8a3 3 0 1 1 3 3v2a3 3 0 1 1-3 3h6a3 3 0 1 1 3-3V11a3 3 0 1 1-3-3z"/>
+    </symbol>
+  </svg>
+
+  <div class="stage">
+    <div class="app-shell">
+      <main class="app-window app" id="app" data-view="editor" aria-label="青墨 Markdown 编辑器">
+        <header class="titlebar">
+          <div class="titlebar-left">
+            <div class="window-controls" aria-hidden="true">
+              <span class="traffic-light close"></span>
+              <span class="traffic-light minimize"></span>
+              <span class="traffic-light maximize"></span>
+            </div>
+            <button class="brand-button" data-action="welcome" title="返回欢迎页" aria-label="返回欢迎页">
+              <span class="brand-mark">青</span>
+              <span class="brand-text">
+                <span class="brand-name">青墨</span>
+                <span class="brand-meta">QINGMO</span>
+              </span>
+              <span class="brand-badge">LOCAL-FIRST</span>
+            </button>
+          </div>
+
+          <div class="titlebar-center editor-only">
+            <span class="doc-name" id="docName">在湖边.md</span>
+            <span class="dirty-dot" id="dirtyDot" hidden></span>
+            <span class="doc-state" id="titleState">已保存</span>
+          </div>
+          <div class="titlebar-center welcome-only">
+            <span class="doc-state">本地优先 · 无云同步</span>
+          </div>
+
+          <div class="titlebar-actions">
+            <button class="icon-button" data-action="theme" id="themeButton" title="切换主题" aria-label="切换主题">
+              <svg class="icon" aria-hidden="true"><use href="#i-moon"></use></svg>
+            </button>
+            <button class="text-button editor-only" data-action="palette" title="命令面板" aria-label="命令面板">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-command"></use></svg>
+              <span>命令</span>
+              <kbd>⌘K</kbd>
+            </button>
+            <button class="save-button editor-only" data-action="save" id="saveButton" title="保存" aria-label="保存">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-save"></use></svg>
+              <span>保存</span>
+              <kbd>⌘S</kbd>
+            </button>
+          </div>
+        </header>
+
+        <div class="app-body">
+          <!-- Welcome -->
+          <section class="view welcome-view" data-view-panel="welcome" hidden>
+            <div class="welcome-grid">
+              <div class="welcome-copy">
+                <div class="eyebrow">
+                  <span class="seal">青</span>
+                  <span>Qingmo / Local-first Markdown</span>
+                </div>
+                <h1 class="welcome-title">写作，<br><em>回到本地。</em></h1>
+                <p class="lede">一个安静、克制的 Markdown 编辑器。文件留在你的机器上，注意力留在文字里。</p>
+                <div class="welcome-actions">
+                  <button class="open-button" data-action="open">
+                    <span>打开 Markdown 文件</span>
+                    <span class="button-icon">
+                      <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg>
+                    </span>
+                  </button>
+                  <span class="shortcut-hint"><kbd>⌘</kbd><kbd>O</kbd></span>
+                </div>
+                <div class="format-note">
+                  <span class="mini-dot"></span>
+                  <span>支持 .md / .markdown / .mdx（只读）</span>
+                  <span class="note-sep">·</span>
+                  <span>UTF-8 / UTF-16</span>
+                </div>
+                <div class="trust-note">
+                  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"></use></svg>
+                  <span>文件不会上传，也不会离开你的设备。</span>
+                </div>
+              </div>
+
+              <div class="welcome-art" aria-hidden="true">
+                <div class="paper-stack">
+                  <div class="paper-shell">
+                    <div class="paper-sheet">
+                      <div class="sheet-kicker">QINGMO / NOTE 001</div>
+                      <h2 class="sheet-title">把文字<br>留给时间。</h2>
+                      <p class="sheet-text">在一切都想被同步、被分享、被加速的时候，写作仍然可以是一件缓慢而私人的事。</p>
+                      <div class="sheet-rule"></div>
+                      <p class="sheet-quote">“文件先属于你，<br>软件只是入口。”</p>
+                      <span class="sheet-mark">墨</span>
+                    </div>
+                  </div>
+                  <div class="paper-glow"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Editor -->
+          <section class="view editor-view" data-view-panel="editor">
+            <div class="conflict-banner" id="conflictBanner" hidden>
+              <span class="conflict-icon">
+                <svg class="icon icon-sm" aria-hidden="true"><use href="#i-alert"></use></svg>
+              </span>
+              <div class="conflict-copy">
+                <div class="conflict-title">文件已在外部修改</div>
+                <div class="conflict-desc">磁盘上的版本与你打开时不同。自动保存已暂停。</div>
+              </div>
+              <div class="conflict-actions">
+                <button class="conflict-button ghost" data-action="later">稍后</button>
+                <button class="conflict-button" data-action="keep">保留我的版本</button>
+                <button class="conflict-button primary" data-action="reload">重新加载</button>
+              </div>
+            </div>
+
+            <div class="editor-scroll" id="editorScroll">
+              <article class="manuscript" id="manuscript" contenteditable="true" spellcheck="false" aria-label="Markdown 编辑区">
+                <div class="manuscript-meta" contenteditable="false">
+                  <span>LOCAL FILE</span>
+                  <span class="meta-dot"></span>
+                  <span>2026.10.26</span>
+                  <span class="meta-dot"></span>
+                  <span>4 MIN READ</span>
+                </div>
+
+                <h1><span class="md-mark" contenteditable="false" aria-hidden="true"># </span>在湖边</h1>
+                <p class="doc-subtitle">一篇关于清晨、湖面和注意力的随笔</p>
+
+                <p>清晨六点，<strong>湖面像一张还没有写字的纸</strong>。风从芦苇丛里穿过去，水面只动了一下，又很快恢复平静。</p>
+                <p>我带着一台旧电脑坐在岸边，没有网络，也没有通知。屏幕亮起来的时候，我忽然意识到，自己能听见的只剩下键盘的声音。</p>
+
+                <h2><span class="md-mark" contenteditable="false" aria-hidden="true">## </span>一 · 清晨</h2>
+                <p>写作不是把想法倒出来，而是把它放到一个可以反复看见的地方。那些在脑子里显得完整的句子，落在纸上以后，往往还需要再走一段路。</p>
+                <blockquote><span class="md-mark" contenteditable="false" aria-hidden="true">&gt; </span>好的工具应该退到文字后面，而不是站在文字前面。</blockquote>
+                <p>所以我把编辑器做得尽量<em>安静</em>：没有多余的按钮，没有跳动的提醒，也没有一个不断催促你保存的进度条。</p>
+
+                <ul>
+                  <li><span class="md-mark" contenteditable="false" aria-hidden="true">- </span>把文件留在本地；</li>
+                  <li><span class="md-mark" contenteditable="false" aria-hidden="true">- </span>把注意力留给句子；</li>
+                  <li><span class="md-mark" contenteditable="false" aria-hidden="true">- </span>把复杂留给以后。</li>
+                </ul>
+
+                <p class="active-line">我把这种状态叫作 <span class="md-mark" contenteditable="false" aria-hidden="true">`</span><code>local-first</code><span class="md-mark" contenteditable="false" aria-hidden="true">`</span>：文件先属于你，软件只是入口。<span class="caret" contenteditable="false" aria-hidden="true"></span></p>
+
+                <h2><span class="md-mark" contenteditable="false" aria-hidden="true">## </span>二 · 纸与笔</h2>
+                <p>太阳升起来以后，湖面开始发亮。我合上电脑，把没有写完的句子留在屏幕里，也留在自己的机器上。</p>
+                <p>这大概就是“青墨”想做的事：不替你写作，只替你把纸和笔准备好。</p>
+                <p>如果你也喜欢这种节奏，可以读一读 <a href="#" onclick="return false">《Local-first software》</a>。</p>
+
+                <p class="manuscript-end" contenteditable="false" aria-hidden="true">
+                  <span></span><span></span><span></span>
+                </p>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <footer class="statusbar">
+          <div class="status-left">
+            <span class="status-item welcome-only"><span class="live-dot"></span>LOCAL-FIRST</span>
+            <span class="status-item editor-only"><span class="live-dot"></span>本地文件</span>
+            <span class="status-divider editor-only"></span>
+            <span class="status-item editor-only" id="encodingStatus">UTF-8</span>
+            <span class="status-item editor-only" id="eolStatus">LF</span>
+            <span class="status-item editor-only" id="wordCount">1,284 字</span>
+            <span class="status-item editor-only hide-sm" id="modeStatus">Markdown</span>
+            <span class="status-item welcome-only hide-sm">文件不会离开你的设备</span>
+          </div>
+          <div class="status-right">
+            <button class="status-button editor-only" id="lpStatus" data-action="lp" title="切换 Live Preview">
+              <span class="live-dot"></span>
+              <span>Live Preview</span>
+            </button>
+            <button class="status-button editor-only" id="conflictStatus" data-action="conflict" hidden>
+              <span class="live-dot warning-dot"></span>
+              <span>冲突待处理</span>
+            </button>
+            <span class="status-item editor-only" id="saveStatus">已保存 12:04</span>
+            <span class="status-item editor-only hide-sm" id="cursorStatus">Ln 12, Col 8</span>
+            <span class="status-item welcome-only" id="welcomeVersion">P0–P1 / v0.1</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <!-- Prototype control panel: not part of the product UI -->
+  <aside class="prototype-panel" id="prototypePanel" aria-label="原型控制">
+    <div class="prototype-card" id="prototypeCard" hidden>
+      <div class="prototype-head">
+        <div>
+          <div class="prototype-title">原型控制</div>
+          <div class="prototype-kicker">PROTOTYPE</div>
+        </div>
+        <button class="icon-button small" id="prototypeClose" title="关闭" aria-label="关闭原型控制">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"></use></svg>
+        </button>
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">页面</span>
+        <div class="seg" role="group" aria-label="页面">
+          <button data-prototype-view="welcome">欢迎页</button>
+          <button data-prototype-view="editor" class="is-active">编辑器</button>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">主题</span>
+        <div class="seg" role="group" aria-label="主题">
+          <button data-prototype-theme="light" class="is-active">浅色</button>
+          <button data-prototype-theme="dark">深色</button>
+          <button data-prototype-theme="system">系统</button>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">状态</span>
+        <div class="state-grid">
+          <button data-prototype-state="conflict">冲突</button>
+          <button data-prototype-state="readonly">只读</button>
+        </div>
+      </div>
+
+      <button class="prototype-action" data-action="palette">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-command"></use></svg>
+        <span>打开命令面板</span>
+        <kbd>⌘K</kbd>
+      </button>
+      <button class="prototype-action" data-action="reset">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"></use></svg>
+        <span>重置原型</span>
+      </button>
+
+      <div class="prototype-note">快捷键：⌘K 命令 · ⌘S 保存 · Esc 关闭。原型不执行真实文件 IO。</div>
+    </div>
+
+    <button class="prototype-toggle" id="prototypeToggle" aria-expanded="false">
+      <span class="proto-dot"></span>
+      <span>原型</span>
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-grid"></use></svg>
+    </button>
+  </aside>
+
+  <!-- Command palette -->
+  <div class="palette-layer" id="paletteLayer" hidden>
+    <div class="palette" role="dialog" aria-modal="true" aria-label="命令面板">
+      <div class="palette-search">
+        <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+        <input id="paletteInput" type="text" placeholder="输入命令或文件名…" autocomplete="off" spellcheck="false" aria-label="搜索命令">
+        <kbd>ESC</kbd>
+      </div>
+      <div class="palette-list" id="paletteList">
+        <div class="palette-section">
+          <div class="palette-group">文件</div>
+          <button class="palette-item" data-action="open">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-open"></use></svg></span>
+            <span class="item-label">打开 Markdown 文件</span>
+            <kbd>⌘O</kbd>
+          </button>
+          <button class="palette-item" data-action="save">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-save"></use></svg></span>
+            <span class="item-label">保存当前文件</span>
+            <kbd>⌘S</kbd>
+          </button>
+          <button class="palette-item" data-action="reload">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"></use></svg></span>
+            <span class="item-label">从磁盘重新加载</span>
+          </button>
+        </div>
+
+        <div class="palette-section">
+          <div class="palette-group">视图</div>
+          <button class="palette-item" data-action="theme">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-moon"></use></svg></span>
+            <span class="item-label">切换主题</span>
+          </button>
+          <button class="palette-item" data-action="lp">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-eye"></use></svg></span>
+            <span class="item-label">切换 Live Preview</span>
+          </button>
+          <button class="palette-item" data-action="readonly">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"></use></svg></span>
+            <span class="item-label">切换只读模式</span>
+          </button>
+        </div>
+
+        <div class="palette-section">
+          <div class="palette-group">编辑器</div>
+          <button class="palette-item" data-action="find">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-search"></use></svg></span>
+            <span class="item-label">查找</span>
+            <kbd>⌘F</kbd>
+          </button>
+          <button class="palette-item" data-action="goto">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-code"></use></svg></span>
+            <span class="item-label">转到行</span>
+            <kbd>⌘G</kbd>
+          </button>
+          <button class="palette-item" data-action="welcome">
+            <span class="item-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-file"></use></svg></span>
+            <span class="item-label">返回欢迎页</span>
+          </button>
+        </div>
+      </div>
+      <div class="palette-footer">
+        <span>青墨命令面板</span>
+        <span class="keys">
+          <span class="key-group"><kbd>↑</kbd><kbd>↓</kbd><span>选择</span></span>
+          <span class="key-group"><kbd>↵</kbd><span>执行</span></span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const app = document.getElementById("app");
+      const manuscript = document.getElementById("manuscript");
+      const editorScroll = document.getElementById("editorScroll");
+      const dirtyDot = document.getElementById("dirtyDot");
+      const titleState = document.getElementById("titleState");
+      const saveStatus = document.getElementById("saveStatus");
+      const wordCountEl = document.getElementById("wordCount");
+      const modeStatus = document.getElementById("modeStatus");
+      const saveButton = document.getElementById("saveButton");
+      const themeButton = document.getElementById("themeButton");
+      const lpStatus = document.getElementById("lpStatus");
+      const conflictStatus = document.getElementById("conflictStatus");
+      const conflictBanner = document.getElementById("conflictBanner");
+      const paletteLayer = document.getElementById("paletteLayer");
+      const paletteInput = document.getElementById("paletteInput");
+      const paletteList = document.getElementById("paletteList");
+      const toastEl = document.getElementById("toast");
+      const prototypeCard = document.getElementById("prototypeCard");
+      const prototypeToggle = document.getElementById("prototypeToggle");
+      const prototypeClose = document.getElementById("prototypeClose");
+
+      const initialManuscriptHTML = manuscript.innerHTML;
+      const initialHTML = document.documentElement.dataset.theme;
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+      const state = {
+        themeMode: "light",
+        view: "editor",
+        dirty: false,
+        readOnly: false,
+        conflict: false,
+        conflictPending: false,
+        lp: true,
+        lastSavedTime: formatTime(new Date()),
+        saveTimer: null,
+        toastTimer: null,
+        paletteIndex: 0,
+        lastFocus: null
+      };
+
+      function formatTime(date) {
+        return new Intl.DateTimeFormat("zh-CN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }).format(date);
+      }
+
+      function setSaveStatus(text) {
+        saveStatus.textContent = text;
+      }
+
+      function setTitleState(text) {
+        titleState.textContent = text;
+      }
+
+      function syncSaveButton() {
+        saveButton.disabled = state.readOnly || state.conflict;
+        saveButton.title = state.conflict
+          ? "存在冲突，请先处理"
+          : state.readOnly
+            ? "只读文件"
+            : "保存";
+      }
+
+      function updateWordCount() {
+        const clone = manuscript.cloneNode(true);
+        clone.querySelectorAll(".md-mark, .caret, .manuscript-meta, .manuscript-end").forEach((el) => el.remove());
+        const text = clone.textContent || "";
+        const cjk = (text.match(/[\u3400-\u9fff]/g) || []).length;
+        const latin = (text.replace(/[\u3400-\u9fff]/g, " ").match(/[A-Za-z0-9]+/g) || []).length;
+        const total = cjk + latin;
+        wordCountEl.textContent = new Intl.NumberFormat("zh-CN").format(total) + " 字";
+      }
+
+      function setDirty(dirty) {
+        state.dirty = dirty;
+        dirtyDot.hidden = !dirty;
+        if (dirty) {
+          setTitleState(state.conflict ? "冲突" : state.readOnly ? "只读" : "未保存");
+          setSaveStatus(state.readOnly ? "只读文件" : state.conflict ? "自动保存已暂停" : "未保存");
+        } else {
+          setTitleState(state.conflict ? "冲突" : state.readOnly ? "只读" : "已保存");
+          setSaveStatus(state.conflict ? "自动保存已暂停" : state.readOnly ? "只读文件" : "已保存 " + state.lastSavedTime);
+        }
+      }
+
+      function clearSaveTimer() {
+        if (state.saveTimer) {
+          window.clearTimeout(state.saveTimer);
+          state.saveTimer = null;
+        }
+      }
+
+      function scheduleSave() {
+        clearSaveTimer();
+        if (state.readOnly || state.conflict) return;
+        state.saveTimer = window.setTimeout(() => saveNow("auto"), 900);
+      }
+
+      function saveNow(source = "manual") {
+        if (state.readOnly) {
+          toast("只读文件不可保存");
+          return;
+        }
+        if (state.conflict) {
+          showConflictBanner();
+          toast("存在冲突，自动保存已暂停");
+          return;
+        }
+        if (!state.dirty && source === "manual") {
+          toast("已经是最新版本");
+          return;
+        }
+
+        clearSaveTimer();
+        setTitleState("保存中…");
+        setSaveStatus("正在保存…");
+
+        window.setTimeout(() => {
+          state.lastSavedTime = formatTime(new Date());
+          setDirty(false);
+          toast(source === "auto" ? "已自动保存到本地" : "已保存到本地");
+        }, 520);
+      }
+
+      function markDirty() {
+        if (state.readOnly) return;
+        updateWordCount();
+        setDirty(true);
+        if (!state.conflict) scheduleSave();
+      }
+
+      function setView(view) {
+        state.view = view;
+        app.dataset.view = view;
+        document.querySelectorAll("[data-view-panel]").forEach((panel) => {
+          panel.hidden = panel.dataset.viewPanel !== view;
+        });
+        document.querySelectorAll("[data-prototype-view]").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.prototypeView === view);
+        });
+        if (view === "welcome") {
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        }
+        updatePrototypeUI();
+      }
+
+      function openEditor() {
+        setView("editor");
+        setDirty(false);
+        conflictBanner.hidden = true;
+        conflictStatus.hidden = true;
+        state.conflict = false;
+        state.conflictPending = false;
+        app.classList.remove("has-conflict");
+        syncSaveButton();
+        setTitleState(state.readOnly ? "只读" : "已保存");
+        setSaveStatus(state.readOnly ? "只读文件" : "已保存 " + state.lastSavedTime);
+        updateWordCount();
+        toast("已打开示例文件 · 在湖边.md");
+        window.setTimeout(() => {
+          const activeLine = manuscript.querySelector(".active-line");
+          manuscript.focus({ preventScroll: true });
+          if (activeLine) {
+            const range = document.createRange();
+            range.selectNodeContents(activeLine);
+            range.collapse(false);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }, 320);
+        updatePrototypeUI();
+      }
+
+      function applyTheme(mode) {
+        state.themeMode = mode;
+        let resolved = mode;
+        if (mode === "system") {
+          resolved = prefersDark.matches ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        const use = themeButton.querySelector("use");
+        use.setAttribute("href", resolved === "dark" ? "#i-sun" : "#i-moon");
+        themeButton.setAttribute("aria-label", resolved === "dark" ? "切换到浅色主题" : "切换到深色主题");
+        updatePrototypeUI();
+      }
+
+      function toggleTheme() {
+        const current = document.documentElement.dataset.theme;
+        applyTheme(current === "dark" ? "light" : "dark");
+      }
+
+      function setReadOnly(readOnly) {
+        state.readOnly = Boolean(readOnly);
+        manuscript.contentEditable = state.readOnly ? "false" : "true";
+        manuscript.classList.toggle("is-readonly", state.readOnly);
+        app.classList.toggle("is-readonly", state.readOnly);
+        syncSaveButton();
+        modeStatus.textContent = state.readOnly ? "MDX · 只读" : "Markdown";
+        if (state.readOnly) clearSaveTimer();
+        setDirty(state.dirty);
+        if (!state.readOnly && state.dirty && !state.conflict) scheduleSave();
+        toast(state.readOnly ? "已切换为只读" : "已恢复编辑");
+        updatePrototypeUI();
+      }
+
+      function showConflictBanner() {
+        conflictBanner.hidden = false;
+        conflictStatus.hidden = true;
+      }
+
+      function setConflict(conflict) {
+        state.conflict = Boolean(conflict);
+        app.classList.toggle("has-conflict", state.conflict);
+        syncSaveButton();
+        if (state.conflict) {
+          state.conflictPending = false;
+          clearSaveTimer();
+          showConflictBanner();
+          setDirty(state.dirty);
+          toast("检测到外部修改，自动保存已暂停");
+        } else {
+          conflictBanner.hidden = true;
+          conflictStatus.hidden = true;
+          state.conflictPending = false;
+          setDirty(state.dirty);
+          if (state.dirty) scheduleSave();
+          toast("冲突已处理");
+        }
+        updatePrototypeUI();
+      }
+
+      function laterConflict() {
+        conflictBanner.hidden = true;
+        conflictStatus.hidden = false;
+        state.conflictPending = true;
+        toast("冲突待处理；自动保存已暂停");
+        updatePrototypeUI();
+      }
+
+      function reloadFromDisk() {
+        clearSaveTimer();
+        state.conflict = false;
+        state.conflictPending = false;
+        conflictBanner.hidden = true;
+        conflictStatus.hidden = true;
+        app.classList.remove("has-conflict");
+        syncSaveButton();
+        setDirty(false);
+        state.lastSavedTime = formatTime(new Date());
+        setSaveStatus("已重新加载 " + state.lastSavedTime);
+        editorScroll.scrollTo({ top: 0, behavior: "smooth" });
+        manuscript.classList.remove("flash-reload");
+        void manuscript.offsetWidth;
+        manuscript.classList.add("flash-reload");
+        toast("已从磁盘重新加载");
+        updatePrototypeUI();
+      }
+
+      function keepMine() {
+        state.conflict = false;
+        state.conflictPending = false;
+        conflictBanner.hidden = true;
+        conflictStatus.hidden = true;
+        app.classList.remove("has-conflict");
+        syncSaveButton();
+        toast("将按当前内容覆盖磁盘版本");
+        window.setTimeout(() => {
+          state.dirty = true;
+          saveNow("manual");
+        }, 320);
+        updatePrototypeUI();
+      }
+
+      function toggleLP() {
+        state.lp = !state.lp;
+        app.classList.toggle("lp-off", !state.lp);
+        lpStatus.classList.toggle("is-off", !state.lp);
+        lpStatus.querySelector("span:last-child").textContent = state.lp ? "Live Preview" : "Source";
+        toast(state.lp ? "Live Preview 已开启" : "Live Preview 已关闭");
+      }
+
+      function toast(message) {
+        toastEl.textContent = message;
+        toastEl.classList.add("is-visible");
+        if (state.toastTimer) window.clearTimeout(state.toastTimer);
+        state.toastTimer = window.setTimeout(() => {
+          toastEl.classList.remove("is-visible");
+        }, 2200);
+      }
+
+      function openPalette() {
+        state.lastFocus = document.activeElement;
+        paletteLayer.hidden = false;
+        paletteInput.value = "";
+        filterPalette("");
+        window.setTimeout(() => paletteInput.focus(), 40);
+      }
+
+      function closePalette() {
+        if (paletteLayer.hidden) return;
+        paletteLayer.hidden = true;
+        paletteInput.blur();
+        if (state.lastFocus instanceof HTMLElement) state.lastFocus.focus();
+      }
+
+      function visiblePaletteItems() {
+        return Array.from(paletteList.querySelectorAll(".palette-item")).filter((item) => {
+          const section = item.closest(".palette-section");
+          return section && !section.hidden && !item.hidden;
+        });
+      }
+
+      function filterPalette(query) {
+        const q = query.trim().toLowerCase();
+        paletteList.querySelectorAll(".palette-section").forEach((section) => {
+          let hasVisible = false;
+          section.querySelectorAll(".palette-item").forEach((item) => {
+            const text = item.textContent.toLowerCase();
+            const match = !q || text.includes(q);
+            item.hidden = !match;
+            if (match) hasVisible = true;
+          });
+          section.hidden = !hasVisible;
+        });
+
+        paletteList.querySelectorAll(".palette-item.is-selected").forEach((item) => {
+          item.classList.remove("is-selected");
+        });
+        const items = visiblePaletteItems();
+        state.paletteIndex = 0;
+        if (items[0]) items[0].classList.add("is-selected");
+
+        const empty = paletteList.querySelector(".palette-empty");
+        if (empty) empty.remove();
+        if (!items.length) {
+          const el = document.createElement("div");
+          el.className = "palette-empty";
+          el.textContent = "没有匹配的命令";
+          paletteList.appendChild(el);
+        }
+      }
+
+      function movePaletteSelection(direction) {
+        const items = visiblePaletteItems();
+        if (!items.length) return;
+        state.paletteIndex = (state.paletteIndex + direction + items.length) % items.length;
+        items.forEach((item, index) => item.classList.toggle("is-selected", index === state.paletteIndex));
+        items[state.paletteIndex].scrollIntoView({ block: "nearest" });
+      }
+
+      function runSelectedPaletteItem() {
+        const items = visiblePaletteItems();
+        const item = items[state.paletteIndex];
+        if (item) item.click();
+      }
+
+      function updatePrototypeUI() {
+        document.querySelectorAll("[data-prototype-view]").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.prototypeView === state.view);
+        });
+        document.querySelectorAll("[data-prototype-theme]").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.prototypeTheme === state.themeMode);
+        });
+        const conflictButton = document.querySelector('[data-prototype-state="conflict"]');
+        const readonlyButton = document.querySelector('[data-prototype-state="readonly"]');
+        if (conflictButton) conflictButton.classList.toggle("is-active", state.conflict || state.conflictPending);
+        if (readonlyButton) readonlyButton.classList.toggle("is-active", state.readOnly);
+      }
+
+      function resetPrototype() {
+        clearSaveTimer();
+        manuscript.innerHTML = initialManuscriptHTML;
+        manuscript.contentEditable = "true";
+        manuscript.classList.remove("is-readonly", "lp-off", "flash-reload");
+        app.classList.remove("is-readonly", "lp-off", "has-conflict");
+        state.readOnly = false;
+        state.conflict = false;
+        state.conflictPending = false;
+        state.lp = true;
+        state.dirty = false;
+        syncSaveButton();
+        conflictBanner.hidden = true;
+        conflictStatus.hidden = true;
+        lpStatus.classList.remove("is-off");
+        lpStatus.querySelector("span:last-child").textContent = "Live Preview";
+        modeStatus.textContent = "Markdown";
+        state.lastSavedTime = formatTime(new Date());
+        setTitleState("已保存");
+        setSaveStatus("已保存 " + state.lastSavedTime);
+        dirtyDot.hidden = true;
+        setView("editor");
+        applyTheme("light");
+        editorScroll.scrollTo({ top: 0, behavior: "smooth" });
+        updateWordCount();
+        updatePrototypeUI();
+        toast("原型已重置");
+      }
+
+      function handleAction(action) {
+        if (action !== "palette") closePalette();
+        switch (action) {
+          case "open":
+            openEditor();
+            break;
+          case "welcome":
+            setView("welcome");
+            break;
+          case "save":
+            saveNow("manual");
+            break;
+          case "palette":
+            if (paletteLayer.hidden) openPalette();
+            else closePalette();
+            break;
+          case "theme":
+            toggleTheme();
+            break;
+          case "lp":
+            toggleLP();
+            break;
+          case "readonly":
+            setReadOnly(!state.readOnly);
+            break;
+          case "reload":
+            reloadFromDisk();
+            break;
+          case "keep":
+            keepMine();
+            break;
+          case "later":
+            laterConflict();
+            break;
+          case "conflict":
+            showConflictBanner();
+            break;
+          case "find":
+            toast("查找面板将在编辑器中打开（原型占位）");
+            break;
+          case "goto":
+            toast("转到行将在编辑器中打开（原型占位）");
+            break;
+          case "reset":
+            resetPrototype();
+            break;
+          default:
+            break;
+        }
+      }
+
+      document.addEventListener("click", (event) => {
+        const actionTarget = event.target.closest("[data-action]");
+        if (actionTarget) {
+          event.preventDefault();
+          handleAction(actionTarget.dataset.action);
+        }
+      });
+
+      document.querySelectorAll("[data-prototype-view]").forEach((button) => {
+        button.addEventListener("click", () => setView(button.dataset.prototypeView));
+      });
+
+      document.querySelectorAll("[data-prototype-theme]").forEach((button) => {
+        button.addEventListener("click", () => applyTheme(button.dataset.prototypeTheme));
+      });
+
+      document.querySelectorAll("[data-prototype-state]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (button.dataset.prototypeState === "conflict") {
+            setConflict(!(state.conflict || state.conflictPending));
+          }
+          if (button.dataset.prototypeState === "readonly") {
+            setReadOnly(!state.readOnly);
+          }
+        });
+      });
+
+      prototypeToggle.addEventListener("click", () => {
+        const willOpen = prototypeCard.hidden;
+        prototypeCard.hidden = !willOpen;
+        prototypeToggle.setAttribute("aria-expanded", String(willOpen));
+      });
+      prototypeClose.addEventListener("click", () => {
+        prototypeCard.hidden = true;
+        prototypeToggle.setAttribute("aria-expanded", "false");
+      });
+
+      manuscript.addEventListener("input", markDirty);
+      manuscript.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") manuscript.blur();
+      });
+
+      paletteInput.addEventListener("input", () => filterPalette(paletteInput.value));
+      paletteInput.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          movePaletteSelection(1);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          movePaletteSelection(-1);
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          runSelectedPaletteItem();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closePalette();
+        }
+      });
+
+      paletteLayer.addEventListener("click", (event) => {
+        if (event.target === paletteLayer) closePalette();
+      });
+
+      window.addEventListener("keydown", (event) => {
+        const mod = event.metaKey || event.ctrlKey;
+        if (mod && event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          if (paletteLayer.hidden) openPalette();
+          else closePalette();
+          return;
+        }
+        if (mod && event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          saveNow("manual");
+          return;
+        }
+        if (mod && event.key.toLowerCase() === "o") {
+          event.preventDefault();
+          openEditor();
+          return;
+        }
+        if (event.key === "Escape") {
+          if (!paletteLayer.hidden) closePalette();
+          else if (!prototypeCard.hidden) {
+            prototypeCard.hidden = true;
+            prototypeToggle.setAttribute("aria-expanded", "false");
+          }
+        }
+      });
+
+      prefersDark.addEventListener("change", () => {
+        if (state.themeMode === "system") applyTheme("system");
+      });
+
+      // Initial state: clean editor with the sample document.
+      setView("editor");
+      applyTheme(initialHTML || "light");
+      syncSaveButton();
+      setDirty(false);
+      updateWordCount();
+    })();
+  </script>
+</body>
+</html>
