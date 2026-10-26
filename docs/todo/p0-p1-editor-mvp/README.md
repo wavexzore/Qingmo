@@ -20,15 +20,15 @@ schema_version: "1.0"
 feature_id: "p0-p1-editor-mvp"
 feature_name: "P0–P1 编辑器 MVP 骨架"
 status: "in_progress"             # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-018"             # 当前应执行的任务；无则写 none
-last_completed_task: "T-017"      # 最近完成任务；无则写 none
-next_action: "T-017 已完成（2026-10-26 18:40）；执行 T-018：浏览器 E2E + Rust 集成"
-verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-017 全部 PASS；P1 剩余 E2E/CI/收尾未完成）
+current_task: "T-019"             # 当前应执行的任务；无则写 none
+last_completed_task: "T-018"      # 最近完成任务；无则写 none
+next_action: "T-018 已完成（2026-10-26 19:05）；执行 T-019：三平台 CI 质量门"
+verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-018 全部 PASS；P1 剩余 CI/收尾未完成）
 research_status: "pass"           # not_run | pass | partial | skipped
-call_chain_status: "partial"      # not_run | pass | partial | skipped（打开/保存 UI/关闭/LP/大文件/主题/面板/bench 链已索引；仅 Tauri invoke、hook 内部闭包、registry 字符串命令、Rust example 跨 crate 调用与 CM6 facet 内部调度不展开）
-code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-017 后已重新校准）
-last_verification_command: "pnpm bench && pnpm test && pnpm build && pnpm depcruise"
-last_updated: "2026-10-26T18:40:00+08:00"
+call_chain_status: "partial"      # not_run | pass | partial | skipped（打开/保存 UI/关闭/LP/大文件/主题/面板/bench/E2E 链已索引；仅 Tauri invoke、hook 内部闭包、registry 字符串命令、Playwright 运行时、Rust example 跨 crate 调用与 CM6 facet 内部调度不展开）
+code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-018 后已重新校准）
+last_verification_command: "pnpm test:e2e && cargo test --all-targets && pnpm test && pnpm build && pnpm depcruise"
+last_updated: "2026-10-26T19:05:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -81,7 +81,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 
 ## 1. 一句话结论
 
-Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存；`T-007` 建立可测试的 IpcPort/PlatformPort 与浏览器 fake adapter；`T-008` 打通欢迎页→原生 dialog→CM6 `EditorState` 的打开流程；`T-009` 建立 Markdown/语言/Compartment 的唯一编辑组合；`T-010` 接入唯一 `EditorView` 与节流状态栏；`T-011` 建立 SaveCoordinator（去抖/单飞/flush/冲突暂停/退避）并接入每文档实例；`T-012` 接入 `file.save`、冲突横幅/二次确认、状态栏重试、switch/blur/close flush 与 Rust CloseGuard（含 macOS Cmd+Q）；`T-013` 建立视口级 Live Preview（标题/强调/行内代码/链接/引用/列表/代码块）、所有选区行源码显隐、IME map 与 2M/超长行/8ms 预算；`T-014` 对 2,000,000 UTF-16 单元以上文档默认关闭 LP，增加 `largeFile`/`livePreview` 会话状态、状态栏“大文档 · 预览关闭”与 `view.toggleLivePreview`，真实验证 5MB/10MiB 打开、10MiB-1 编辑保存到精确 10MiB、10MiB+1 写入拒绝；`T-016` 建立 `uiStore` 主题 slice、`qingmo.ui.theme` 持久化、根 `data-theme`、system `matchMedia`、light/dark 缓存主题扩展与 `view.toggleTheme`，验证切换不重建 view、撤销保留，浏览器验证 light/dark、刷新持久化与 system 跟随；`T-015` 建立 registry 驱动的命令面板与唯一全局 `keydown` 分发，`Mod+K` 打开、四个命令展示/执行、过滤/回车/Esc/焦点恢复，真实验证 4 命令、保存、主题、原生 dialog、预览开关与撤销保留。`T-017` 建立确定性 10KiB/1MiB/10MiB fixtures、Node/jsdom 与真实 Rust `AtomicWriter` 基准、`pnpm bench` 编排和真实 Tauri AX/RSS 记录，实测 Node open p50 1.103/2.812/25.9ms、Rust save p50 4.9/5.978/20.31ms、Tauri open 上界 328.3/304.7/853.2ms、RSS 171.1/175.4/250.1MB，10MiB LP 关闭。当前 `17/20` 任务完成，P1 功能与性能基线已形成；下一步 `T-018` 浏览器 E2E。
+Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存；`T-007` 建立可测试的 IpcPort/PlatformPort 与浏览器 fake adapter；`T-008` 打通欢迎页→原生 dialog→CM6 `EditorState` 的打开流程；`T-009` 建立 Markdown/语言/Compartment 的唯一编辑组合；`T-010` 接入唯一 `EditorView` 与节流状态栏；`T-011` 建立 SaveCoordinator（去抖/单飞/flush/冲突暂停/退避）并接入每文档实例；`T-012` 接入 `file.save`、冲突横幅/二次确认、状态栏重试、switch/blur/close flush 与 Rust CloseGuard（含 macOS Cmd+Q）；`T-013` 建立视口级 Live Preview（标题/强调/行内代码/链接/引用/列表/代码块）、所有选区行源码显隐、IME map 与 2M/超长行/8ms 预算；`T-014` 对 2,000,000 UTF-16 单元以上文档默认关闭 LP，增加 `largeFile`/`livePreview` 会话状态、状态栏“大文档 · 预览关闭”与 `view.toggleLivePreview`，真实验证 5MB/10MiB 打开、10MiB-1 编辑保存到精确 10MiB、10MiB+1 写入拒绝；`T-016` 建立 `uiStore` 主题 slice、`qingmo.ui.theme` 持久化、根 `data-theme`、system `matchMedia`、light/dark 缓存主题扩展与 `view.toggleTheme`，验证切换不重建 view、撤销保留，浏览器验证 light/dark、刷新持久化与 system 跟随；`T-015` 建立 registry 驱动的命令面板与唯一全局 `keydown` 分发，`Mod+K` 打开、四个命令展示/执行、过滤/回车/Esc/焦点恢复，真实验证 4 命令、保存、主题、原生 dialog、预览开关与撤销保留。`T-017` 建立确定性 10KiB/1MiB/10MiB fixtures、Node/jsdom 与真实 Rust `AtomicWriter` 基准、`pnpm bench` 编排和真实 Tauri AX/RSS 记录，实测 Node open p50 1.103/2.812/25.9ms、Rust save p50 4.9/5.978/20.31ms、Tauri open 上界 328.3/304.7/853.2ms、RSS 171.1/175.4/250.1MB，10MiB LP 关闭。`T-018` 建立 Playwright 4 spec/13 条 E2E、seeded FakeIpc/FakePlatform bridge、Rust 跨格式 round-trip/10MiB 与命令级冲突集成，并完成真实 Tauri 主题、macOS 拼音“你好”、Cmd+S、冲突横幅与关闭守卫手动冒烟；生产构建已确认排除 e2e bridge。当前 `18/20` 任务完成，P1 功能、性能基线与 E2E 已形成；下一步 `T-019` 三平台 CI 质量门。
 
 ---
 
@@ -97,7 +97,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 | R-004 | 最小 Live Preview（标题/强调/行内代码/链接/引用/列表） | 装饰快照 + 1MB 手动 | PASS（C-088/C-090/C-091） |
 | R-005 | 唯一原子保存通道（手动/自动共用） | Rust 单测 + 断电模拟 | PASS（C-045~C-050/C-076/C-081） |
 | R-006 | 自动保存：800ms 去抖、5s 上限、单飞、flush 循环、退避 | Vitest fake timers | PASS（C-076/C-078/C-079） |
-| R-007 | 冲突检测：外部修改不静默覆盖；精确 hash 覆盖 | Rust 集成 + E2E | PASS（C-046/C-076/C-083）；E2E 待 T-018 |
+| R-007 | 冲突检测：外部修改不静默覆盖；精确 hash 覆盖 | Rust 集成 + E2E | PASS（C-046/C-076/C-083/C-109/C-110） |
 | R-008 | 大文件退化：10MiB 可编辑；>2M units 关 LP；>10MiB 拒绝 | C-093/C-095/C-105/C-107 | PASS |
 | R-009 | 命令注册表 + 命令面板 + 快捷键单一来源 | C-101 33 条定向测试 + C-103 真实 Tauri | PASS |
 | R-010 | light/dark/system 主题不重建 EditorView | C-097/C-099 组件/撤销/浏览器 | PASS |
@@ -132,7 +132,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 |---|---|---|---|
 | 官方文档调研 | pass | `01-实施计划.md §2.4.1`；`02 E-001~E-003` | Tauri 2 capabilities/CSP/commands/core 权限/window、CM6 decoration/ref/composition、atomic-write-file、ts-rs、encoding_rs UTF-16 限制已核对；tauri-specta v2 仍为 RC，P1 拒绝 |
 | GitHub 开源实现调研 | pass | `01-实施计划.md §2.4.2`；`02 E-004~E-005` | MarkEdit 的 ViewPlugin+Lezer、NoteGen/MarkFlowy 的自定义命令/保存、create-tauri-app 的 Vite 约定已对比；均不复制代码 |
-| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012~E-023/C-051/C-057/C-066/C-070/C-075/C-080/C-087/C-092/C-096/C-100/C-104/C-108`；`05` | Qingmo 已索引 2,381 nodes/6,037 edges（`8b2f905`）；骨架、读写、`invokeCommand -> normalizeError`、`WorkspaceLayout -> useCloseGuard/CommandRegistry.register/useCommandKeybindings/CommandPalette`、`EditorSession -> createEditorState -> livePreview`、`EditorSession.toggleLivePreview -> publish`、`WorkspaceLayout -> useThemeService -> applyTheme -> themeExtension`、`useThemeCommand -> registerThemeCommand`、`CommandPalette -> formatKeybinding/execute`、`DocumentEditor -> ConflictBanner`、`run -> request_close`、`DocumentSessionProvider.setSession -> SaveCoordinator`、`buildLivePreviewDecorations -> collectDecorationSpecs`、`run.mjs -> generateFixtures`、`measureOpen -> EditorSession`、`measureSave -> FakeIpc/EditorSession` 与双 adapter 选择已验证；仅动态 invoke、hook 内部闭包、registry 字符串命令、Rust example 跨 crate 调用与 CM6 facet 内部调度不展开；参考项目 `call -> rawInvoke` 仅作方法参考 |
+| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012~E-024/C-051/C-057/C-066/C-070/C-075/C-080/C-087/C-092/C-096/C-100/C-104/C-108/C-114`；`05` | Qingmo 已索引 2,517 nodes/6,318 edges（`86271ff`）；骨架、读写、`invokeCommand -> normalizeError`、`WorkspaceLayout -> useCloseGuard/CommandRegistry.register/useCommandKeybindings/CommandPalette`、`EditorSession -> createEditorState -> livePreview`、`EditorSession.toggleLivePreview -> publish`、`WorkspaceLayout -> useThemeService -> applyTheme -> themeExtension`、`useThemeCommand -> registerThemeCommand`、`CommandPalette -> formatKeybinding/execute`、`DocumentEditor -> ConflictBanner`、`run -> request_close`、`DocumentSessionProvider.setSession -> SaveCoordinator`、`buildLivePreviewDecorations -> collectDecorationSpecs`、`run.mjs -> generateFixtures`、`measureOpen -> EditorSession`、`measureSave -> FakeIpc/EditorSession`、`openApp/openSeededFile -> spec`、`mock_webview -> conflict_integration` 与双 adapter 选择已验证；仅动态 invoke、hook 内部闭包、registry 字符串命令、Playwright 运行时、Rust example 跨 crate 调用与 CM6 facet 内部调度不展开；参考项目 `call -> rawInvoke` 仅作方法参考 |
 | 当前代码实时校准 | pass | `02-实施状态与验证.md §8`；`02 E-008/C-021` | T-001 前确认无代码、非 Git；T-001 后已有 `apps/desktop`、`packages/*`、`src-tauri` 骨架与双基线 tag |
 
 ### 3.2 目标调用链
@@ -187,7 +187,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 | T-015 | 命令面板 + 快捷键（不新增命令） | done | T-012/T-013/T-016 | C-101~C-104 | T-017 |
 | T-016 | 主题：CSS 变量 + Compartment + uiStore + theme 命令 | done | T-004/T-009/T-010 | C-097~C-100 | T-015 |
 | T-017 | 性能基准（真实 view/open/decorate/key/save/RSS） | done | T-014 | C-105~C-108 | T-018 |
-| T-018 | 浏览器 E2E（fake dialog）+ Rust 集成 | todo | T-012/T-015/T-016 | none | 下一步 |
+| T-018 | 浏览器 E2E（fake dialog）+ Rust 集成 | done | T-012/T-015/T-016 | C-109~C-114 | T-019 |
 | T-019 | CI 质量门（ubuntu/macOS/Windows） | todo | T-001~T-018 | none | T-018 后 |
 | T-020 | ADR / 蓝图偏差 / 交接 | todo | T-019 | none | 最后 |
 
@@ -278,8 +278,8 @@ P1 只有 1 个自定义事件；关闭不再使用前端 `onCloseRequested` 作
 | AC-009 | 契约不漂移 | T-003/T-019 | C-028/C-029/C-030：命令/权限/DTO/生成文件已覆盖；六方完整版待 T-019 | partial |
 | AC-010 | 主题切换不重建 view | T-016 | C-097：dark facet/view 身份/undo；C-099：light/dark 背景、刷新持久化、system 跟随；C-103：真实 Tauri Mod+Shift+L 后正文/光标/撤销保留 | PASS |
 | AC-011 | i18n 无硬编码 | T-004 | C-032/C-033：key 对齐 + 13 个错误码文案 + 无 raw key | PASS |
-| AC-012 | 浏览器 E2E 可跑（fake dialog） | T-007/T-018 | C-052：FakeIpc/FakePlatform 已可驱动打开/保存/冲突/关闭；Playwright 待 T-018 | partial |
-| AC-013 | 命令注册表/面板/快捷键 | T-004/T-015 | C-032：Registry 核心 7 条测试；C-093/C-097：四个命令唯一注册；C-101：33 条面板/快捷键测试；C-103：真实 Tauri 四命令/快捷键/焦点/撤销 | PASS |
+| AC-012 | 浏览器 E2E 可跑（fake dialog） | T-007/T-018 | C-109：4 spec/13 条（打开/编辑/保存/冲突/主题/面板/关闭/IME）；C-113 生产排除 bridge | PASS |
+| AC-013 | 命令注册表/面板/快捷键 | T-004/T-015/T-018 | C-032/C-093/C-097/C-101/C-103；C-109 浏览器面板保存、主题切换保留 undo、焦点恢复 | PASS |
 | AC-014 | 性能基线 | T-017 | C-105 自动基准（3 尺寸 × 6 指标）+ C-107 真实 Tauri open/save/RSS；10MiB decorate skipped 如实记录 | PASS |
 | AC-015 | 关闭守卫（红叉/Cmd+Q） | T-012 | C-081/C-084~C-086：冲突确认/取消/仍要关闭、脏编辑红叉与 Cmd+Q 先 flush 后退出 | PASS |
 
@@ -326,7 +326,7 @@ pnpm bench
 | C-015 | `cargo test --manifest-path src-tauri/Cargo.toml --test document_open` | T-005 | PASS |
 | C-016 | `cargo test --manifest-path src-tauri/Cargo.toml --test atomic_writer` / `--test conflict` | T-006 | PASS |
 | C-017 | `pnpm test` | 每个前端任务后（T-001 已运行） | PASS |
-| C-018 | `pnpm test:e2e` | T-018/T-019 | SKIPPED |
+| C-018 | `pnpm test:e2e` | T-018/T-019 | PASS（C-109：13/13） |
 | C-019 | `pnpm bench` | T-017 | PASS（C-105） |
 | C-020 | `pnpm build` | T-001（已运行） | PASS |
 | C-021 | `pnpm tauri dev` | T-001/T-002（T-001 已运行） | PASS（手动） |
@@ -354,6 +354,7 @@ pnpm bench
 | C-100 | `gitnexus analyze --skip-agents-md` | T-016（已运行） | 2,052 nodes / 5,281 edges；`WorkspaceLayout -> useThemeService -> applyTheme -> themeExtension`、`useThemeCommand -> registerThemeCommand` 入图 |
 | C-101~C-104 | 面板/快捷键测试 + 全量门禁 + 真实 Tauri + GitNexus | T-015（已运行） | PASS：33 定向测试；168 TS/54 Rust；109 modules/287 deps；4 命令/Mod+K/Mod+S/Mod+Shift+L/Mod+O/焦点/撤销；2,108 nodes/5,426 edges |
 | C-105~C-108 | 自动基准 + 全量门禁 + 真实 Tauri open/save/RSS + GitNexus | T-017（已运行） | PASS：3 尺寸 × 6 指标；168 TS/54 Rust；109 modules/287 deps；Tauri open 328.3/304.7/853.2ms、RSS 171.1/175.4/250.1MB；2,381 nodes/6,037 edges |
+| C-109~C-114 | Playwright E2E + Rust 集成 + 全量门禁 + 真实 IME/关闭冒烟 + tree-shake + GitNexus | T-018（已运行） | PASS：E2E 13/13；Rust 59/59；168 TS；110 modules/293 deps；生产无 e2e bridge；2,517 nodes/6,318 edges |
 | C-058~C-066 | Vitest + 全量门禁 + 原生 dialog 打开 README/small/large/MDX + Cancel | T-008（已运行） | PASS：66 测试；72 modules / 158 deps；打开/取消/只读均验证 |
 | C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | SKIPPED |
 
@@ -418,4 +419,5 @@ pnpm bench
 | 2026-10-26T17:30:00+08:00 | T-014 完成：2M 单元以上 LP 降级、largeFile/livePreview、状态栏“大文档 · 预览关闭”、view.toggleLivePreview；136 TS/54 Rust；真实 5MB/10MiB 打开、10MiB-1 保存到精确 10MiB、10MiB+1 拒绝 | OpenCode / DeepSeek V4.1 | `02 §3/C-093~C-096`；`01 §6` |
 | 2026-10-26T17:40:00+08:00 | T-016 完成：uiStore 主题 slice、qingmo.ui.theme、根 data-theme、system matchMedia、light/dark 缓存主题、view.toggleTheme；144 TS/54 Rust；浏览器 light/dark、刷新持久化、system 跟随 | OpenCode / DeepSeek V4.1 | `02 §3/C-097~C-100`；`01 §6` |
 | 2026-10-26T18:40:00+08:00 | T-017 完成：确定性 10KiB/1MiB/10MiB fixtures、open/decorate/key/save 自动基准、真实 Rust AtomicWriter、pnpm bench 编排、Tauri AX/RSS；Tauri open 328.3/304.7/853.2ms、RSS 171.1/175.4/250.1MB | OpenCode / DeepSeek V4.1 | `02 §3/C-105~C-108`；`01 §6` |
+| 2026-10-26T19:05:00+08:00 | T-018 完成：Playwright 4 spec/13 条、e2e bridge、Rust 跨格式 round-trip 与命令级冲突集成、真实 IME/关闭守卫冒烟；生产排除 bridge | OpenCode / DeepSeek V4.1 | `02 §3/C-109~C-114`；`01 §6` |
 | 2026-10-26T17:56:00+08:00 | T-015 完成：registry 命令面板、唯一全局 keydown、Mod+K/Mod+O/Mod+S/Mod+Shift+L、过滤/回车/Esc/焦点恢复；168 TS/54 Rust；真实 4 命令、保存、主题、dialog、预览与撤销 | OpenCode / DeepSeek V4.1 | `02 §3/C-101~C-104`；`01 §6` |
