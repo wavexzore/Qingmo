@@ -115,7 +115,7 @@ fn file_too_large() -> AppError {
     )
 }
 
-fn mtime_ms(metadata: &std::fs::Metadata) -> i64 {
+pub(crate) fn mtime_ms(metadata: &std::fs::Metadata) -> i64 {
     metadata
         .modified()
         .ok()

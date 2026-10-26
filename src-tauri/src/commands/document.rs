@@ -2,7 +2,8 @@ use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{AppError, AppErrorCode};
-use crate::ipc::dto::FilePayload;
+use crate::ipc::dto::{FilePayload, SaveResult};
+use crate::services::AtomicWriter;
 use crate::state::DocumentRegistry;
 
 #[tauri::command]
@@ -56,4 +57,25 @@ pub async fn document_reload(
                 format!("document reload task failed: {error}"),
             )
         })?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn document_write_atomic(
+    doc_token: String,
+    text: String,
+    expected_current_hash: Option<String>,
+    registry: State<'_, DocumentRegistry>,
+) -> Result<SaveResult, AppError> {
+    let registry = registry.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let record = registry.get(&doc_token)?;
+        AtomicWriter::write(&record, &text, expected_current_hash.as_deref())
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(
+            AppErrorCode::Io,
+            format!("document write task failed: {error}"),
+        )
+    })?
 }
