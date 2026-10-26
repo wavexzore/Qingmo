@@ -14,6 +14,14 @@ export { basicExtensions, createBasicExtensions } from "./extensions/basic";
 export { codeLanguages, languageForFilename } from "./extensions/languages";
 export { markdownExtensions, qingmoHighlightStyle } from "./extensions/markdown";
 export { qingmoEditorTheme } from "./extensions/theme";
+export { LP_MAX_UNITS, MAX_LINE_UNITS, SYNTAX_TREE_BUDGET_MS } from "./limits";
+export { buildLivePreviewDecorations, livePreview, livePreviewPlugin } from "./live-preview/plugin";
+export {
+  collectDecorationSpecs,
+  type DecorationSpec,
+  type VisibleRange,
+} from "./live-preview/specs";
+export { livePreviewTheme } from "./live-preview/theme";
 
 /**
  * Editor presentation modes. The CodeMirror mode compartment reconfigures

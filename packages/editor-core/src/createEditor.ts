@@ -4,12 +4,14 @@ import { EditorView } from "@codemirror/view";
 import { basicExtensions } from "./extensions/basic";
 import { markdownExtensions } from "./extensions/markdown";
 import { qingmoEditorTheme } from "./extensions/theme";
+import { livePreview } from "./live-preview/plugin";
 
 /**
  * Reconfiguration seams used by later tasks:
  * - theme: T-016 switches tokens without rebuilding the view.
  * - readOnly: future reload/conflict flows can re-lock a live document.
- * - mode: T-013 swaps Source/Live Preview without recreating EditorState.
+ * - mode: T-014 swaps Source/Live Preview without recreating EditorState;
+ *   T-013 installs Live Preview as the default mode.
  */
 export const themeCompartment = new Compartment();
 export const readOnlyCompartment = new Compartment();
@@ -62,7 +64,7 @@ export function createEditorState({
       ...markdownExtensions,
       themeCompartment.of(qingmoEditorTheme),
       readOnlyCompartment.of(readOnlyExtensions(readOnly)),
-      modeCompartment.of([]),
+      modeCompartment.of(livePreview()),
       ...extraExtensions,
     ],
   });
