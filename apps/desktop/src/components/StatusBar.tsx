@@ -2,7 +2,9 @@ import { useTranslation } from "react-i18next";
 
 import { cx } from "@qingmo/ui";
 
-export type SaveState = "clean" | "dirty" | "saving" | "saved" | "error" | "conflict" | "readonly";
+import type { SaveState } from "../lib/save-state";
+
+export type { SaveState } from "../lib/save-state";
 export type StatusBarMode = "source" | "livePreview";
 
 export interface StatusBarSnapshot {

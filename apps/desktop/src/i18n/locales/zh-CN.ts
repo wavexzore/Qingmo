@@ -6,7 +6,7 @@ export const common = {
   tagline: "像纸一样安静，像代码编辑器一样快。",
   actions: {
     openFile: "打开 Markdown 文件",
-    openEditor: "查看编辑器空状态",
+    openEditor: "查看编辑器",
     backToWelcome: "返回欢迎页",
     retry: "重试",
   },
@@ -59,6 +59,18 @@ export const editor = {
     hint: "打开后会显示文件名、编码、换行符与保存状态。",
     openButton: "打开文件",
   },
+  document: {
+    title: "文档已载入",
+    description: "正文已进入 CodeMirror EditorState；编辑视图将在后续任务接入。",
+    path: "路径",
+    readOnly: "只读",
+    readOnlyMdx: "MDX 暂为只读",
+    readOnlyMixedEol: "混合换行暂为只读",
+    format: "格式",
+    units: "UTF-16 单元",
+    hash: "基线哈希",
+    viewPending: "当前仅创建 EditorState，不创建 EditorView；React 快照不含正文。",
+  },
   status: {
     position: "第 {{line}} 行，第 {{column}} 列",
     size: "{{value}} 字节",
@@ -81,4 +93,13 @@ export const errors = {
   CANCELLED: "操作已取消。",
 } as const satisfies Record<AppErrorCode, string>;
 
-export const zhCN = { common, editor, errors };
+export const commandLabels = {
+  file: {
+    open: "打开文件",
+  },
+  category: {
+    file: "文件",
+  },
+} as const;
+
+export const zhCN = { common, editor, errors, commands: commandLabels };

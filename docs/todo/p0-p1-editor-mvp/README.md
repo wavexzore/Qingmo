@@ -20,15 +20,15 @@ schema_version: "1.0"
 feature_id: "p0-p1-editor-mvp"
 feature_name: "P0–P1 编辑器 MVP 骨架"
 status: "in_progress"             # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-008"             # 当前应执行的任务；无则写 none
-last_completed_task: "T-007"      # 最近完成任务；无则写 none
-next_action: "T-007 已完成（2026-10-26 14:35）；执行 T-008：EditorSession/打开流程/CM6 EditorState"
-verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-007 全部 PASS；P1 闭环未完成）
+current_task: "T-009"             # 当前应执行的任务；无则写 none
+last_completed_task: "T-008"      # 最近完成任务；无则写 none
+next_action: "T-008 已完成（2026-10-26 15:08）；执行 T-009：CM6 扩展组合"
+verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-008 全部 PASS；P1 闭环未完成）
 research_status: "pass"           # not_run | pass | partial | skipped
 call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架/读写直接边已索引；前端 IPC 调用者与关闭链待 T-012 后重建）
-code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-007 后已重新校准）
-last_verification_command: "pnpm depcruise"
-last_updated: "2026-10-26T14:35:00+08:00"
+code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-008 后已重新校准）
+last_verification_command: "pnpm test && pnpm depcruise"
+last_updated: "2026-10-26T15:10:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -81,7 +81,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 
 ## 1. 一句话结论
 
-Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存；`T-007` 建立可测试的 IpcPort/PlatformPort 与浏览器 fake adapter。当前 `7/20` 任务完成，编辑器 UI、保存协调器与关闭守卫尚未接入；下一步 `T-008` EditorSession。
+Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存；`T-007` 建立可测试的 IpcPort/PlatformPort 与浏览器 fake adapter；`T-008` 打通欢迎页→原生 dialog→CM6 `EditorState` 的打开流程。当前 `8/20` 任务完成，EditorView、保存协调器与关闭守卫尚未接入；下一步 `T-009` CM6 扩展组合。
 
 ---
 
@@ -177,8 +177,8 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 | T-005 | Rust dialog + DocumentRegistry + `document_open/reload` + 编码 | done | T-003 | C-037~C-044 | T-006 |
 | T-006 | 原子写 + 冲突 + `document_write_atomic` | done | T-005 | C-045~C-050 | T-007 |
 | T-007 | IpcPort/PlatformPort + 错误归一化 + fake adapter | done | T-003/T-005/T-006 | C-052~C-057 | T-008 |
-| T-008 | 文档会话 + 打开流程 + CM6 EditorState | todo | T-004/T-007 | none | 下一步 |
-| T-009 | CM6 扩展组合（Markdown/语言/readOnly facet） | todo | T-008 | none | T-008 后 |
+| T-008 | 文档会话 + 打开流程 + CM6 EditorState | done | T-004/T-007 | C-058~C-065 | T-009 |
+| T-009 | CM6 扩展组合（Markdown/语言/readOnly facet） | todo | T-008 | none | 下一步 |
 | T-010 | React 绑定 + 唯一 EditorView + session store | todo | T-009 | none | T-009 后 |
 | T-011 | `SaveCoordinator` + flush 循环 + 错误分类 | todo | T-010 | none | T-010 后 |
 | T-012 | 保存 UI + 冲突横幅 + Rust CloseGuard | todo | T-011/T-004/T-007 | none | T-011 后 |
@@ -268,7 +268,7 @@ P1 只有 1 个自定义事件；关闭不再使用前端 `onCloseRequested` 作
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
 | AC-001 | 启动与空窗口 | T-001/T-002 | C-021/C-024/C-027：dev 与生产二进制均渲染；控制台 0 error | PASS |
-| AC-002 | 打开/编辑/保存闭环 | T-008~T-012 | 打开已验证（C-037/C-041/C-042）；编辑/保存待 T-008~T-012 | partial |
+| AC-002 | 打开/编辑/保存闭环 | T-008~T-012 | 打开闭环已由 C-061~C-065 在真实 Tauri 验证；编辑/保存待 T-010~T-012 | partial |
 | AC-003 | 原子写无半写 | T-006 | C-045/C-047：temp+fsync+rename；EACCES 保留旧文件；SIGKILL 后目标不变；ENOSPC 未在本机模拟 | partial |
 | AC-004 | 自动保存状态机 | T-011 | Vitest fake timers | todo |
 | AC-005 | 冲突不静默覆盖（含二次冲突） | T-006/T-012 | C-046：always-hash、CONFLICT details、expectedCurrentHash、二次冲突、只读/缺失 | PASS |
@@ -337,6 +337,7 @@ pnpm bench
 | C-052 | `pnpm vitest run apps/desktop/src/lib` | T-007（已运行） | PASS：28 条端口/fake 测试 |
 | C-053 | `pnpm depcruise` | T-007（已运行） | PASS：Tauri import 仅两个 adapter |
 | C-057 | `gitnexus analyze --skip-agents-md` | T-007（已运行） | 1,229 nodes / 2,462 edges；`invokeCommand` 4 incoming methods |
+| C-058~C-065 | Vitest + 全量门禁 + 原生 dialog 打开 README/small/large/MDX + Cancel | T-008（已运行） | PASS：66 测试；72 modules / 158 deps；打开/取消/只读均验证 |
 | C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | SKIPPED |
 
 ---
@@ -391,3 +392,4 @@ pnpm bench
 | 2026-10-26T14:05:00+08:00 | T-005 完成：Rust dialog/DocumentRegistry、严格编码/EOL/10MiB、token 边界；31 条 Rust 测试与原生 dialog 手动读取 | OpenCode / DeepSeek V4.1 | `02 §3/C-037~C-044`；`01 §6` |
 | 2026-10-26T14:25:00+08:00 | T-006 完成：原子写/冲突/UTF-16 字节级保存；atomic_writer 10 + conflict 7 + 全量 52 测试；SIGKILL 故障注入通过 | OpenCode / DeepSeek V4.1 | `02 §3/C-045~C-050`；`01 §6` |
 | 2026-10-26T14:35:00+08:00 | T-007 完成：IpcPort/PlatformPort/错误归一化/fake adapter；28 条端口测试 + depcruise 0 violations + 越界探针 | OpenCode / DeepSeek V4.1 | `02 §3/C-052~C-057`；`01 §6` |
+| 2026-10-26T15:08:00+08:00 | T-008 完成：文档会话/打开流程/CM6 EditorState；66 条 TS 测试 + 真实 dialog 打开 README/18KB/1.0MB/MDX + 取消 | OpenCode / DeepSeek V4.1 | `02 §3/C-058~C-065`；`01 §6` |

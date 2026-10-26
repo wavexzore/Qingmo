@@ -3,11 +3,11 @@ import { Link } from "react-router-dom";
 
 import { Button } from "@qingmo/ui";
 
-import { useToast } from "../../components/ToastHost";
+import { useWorkspaceActions } from "./WorkspaceLayout";
 
 export function WelcomePage() {
   const { t } = useTranslation(["common"]);
-  const toast = useToast();
+  const { openDocument, opening } = useWorkspaceActions();
 
   return (
     <main className="relative grid min-h-dvh place-items-center overflow-hidden bg-paper p-6 text-ink">
@@ -40,7 +40,7 @@ export function WelcomePage() {
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          <Button onClick={() => toast.push(t("common:toast.openComingSoon"))}>
+          <Button onClick={openDocument} disabled={opening} aria-busy={opening}>
             {t("common:actions.openFile")}
           </Button>
           <Link
