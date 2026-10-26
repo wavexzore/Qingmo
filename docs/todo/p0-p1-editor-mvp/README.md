@@ -132,7 +132,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 |---|---|---|---|
 | 官方文档调研 | pass | `01-实施计划.md §2.4.1`；`02 E-001~E-003` | Tauri 2 capabilities/CSP/commands/core 权限/window、CM6 decoration/ref/composition、atomic-write-file、ts-rs、encoding_rs UTF-16 限制已核对；tauri-specta v2 仍为 RC，P1 拒绝 |
 | GitHub 开源实现调研 | pass | `01-实施计划.md §2.4.2`；`02 E-004~E-005` | MarkEdit 的 ViewPlugin+Lezer、NoteGen/MarkFlowy 的自定义命令/保存、create-tauri-app 的 Vite 约定已对比；均不复制代码 |
-| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012/E-013/C-051/C-057`；`05` | Qingmo 已索引 1,229 nodes/2,462 edges（`355998f`）；骨架、读写与 `invokeCommand -> normalizeError` 直接边已验证；动态 IPC 入口与关闭链待 T-012；参考项目 `call -> rawInvoke` 仅作方法参考 |
+| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012/E-013/C-051/C-057`；`05` | Qingmo 已索引 1,358 nodes/2,875 edges（`85606d5`）；骨架、读写、`invokeCommand -> normalizeError`、`WorkspaceLayout -> CommandRegistry.register` 与双 adapter 选择已验证；动态 IPC 入口与关闭链待 T-012；参考项目 `call -> rawInvoke` 仅作方法参考 |
 | 当前代码实时校准 | pass | `02-实施状态与验证.md §8`；`02 E-008/C-021` | T-001 前确认无代码、非 Git；T-001 后已有 `apps/desktop`、`packages/*`、`src-tauri` 骨架与双基线 tag |
 
 ### 3.2 目标调用链
@@ -177,7 +177,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 | T-005 | Rust dialog + DocumentRegistry + `document_open/reload` + 编码 | done | T-003 | C-037~C-044 | T-006 |
 | T-006 | 原子写 + 冲突 + `document_write_atomic` | done | T-005 | C-045~C-050 | T-007 |
 | T-007 | IpcPort/PlatformPort + 错误归一化 + fake adapter | done | T-003/T-005/T-006 | C-052~C-057 | T-008 |
-| T-008 | 文档会话 + 打开流程 + CM6 EditorState | done | T-004/T-007 | C-058~C-065 | T-009 |
+| T-008 | 文档会话 + 打开流程 + CM6 EditorState | done | T-004/T-007 | C-058~C-066 | T-009 |
 | T-009 | CM6 扩展组合（Markdown/语言/readOnly facet） | todo | T-008 | none | 下一步 |
 | T-010 | React 绑定 + 唯一 EditorView + session store | todo | T-009 | none | T-009 后 |
 | T-011 | `SaveCoordinator` + flush 循环 + 错误分类 | todo | T-010 | none | T-010 后 |
@@ -337,7 +337,8 @@ pnpm bench
 | C-052 | `pnpm vitest run apps/desktop/src/lib` | T-007（已运行） | PASS：28 条端口/fake 测试 |
 | C-053 | `pnpm depcruise` | T-007（已运行） | PASS：Tauri import 仅两个 adapter |
 | C-057 | `gitnexus analyze --skip-agents-md` | T-007（已运行） | 1,229 nodes / 2,462 edges；`invokeCommand` 4 incoming methods |
-| C-058~C-065 | Vitest + 全量门禁 + 原生 dialog 打开 README/small/large/MDX + Cancel | T-008（已运行） | PASS：66 测试；72 modules / 158 deps；打开/取消/只读均验证 |
+| C-066 | `gitnexus analyze --skip-agents-md` | T-008（已运行） | 1,358 nodes / 2,875 edges；`WorkspaceLayout` 唯一注册链入图 |
+| C-058~C-066 | Vitest + 全量门禁 + 原生 dialog 打开 README/small/large/MDX + Cancel | T-008（已运行） | PASS：66 测试；72 modules / 158 deps；打开/取消/只读均验证 |
 | C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | SKIPPED |
 
 ---
@@ -392,4 +393,4 @@ pnpm bench
 | 2026-10-26T14:05:00+08:00 | T-005 完成：Rust dialog/DocumentRegistry、严格编码/EOL/10MiB、token 边界；31 条 Rust 测试与原生 dialog 手动读取 | OpenCode / DeepSeek V4.1 | `02 §3/C-037~C-044`；`01 §6` |
 | 2026-10-26T14:25:00+08:00 | T-006 完成：原子写/冲突/UTF-16 字节级保存；atomic_writer 10 + conflict 7 + 全量 52 测试；SIGKILL 故障注入通过 | OpenCode / DeepSeek V4.1 | `02 §3/C-045~C-050`；`01 §6` |
 | 2026-10-26T14:35:00+08:00 | T-007 完成：IpcPort/PlatformPort/错误归一化/fake adapter；28 条端口测试 + depcruise 0 violations + 越界探针 | OpenCode / DeepSeek V4.1 | `02 §3/C-052~C-057`；`01 §6` |
-| 2026-10-26T15:08:00+08:00 | T-008 完成：文档会话/打开流程/CM6 EditorState；66 条 TS 测试 + 真实 dialog 打开 README/18KB/1.0MB/MDX + 取消 | OpenCode / DeepSeek V4.1 | `02 §3/C-058~C-065`；`01 §6` |
+| 2026-10-26T15:08:00+08:00 | T-008 完成：文档会话/打开流程/CM6 EditorState；66 条 TS 测试 + 真实 dialog 打开 README/18KB/1.0MB/MDX + 取消 | OpenCode / DeepSeek V4.1 | `02 §3/C-058~C-066`；`01 §6` |
