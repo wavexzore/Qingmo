@@ -1,6 +1,13 @@
 import { StateEffect, type EditorState, type Extension } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
-import { createEditorState, LP_MAX_UNITS, livePreview, setModeEffect } from "@qingmo/editor-core";
+import {
+  createEditorState,
+  LP_MAX_UNITS,
+  livePreview,
+  setModeEffect,
+  setThemeEffect,
+  themeExtension,
+} from "@qingmo/editor-core";
 import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
 
 import type { SaveState } from "../../lib/save-state";
@@ -126,6 +133,8 @@ export class EditorSession {
   private state: EditorState;
   private snapshot: EditorSessionSnapshot;
   private previewEnabled: boolean;
+  private theme: "light" | "dark" = "light";
+  private themeApplied = false;
   private view: EditorView | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
@@ -213,11 +222,14 @@ export class EditorSession {
       throw new Error("reload returned a different docToken");
     }
 
-    const state = createEditorState({
+    let state = createEditorState({
       doc: payload.text,
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
     });
+    if (this.themeApplied) {
+      state = state.update({ effects: setThemeEffect(themeExtension(this.theme)) }).state;
+    }
     const largeFile = state.doc.length > LP_MAX_UNITS;
     this.previewEnabled = !largeFile;
     this.metadata = metadataOf(payload);
@@ -309,6 +321,26 @@ export class EditorSession {
     }
     this.publish({ largeFile: false, livePreview: this.previewEnabled }, true);
     return this.previewEnabled;
+  }
+
+  /**
+   * Reconfigures only the theme compartment. The view identity, document,
+   * selection and undo history all survive; `replacePayload` reapplies the
+   * current theme because a fresh EditorState starts with the default light
+   * theme.
+   */
+  applyTheme(theme: "light" | "dark"): void {
+    if (this.disposed || (this.themeApplied && this.theme === theme)) {
+      return;
+    }
+    this.theme = theme;
+    this.themeApplied = true;
+    const effect = setThemeEffect(themeExtension(theme));
+    if (this.view) {
+      this.view.dispatch({ effects: effect });
+    } else {
+      this.state = this.state.update({ effects: effect }).state;
+    }
   }
 
   /** SaveCoordinator subscribes here; the session never imports it. */

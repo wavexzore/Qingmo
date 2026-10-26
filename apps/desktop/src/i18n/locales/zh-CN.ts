@@ -130,6 +130,7 @@ export const commandLabels = {
   },
   view: {
     toggleLivePreview: "切换实时预览",
+    toggleTheme: "切换主题",
   },
   category: {
     file: "文件",
