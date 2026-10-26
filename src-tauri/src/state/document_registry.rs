@@ -141,16 +141,14 @@ impl DocumentRegistry {
         }
 
         ensure_supported_extension(&record.raw_selected)?;
+        let mut state = record.lock_state()?;
         let parsed = FileService::read(&record.canonical_target)?;
 
-        {
-            let mut state = record.lock_state()?;
-            state.format = parsed.format.clone();
-            state.read_only = parsed.read_only_reason;
-            state.base_hash = parsed.hash.clone();
-            state.disk_size = parsed.size;
-            state.mtime_ms = parsed.mtime_ms;
-        }
+        state.format = parsed.format.clone();
+        state.read_only = parsed.read_only_reason;
+        state.base_hash = parsed.hash.clone();
+        state.disk_size = parsed.size;
+        state.mtime_ms = parsed.mtime_ms;
 
         Ok(parsed.into_payload(token, path_to_display(&record.canonical_target)))
     }

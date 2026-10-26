@@ -160,30 +160,31 @@ fn invoke_handler_registers_every_contract_command() {
     let handler_source = read_text("src/commands/mod.rs");
     assert!(handler_source.contains("document::document_open"));
     assert!(handler_source.contains("document::document_reload"));
-    assert!(handler_source.contains("stub::document_write_atomic"));
+    assert!(handler_source.contains("document::document_write_atomic"));
     assert!(handler_source.contains("stub::app_close_confirm"));
 
     let error = invoke(&webview, "document_reload", json!({"docToken": "fake"}))
         .expect_err("reload with a fake token must fail");
     assert_eq!(error["code"], "INVALID_PATH", "unexpected error: {error}");
 
-    for (command, body) in [
-        (
-            "document_write_atomic",
-            json!({"docToken": "fake", "text": "", "expectedCurrentHash": null}),
-        ),
-        ("app_close_confirm", json!({"allow": false})),
-    ] {
-        let error = invoke(&webview, command, body).expect_err("stub must return an error");
-        assert_eq!(
-            error["code"], "IO",
-            "{command} was not registered or returned an unexpected error: {error}"
-        );
-        assert!(
-            error["message"]
-                .as_str()
-                .is_some_and(|message| message.contains("not implemented")),
-            "unexpected stub message for {command}: {error}"
-        );
-    }
+    let error = invoke(
+        &webview,
+        "document_write_atomic",
+        json!({"docToken": "fake", "text": "", "expectedCurrentHash": null}),
+    )
+    .expect_err("write with a fake token must fail");
+    assert_eq!(error["code"], "INVALID_PATH", "unexpected error: {error}");
+
+    let error = invoke(&webview, "app_close_confirm", json!({"allow": false}))
+        .expect_err("stub must return an error");
+    assert_eq!(
+        error["code"], "IO",
+        "app_close_confirm was not registered or returned an unexpected error: {error}"
+    );
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("not implemented")),
+        "unexpected stub message for app_close_confirm: {error}"
+    );
 }
