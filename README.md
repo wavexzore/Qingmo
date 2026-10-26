@@ -18,4 +18,4 @@ Qingmo 是一个本地优先、源码为真、支持沙箱化插件扩展的 Mar
 
 ## 状态
 
-当前处于 **P1 编辑器 MVP 实施** 阶段（T-001~T-014 已完成）。已建立 pnpm workspace、Vite 7 + React 19 + TypeScript 5、Tauri 2 外壳与质量工具，并完成安全基线、IPC 契约、UI 基础、Rust 文件读取/原子写、IpcPort/PlatformPort、浏览器 fake adapter、「欢迎页 → 原生对话框 → CM6 EditorState」打开流程、Markdown/语言/Compartment 编辑组合、真实 EditorView/状态栏、SaveCoordinator 自动保存（去抖/单飞/冲突暂停/退避）、保存/关闭闭环（冲突横幅、二次确认、`file.save`、红叉/Cmd+Q 先落盘后退出）、Live Preview v1（视口装饰、选区行源码显隐、IME map、2M/超长行/8ms 预算）与大文件降级（2M UTF-16 单元以上关闭 LP、状态栏“大文档 · 预览关闭”、`view.toggleLivePreview`、10MiB 可编辑）。主题与命令面板尚未接入，下一步是 T-016（T-015 依赖 T-016）。
+当前处于 **P1 编辑器 MVP 实施** 阶段（T-001~T-016 已完成）。已建立 pnpm workspace、Vite 7 + React 19 + TypeScript 5、Tauri 2 外壳与质量工具，并完成安全基线、IPC 契约、UI 基础、Rust 文件读取/原子写、IpcPort/PlatformPort、浏览器 fake adapter、「欢迎页 → 原生对话框 → CM6 EditorState」打开流程、Markdown/语言/Compartment 编辑组合、真实 EditorView/状态栏、SaveCoordinator 自动保存（去抖/单飞/冲突暂停/退避）、保存/关闭闭环（冲突横幅、二次确认、`file.save`、红叉/Cmd+Q 先落盘后退出）、Live Preview v1（视口装饰、选区行源码显隐、IME map、2M/超长行/8ms 预算）、大文件降级（2M UTF-16 单元以上关闭 LP、状态栏“大文档 · 预览关闭”、`view.toggleLivePreview`、10MiB 可编辑）与主题系统（light/dark/system、`qingmo.ui.theme`、根 `data-theme`、主题 Compartment、`view.toggleTheme`）。命令面板与全局快捷键尚未接入，下一步是 T-015。
