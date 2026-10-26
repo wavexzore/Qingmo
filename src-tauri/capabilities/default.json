@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Minimal permissions for the Qingmo main window: only core event listen/unlisten.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}
