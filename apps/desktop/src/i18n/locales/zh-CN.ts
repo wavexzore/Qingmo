@@ -28,6 +28,8 @@ export const common = {
     mode: "模式",
     noFile: "未打开文档",
     notAvailable: "—",
+    largeFile: "大文档 · 预览关闭",
+    largeFileHint: "文档超过 2,000,000 个 UTF-16 单元，已关闭实时预览；编辑不受影响。",
   },
   saveState: {
     clean: "已同步",
@@ -126,8 +128,12 @@ export const commandLabels = {
     open: "打开文件",
     save: "保存文件",
   },
+  view: {
+    toggleLivePreview: "切换实时预览",
+  },
   category: {
     file: "文件",
+    view: "视图",
   },
 } as const;
 

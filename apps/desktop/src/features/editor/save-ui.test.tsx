@@ -26,6 +26,37 @@ describe("StatusBar save actions", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the large-document badge while keeping source mode visible", () => {
+    render(
+      <StatusBar
+        snapshot={{ ...EMPTY_STATUS_SNAPSHOT, saveState: "clean", mode: "source", largeFile: true }}
+      />,
+    );
+
+    expect(screen.getByTestId("status-bar")).toHaveTextContent("源码");
+    expect(screen.getByTestId("large-file-hint")).toHaveTextContent("大文档 · 预览关闭");
+    expect(screen.getByTestId("large-file-hint")).toHaveAttribute(
+      "title",
+      expect.stringContaining("2,000,000"),
+    );
+  });
+
+  it("shows live preview mode without the large-document badge", () => {
+    render(
+      <StatusBar
+        snapshot={{
+          ...EMPTY_STATUS_SNAPSHOT,
+          saveState: "clean",
+          mode: "livePreview",
+          largeFile: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("status-bar")).toHaveTextContent("实时预览");
+    expect(screen.queryByTestId("large-file-hint")).not.toBeInTheDocument();
+  });
+
   it("renders every save-state label", () => {
     const states = [
       "clean",

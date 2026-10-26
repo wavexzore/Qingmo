@@ -28,6 +28,9 @@ export const common = {
     mode: "Mode",
     noFile: "No document",
     notAvailable: "—",
+    largeFile: "Large file · preview off",
+    largeFileHint:
+      "The document exceeds 2,000,000 UTF-16 units. Live Preview is off; editing is unaffected.",
   },
   saveState: {
     clean: "Synced",
@@ -130,8 +133,12 @@ export const commandLabels = {
     open: "Open file",
     save: "Save file",
   },
+  view: {
+    toggleLivePreview: "Toggle Live Preview",
+  },
   category: {
     file: "File",
+    view: "View",
   },
 } as const;
 
