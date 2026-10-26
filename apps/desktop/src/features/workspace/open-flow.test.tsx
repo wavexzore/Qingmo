@@ -105,7 +105,7 @@ describe("openFile", () => {
 });
 
 describe("welcome -> editor open flow", () => {
-  it("opens a file, creates the session, and shows metadata without body text", async () => {
+  it("opens a file, creates the session, and renders the editor host", async () => {
     const ipc = fileIpc("# Hello\n\nsecret body\n");
     const router = renderApp(ipc);
 
@@ -114,7 +114,9 @@ describe("welcome -> editor open flow", () => {
     expect(await screen.findByRole("heading", { name: "note.md" })).toBeInTheDocument();
     expect(screen.getByTestId("document-session")).toHaveTextContent("/docs/note.md");
     expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md");
-    expect(screen.queryByText("secret body")).not.toBeInTheDocument();
+    // The body lives in CM6's DOM, never in the React metadata snapshot
+    // (editor-session.test.ts asserts JSON.stringify(snapshot) has no text).
+    expect(screen.getByTestId("editor-host")).toHaveTextContent("secret body");
     expect(router.state.location.pathname).toBe("/editor");
     expect(commandRegistry.list().filter((item) => item.id === "file.open")).toHaveLength(1);
   });

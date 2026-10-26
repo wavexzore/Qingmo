@@ -1,12 +1,13 @@
-import { useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 import { Button } from "@qingmo/ui";
 
-import { StatusBar, type StatusBarSnapshot } from "../../components/StatusBar";
-import type { EditorSession } from "./EditorSession";
+import { StatusBar } from "../../components/StatusBar";
+import { EditorHost } from "./EditorHost";
 import { useDocumentSession } from "./DocumentSessionContext";
+import { useEditor } from "./useEditor";
+import { useEditorStatus } from "./useEditorStatus";
 
 function EmptyEditor() {
   const { t } = useTranslation(["common", "editor"]);
@@ -41,107 +42,57 @@ function EmptyEditor() {
   );
 }
 
-function DocumentOverview({ session }: { session: EditorSession }) {
+function DocumentEditor() {
   const { t } = useTranslation(["common", "editor"]);
-  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const { session, metadata } = useEditor();
+  const status = useEditorStatus(session);
 
   const readOnlyLabel =
-    snapshot.readOnlyReason === "mdx"
+    metadata.readOnlyReason === "mdx"
       ? t("editor:document.readOnlyMdx")
-      : snapshot.readOnlyReason === "mixedEol"
+      : metadata.readOnlyReason === "mixedEol"
         ? t("editor:document.readOnlyMixedEol")
         : t("editor:document.readOnly");
 
-  const formatLabel = [
-    snapshot.format.encoding,
-    snapshot.format.eol,
-    snapshot.format.hasBom ? "BOM" : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const status: StatusBarSnapshot = {
-    fileName: snapshot.fileName,
-    saveState: snapshot.saveState,
-    cursor: snapshot.cursor,
-    encoding: snapshot.format.encoding,
-    eol: snapshot.format.eol,
-    size: snapshot.size,
-    mode: "source",
-  };
-
   return (
-    <main className="grid h-dvh grid-rows-[1fr_auto] bg-paper text-ink">
-      <div className="min-h-0 overflow-auto p-6">
-        <section
-          data-testid="document-session"
-          className="mx-auto w-full max-w-[720px] rounded-card border border-line bg-surface p-8 shadow-card"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-accent">
-                {t("common:appNameLatin")}
-              </p>
-              <h1 className="mt-2 break-words font-serif text-3xl tracking-[-0.03em]">
-                {snapshot.fileName}
-              </h1>
-              <p className="mt-2 text-sm leading-7 text-ink-muted">
-                {t("editor:document.description")}
-              </p>
-            </div>
-            {snapshot.readOnly ? (
-              <span
-                data-testid="read-only-badge"
-                className="shrink-0 rounded-full border border-line-strong bg-surface-muted px-3 py-1 text-xs text-ink-muted"
-              >
-                {readOnlyLabel}
-              </span>
-            ) : null}
+    <main
+      data-testid="document-session"
+      className="grid h-dvh grid-rows-[auto_1fr_auto] bg-paper text-ink"
+    >
+      <header className="flex min-w-0 items-center gap-4 border-b border-line bg-surface/80 px-5 py-3 backdrop-blur">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h1 className="truncate font-serif text-lg tracking-[-0.02em]">{metadata.fileName}</h1>
+            <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-faint">
+              {metadata.format.encoding} · {metadata.format.eol}
+            </span>
           </div>
-
-          <dl className="mt-8 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <dt className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">
-                {t("editor:document.path")}
-              </dt>
-              <dd className="mt-1 break-all font-mono text-xs text-ink-muted">{snapshot.docId}</dd>
-            </div>
-            <div>
-              <dt className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">
-                {t("editor:document.format")}
-              </dt>
-              <dd className="mt-1 text-ink-muted">{formatLabel}</dd>
-            </div>
-            <div>
-              <dt className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">
-                {t("editor:document.units")}
-              </dt>
-              <dd className="mt-1 text-ink-muted">{snapshot.textUnits}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">
-                {t("editor:document.hash")}
-              </dt>
-              <dd className="mt-1 truncate font-mono text-xs text-ink-faint" title={snapshot.hash}>
-                {snapshot.hash}
-              </dd>
-            </div>
-          </dl>
-
-          <p className="mt-8 rounded-md border border-dashed border-line bg-surface-muted/60 px-4 py-3 text-xs leading-6 text-ink-muted">
-            {t("editor:document.viewPending")}
+          <p
+            className="mt-0.5 truncate font-mono text-[11px] text-ink-faint"
+            title={metadata.docId}
+          >
+            {metadata.docId}
           </p>
+        </div>
 
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Link
-              to="/"
-              className="inline-flex h-10 items-center rounded-md px-2 text-sm text-ink-muted underline decoration-line-strong underline-offset-4 transition-colors duration-[var(--qm-duration-fast)] hover:text-ink"
-            >
-              {t("common:actions.backToWelcome")}
-            </Link>
-          </div>
-        </section>
-      </div>
+        {metadata.readOnly ? (
+          <span
+            data-testid="read-only-badge"
+            className="shrink-0 rounded-full border border-line-strong bg-surface-muted px-3 py-1 text-xs text-ink-muted"
+          >
+            {readOnlyLabel}
+          </span>
+        ) : null}
+
+        <Link
+          to="/"
+          className="shrink-0 rounded-md px-2 text-xs text-ink-muted underline decoration-line-strong underline-offset-4 transition-colors duration-[var(--qm-duration-fast)] hover:text-ink"
+        >
+          {t("common:actions.backToWelcome")}
+        </Link>
+      </header>
+
+      <EditorHost session={session} />
 
       <StatusBar snapshot={status} />
     </main>
@@ -150,5 +101,5 @@ function DocumentOverview({ session }: { session: EditorSession }) {
 
 export function EditorPage() {
   const { session } = useDocumentSession();
-  return session ? <DocumentOverview session={session} /> : <EmptyEditor />;
+  return session ? <DocumentEditor /> : <EmptyEditor />;
 }
