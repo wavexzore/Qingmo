@@ -132,7 +132,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 |---|---|---|---|
 | 官方文档调研 | pass | `01-实施计划.md §2.4.1`；`02 E-001~E-003` | Tauri 2 capabilities/CSP/commands/core 权限/window、CM6 decoration/ref/composition、atomic-write-file、ts-rs、encoding_rs UTF-16 限制已核对；tauri-specta v2 仍为 RC，P1 拒绝 |
 | GitHub 开源实现调研 | pass | `01-实施计划.md §2.4.2`；`02 E-004~E-005` | MarkEdit 的 ViewPlugin+Lezer、NoteGen/MarkFlowy 的自定义命令/保存、create-tauri-app 的 Vite 约定已对比；均不复制代码 |
-| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012/E-013/C-051/C-057`；`05` | Qingmo 已索引 1,397 nodes/2,949 edges（`2528c61`）；骨架、读写、`invokeCommand -> normalizeError`、`WorkspaceLayout -> CommandRegistry.register`、`EditorSession -> createEditorState` 与双 adapter 选择已验证；动态 IPC 入口与关闭链待 T-012；参考项目 `call -> rawInvoke` 仅作方法参考 |
+| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012~E-016/C-051/C-057/C-066/C-070/C-075`；`05` | Qingmo 已索引 1,477 nodes/3,220 edges（`2cedc60`）；骨架、读写、`invokeCommand -> normalizeError`、`WorkspaceLayout -> CommandRegistry.register`、`EditorSession -> createEditorState`、`EditorPage -> EditorHost/useEditorStatus` 与双 adapter 选择已验证；保存/关闭链待 T-011/T-012；参考项目 `call -> rawInvoke` 仅作方法参考 |
 | 当前代码实时校准 | pass | `02-实施状态与验证.md §8`；`02 E-008/C-021` | T-001 前确认无代码、非 Git；T-001 后已有 `apps/desktop`、`packages/*`、`src-tauri` 骨架与双基线 tag |
 
 ### 3.2 目标调用链
@@ -340,6 +340,7 @@ pnpm bench
 | C-066 | `gitnexus analyze --skip-agents-md` | T-008（已运行） | 1,358 nodes / 2,875 edges；`WorkspaceLayout` 唯一注册链入图 |
 | C-070 | `gitnexus analyze --skip-agents-md` | T-009（已运行） | 1,397 nodes / 2,949 edges；`EditorSession -> createEditorState` 入图 |
 | C-067~C-070 | editor-core 测试 + 全量门禁 + chunk 检查 | T-009（已运行） | PASS：78 测试；79 modules / 171 deps；最大 chunk 366.61KB |
+| C-075 | `gitnexus analyze --skip-agents-md` | T-010（已运行） | 1,477 nodes / 3,220 edges；`EditorPage -> EditorHost/useEditorStatus/useEditor` 入图 |
 | C-071~C-075 | binding 测试 + 全量门禁 + 真实输入/只读 | T-010（已运行） | PASS：85 测试；83 modules / 185 deps；StrictMode 单 view、节流、只读 |
 | C-058~C-066 | Vitest + 全量门禁 + 原生 dialog 打开 README/small/large/MDX + Cancel | T-008（已运行） | PASS：66 测试；72 modules / 158 deps；打开/取消/只读均验证 |
 | C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | SKIPPED |
