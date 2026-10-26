@@ -42,6 +42,15 @@ impl AppError {
         }
     }
 
+    pub fn from_io(error: &std::io::Error) -> Self {
+        let code = match error.kind() {
+            std::io::ErrorKind::NotFound => AppErrorCode::NotFound,
+            std::io::ErrorKind::PermissionDenied => AppErrorCode::PermissionDenied,
+            _ => AppErrorCode::Io,
+        };
+        Self::new(code, error.to_string())
+    }
+
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);
         self

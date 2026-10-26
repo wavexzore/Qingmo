@@ -1,19 +1,8 @@
 use crate::error::AppError;
-use crate::ipc::dto::{FilePayload, SaveResult};
+use crate::ipc::dto::SaveResult;
 
-/// Contract stubs. T-005/T-006/T-012 replace the bodies; names and signatures
-/// are frozen by `src-tauri/tests/commands_contract.rs`.
-#[tauri::command]
-pub fn document_open() -> Result<FilePayload, AppError> {
-    Err(AppError::not_implemented("document_open"))
-}
-
-#[tauri::command(rename_all = "camelCase")]
-#[allow(unused_variables)]
-pub fn document_reload(doc_token: String) -> Result<FilePayload, AppError> {
-    Err(AppError::not_implemented("document_reload"))
-}
-
+/// Contract stubs. T-006/T-012 replace the bodies; names and signatures are
+/// frozen by `src-tauri/tests/commands_contract.rs`.
 #[tauri::command(rename_all = "camelCase")]
 #[allow(unused_variables)]
 pub fn document_write_atomic(
