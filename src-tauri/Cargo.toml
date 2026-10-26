@@ -1,0 +1,19 @@
+[package]
+name = "qingmo"
+version = "0.1.0"
+description = "Qingmo — local-first Markdown editor"
+authors = ["Qingmo Contributors"]
+edition = "2021"
+rust-version = "1.90"
+
+[lib]
+name = "qingmo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = [] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
