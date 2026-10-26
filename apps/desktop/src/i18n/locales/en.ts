@@ -135,6 +135,7 @@ export const commandLabels = {
   },
   view: {
     toggleLivePreview: "Toggle Live Preview",
+    toggleTheme: "Toggle theme",
   },
   category: {
     file: "File",

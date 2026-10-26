@@ -10,6 +10,7 @@ import { COMMANDS } from "../../lib/ipc/commands";
 import { FakeIpc } from "../../lib/ipc/fake";
 import type { IpcPort } from "../../lib/ipc/port";
 import { FakePlatform } from "../../lib/platform/fake";
+import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider } from "../editor/DocumentSessionContext";
 import { openFile } from "./openFile";
@@ -49,6 +50,10 @@ afterEach(() => {
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");
+  commandRegistry.unregister("view.toggleTheme");
+  uiStore.setTheme("system");
+  localStorage.removeItem(THEME_STORAGE_KEY);
+  document.documentElement.removeAttribute("data-theme");
 });
 
 describe("openFile", () => {
@@ -137,6 +142,17 @@ describe("welcome -> editor open flow", () => {
 
     expect((await commandRegistry.execute("view.toggleLivePreview")).ok).toBe(true);
     await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("实时预览"));
+
+    expect(commandRegistry.list().filter((item) => item.id === "view.toggleTheme")).toHaveLength(1);
+    const themeBefore = document.documentElement.getAttribute("data-theme");
+    const editorBefore = document.querySelector(".cm-editor")?.className;
+    expect((await commandRegistry.execute("view.toggleTheme")).ok).toBe(true);
+    const themeAfter = document.documentElement.getAttribute("data-theme");
+    expect(themeAfter).toMatch(/^(light|dark)$/);
+    expect(themeAfter).not.toBe(themeBefore);
+    await waitFor(() =>
+      expect(document.querySelector(".cm-editor")?.className).not.toBe(editorBefore),
+    );
   });
 
   it("shows the read-only reason for an MDX document", async () => {

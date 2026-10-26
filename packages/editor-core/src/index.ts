@@ -13,7 +13,7 @@ export type { CreateEditorStateOptions } from "./createEditor";
 export { basicExtensions, createBasicExtensions } from "./extensions/basic";
 export { codeLanguages, languageForFilename } from "./extensions/languages";
 export { markdownExtensions, qingmoHighlightStyle } from "./extensions/markdown";
-export { qingmoEditorTheme } from "./extensions/theme";
+export { qingmoEditorTheme, themeExtension, type EditorTheme } from "./extensions/theme";
 export { LP_MAX_UNITS, MAX_LINE_UNITS, SYNTAX_TREE_BUDGET_MS } from "./limits";
 export { buildLivePreviewDecorations, livePreview, livePreviewPlugin } from "./live-preview/plugin";
 export {

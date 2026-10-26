@@ -5,8 +5,10 @@ import { Outlet, useNavigate, useOutletContext } from "react-router-dom";
 import { useAppServices } from "../../app/AppServices";
 import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
 import { useCloseGuard } from "../../app/useCloseGuard";
+import { useThemeService } from "../../app/useThemeService";
 import { useToast } from "../../components/ToastHost";
 import { commandRegistry } from "../commands/CommandRegistry";
+import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { EditorSession } from "../editor/EditorSession";
 import { openFile } from "./openFile";
@@ -30,6 +32,9 @@ export function WorkspaceLayout() {
   const closeGuard = useCloseGuard({ ipc, platform, coordinator });
   const [opening, setOpening] = useState(false);
   const openingRef = useRef(false);
+
+  useThemeCommand();
+  useThemeService(session);
 
   const openDocument = useCallback(async () => {
     if (openingRef.current) {

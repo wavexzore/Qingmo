@@ -1,5 +1,5 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { HighlightStyle } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 
@@ -33,10 +33,13 @@ export const qingmoHighlightStyle = HighlightStyle.define([
   { tag: tags.invalid, color: "var(--qm-danger)" },
 ]);
 
+/**
+ * Language support only. Syntax highlighting is installed by the theme
+ * compartment so a theme switch replaces both together.
+ */
 export const markdownExtensions: readonly Extension[] = Object.freeze([
   markdown({
     base: markdownLanguage,
     codeLanguages: [...codeLanguages],
   }),
-  syntaxHighlighting(qingmoHighlightStyle),
 ]);

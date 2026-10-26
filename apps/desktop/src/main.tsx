@@ -4,6 +4,10 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./i18n";
 import "./styles.css";
+import { uiStore } from "./stores/uiStore";
+
+// Apply the persisted theme before the first React render to avoid a flash.
+uiStore.initialize();
 
 const container = document.getElementById("root");
 
