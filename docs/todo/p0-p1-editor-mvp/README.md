@@ -132,7 +132,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 |---|---|---|---|
 | 官方文档调研 | pass | `01-实施计划.md §2.4.1`；`02 E-001~E-003` | Tauri 2 capabilities/CSP/commands/core 权限/window、CM6 decoration/ref/composition、atomic-write-file、ts-rs、encoding_rs UTF-16 限制已核对；tauri-specta v2 仍为 RC，P1 拒绝 |
 | GitHub 开源实现调研 | pass | `01-实施计划.md §2.4.2`；`02 E-004~E-005` | MarkEdit 的 ViewPlugin+Lezer、NoteGen/MarkFlowy 的自定义命令/保存、create-tauri-app 的 Vite 约定已对比；均不复制代码 |
-| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012`；`05` | Qingmo 骨架已索引（466 nodes/610 edges）；`main.tsx -> App -> cx`、`main.rs::main -> run -> init_tracing` 直接边已验证；IPC/保存链待 T-003+；参考项目 `call -> rawInvoke` 仅作方法参考 |
+| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012/C-051`；`05` | Qingmo 已索引 1,011 nodes/1,804 edges（`e1488cf`）；`main.tsx -> App -> cx`、`main.rs::main -> run -> init_tracing`、`document_write_atomic -> AtomicWriter::write` 直接边已验证；动态 IPC 入口与关闭链待 T-012；参考项目 `call -> rawInvoke` 仅作方法参考 |
 | 当前代码实时校准 | pass | `02-实施状态与验证.md §8`；`02 E-008/C-021` | T-001 前确认无代码、非 Git；T-001 后已有 `apps/desktop`、`packages/*`、`src-tauri` 骨架与双基线 tag |
 
 ### 3.2 目标调用链
