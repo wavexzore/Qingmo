@@ -47,6 +47,7 @@ function fileIpc(
 
 afterEach(() => {
   commandRegistry.unregister("file.open");
+  commandRegistry.unregister("file.save");
 });
 
 describe("openFile", () => {
@@ -119,6 +120,11 @@ describe("welcome -> editor open flow", () => {
     expect(screen.getByTestId("editor-host")).toHaveTextContent("secret body");
     expect(router.state.location.pathname).toBe("/editor");
     expect(commandRegistry.list().filter((item) => item.id === "file.open")).toHaveLength(1);
+    expect(commandRegistry.list().filter((item) => item.id === "file.save")).toHaveLength(1);
+
+    const saved = await commandRegistry.execute("file.save");
+    expect(saved.ok).toBe(true);
+    expect(ipc.getFile("/docs/note.md")?.text).toBe("# Hello\n\nsecret body\n");
   });
 
   it("shows the read-only reason for an MDX document", async () => {
@@ -133,6 +139,12 @@ describe("welcome -> editor open flow", () => {
     expect(await screen.findByTestId("read-only-badge")).toHaveTextContent("MDX 暂为只读");
     expect(screen.getByTestId("status-bar")).toHaveTextContent("只读");
     expect(screen.getByRole("heading", { name: "component.mdx" })).toBeInTheDocument();
+
+    const saved = await commandRegistry.execute("file.save");
+    expect(saved.ok).toBe(false);
+    if (!saved.ok) {
+      expect(saved.error.code).toBe("BUSY");
+    }
   });
 
   it("shows an error toast for a rejected open and stays on the welcome page", async () => {

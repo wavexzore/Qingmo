@@ -46,6 +46,14 @@ export const common = {
     openComingSoon: "文件打开将在 T-008 接入。",
     regionLabel: "通知",
   },
+  closeGuard: {
+    title: "有未保存的修改",
+    conflict: "文件存在冲突",
+    error: "保存未完成",
+    description: "当前文档未能保存。仍要关闭青墨吗？未保存的修改会丢失。",
+    allow: "仍要关闭",
+    cancel: "取消",
+  },
   errorBoundary: {
     title: "界面遇到了问题",
     description: "可以重试渲染；你的文件没有被修改。",
@@ -75,6 +83,26 @@ export const editor = {
     position: "第 {{line}} 行，第 {{column}} 列",
     size: "{{value}} 字节",
   },
+  conflict: {
+    title: "文件已在磁盘上被修改",
+    description: "自动保存已暂停。请重新加载磁盘版本，或用当前内容覆盖。",
+    reload: "重新加载",
+    overwrite: "覆盖保存",
+    later: "稍后",
+    reopen: "处理冲突",
+    confirmReloadTitle: "确认重新加载？",
+    confirmReloadDescription: "当前未保存的修改会被丢弃，撤销历史会清空。",
+    confirmOverwriteTitle: "确认覆盖？",
+    confirmOverwriteDescription: "磁盘上的外部修改会被当前内存内容替换。",
+    confirm: "确认",
+    cancel: "取消",
+    reloading: "正在重新加载…",
+    overwriting: "正在保存…",
+    failed: "操作未完成，请重试。",
+  },
+  save: {
+    resolveBeforeSwitch: "请先处理当前文档的冲突或保存错误，再打开其他文件。",
+  },
 } as const;
 
 export const errors = {
@@ -96,6 +124,7 @@ export const errors = {
 export const commandLabels = {
   file: {
     open: "打开文件",
+    save: "保存文件",
   },
   category: {
     file: "文件",

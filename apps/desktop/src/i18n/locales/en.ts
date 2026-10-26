@@ -46,6 +46,15 @@ export const common = {
     openComingSoon: "Opening files lands in T-008.",
     regionLabel: "Notifications",
   },
+  closeGuard: {
+    title: "Unsaved changes",
+    conflict: "The file has a conflict",
+    error: "The save did not finish",
+    description:
+      "The document could not be saved. Close Qingmo anyway? Unsaved changes will be lost.",
+    allow: "Close anyway",
+    cancel: "Cancel",
+  },
   errorBoundary: {
     title: "The interface hit a problem",
     description: "You can retry rendering; your file has not been modified.",
@@ -78,6 +87,26 @@ export const editor = {
     position: "Line {{line}}, column {{column}}",
     size: "{{value}} bytes",
   },
+  conflict: {
+    title: "The file changed on disk",
+    description: "Autosave is paused. Reload the disk version or overwrite it with your text.",
+    reload: "Reload",
+    overwrite: "Overwrite",
+    later: "Later",
+    reopen: "Resolve conflict",
+    confirmReloadTitle: "Reload and discard changes?",
+    confirmReloadDescription: "Unsaved edits will be lost and undo history will be cleared.",
+    confirmOverwriteTitle: "Overwrite the disk file?",
+    confirmOverwriteDescription: "External changes on disk will be replaced by the editor text.",
+    confirm: "Confirm",
+    cancel: "Cancel",
+    reloading: "Reloading…",
+    overwriting: "Saving…",
+    failed: "The action did not finish. Try again.",
+  },
+  save: {
+    resolveBeforeSwitch: "Resolve the conflict or save error before opening another file.",
+  },
 } as const;
 
 export const errors = {
@@ -99,6 +128,7 @@ export const errors = {
 export const commandLabels = {
   file: {
     open: "Open file",
+    save: "Save file",
   },
   category: {
     file: "File",

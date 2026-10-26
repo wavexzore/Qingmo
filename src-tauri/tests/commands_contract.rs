@@ -1,9 +1,11 @@
 use qingmo_lib::error::{AppError, AppErrorCode};
-use qingmo_lib::ipc::dto::{FilePayload, SaveRequest, TextEncoding, TextFormat};
+use qingmo_lib::ipc::dto::{CloseReason, FilePayload, SaveRequest, TextEncoding, TextFormat};
 use qingmo_lib::ipc::{command_permissions, COMMANDS, EVENTS};
+use qingmo_lib::state::CloseGuard;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
+use tauri::Manager;
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -148,6 +150,7 @@ fn invoke(
 fn invoke_handler_registers_every_contract_command() {
     let app = tauri::test::mock_builder()
         .manage(qingmo_lib::state::DocumentRegistry::new())
+        .manage(CloseGuard::new())
         .invoke_handler(qingmo_lib::commands::handler())
         .build(tauri::generate_context!())
         .expect("mock app must build");
@@ -161,7 +164,7 @@ fn invoke_handler_registers_every_contract_command() {
     assert!(handler_source.contains("document::document_open"));
     assert!(handler_source.contains("document::document_reload"));
     assert!(handler_source.contains("document::document_write_atomic"));
-    assert!(handler_source.contains("stub::app_close_confirm"));
+    assert!(handler_source.contains("close::app_close_confirm"));
 
     let error = invoke(&webview, "document_reload", json!({"docToken": "fake"}))
         .expect_err("reload with a fake token must fail");
@@ -176,15 +179,17 @@ fn invoke_handler_registers_every_contract_command() {
     assert_eq!(error["code"], "INVALID_PATH", "unexpected error: {error}");
 
     let error = invoke(&webview, "app_close_confirm", json!({"allow": false}))
-        .expect_err("stub must return an error");
+        .expect_err("a confirmation without a pending close request must fail");
     assert_eq!(
-        error["code"], "IO",
-        "app_close_confirm was not registered or returned an unexpected error: {error}"
+        error["code"], "BUSY",
+        "app_close_confirm must reject an unarmed guard: {error}"
     );
-    assert!(
-        error["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("not implemented")),
-        "unexpected stub message for app_close_confirm: {error}"
-    );
+
+    let guard = app.state::<CloseGuard>();
+    assert!(guard.begin(CloseReason::Window));
+    let response = invoke(&webview, "app_close_confirm", json!({"allow": false}))
+        .expect("cancelling a pending close request must succeed");
+    assert_eq!(response, Value::Null);
+    assert_eq!(guard.pending(), None);
+    assert!(guard.begin(CloseReason::Exit));
 }

@@ -59,7 +59,13 @@ function Item({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT }: { snapshot?: StatusBarSnapshot }) {
+export interface StatusBarProps {
+  snapshot?: StatusBarSnapshot;
+  /** Shown only for terminal save errors; retries through SaveCoordinator. */
+  onRetry?: () => void;
+}
+
+export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusBarProps) {
   const { t } = useTranslation(["common", "editor"]);
 
   const fileName = snapshot.fileName ?? t("common:status.noFile");
@@ -91,6 +97,16 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT }: { snapshot?: Sta
 
       <div className="hidden min-w-0 flex-1 items-center gap-4 overflow-hidden sm:flex">
         <Item label={t("common:status.save")} value={saveLabel} />
+        {snapshot.saveState === "error" && onRetry ? (
+          <button
+            type="button"
+            data-testid="status-retry"
+            onClick={onRetry}
+            className="rounded border border-line px-1.5 py-0.5 text-[10px] text-ink transition-colors hover:border-line-strong hover:bg-accent-soft"
+          >
+            {t("common:actions.retry")}
+          </button>
+        ) : null}
         <Item label={t("common:status.cursor")} value={cursorLabel} />
         <Item label={t("common:status.encoding")} value={snapshot.encoding ?? "—"} />
         <Item label={t("common:status.eol")} value={snapshot.eol ?? "—"} />
