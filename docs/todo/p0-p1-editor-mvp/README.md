@@ -20,15 +20,15 @@ schema_version: "1.0"
 feature_id: "p0-p1-editor-mvp"
 feature_name: "P0–P1 编辑器 MVP 骨架"
 status: "in_progress"             # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-011"             # 当前应执行的任务；无则写 none
-last_completed_task: "T-010"      # 最近完成任务；无则写 none
-next_action: "T-010 已完成（2026-10-26 15:46）；执行 T-011：SaveCoordinator"
-verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-010 全部 PASS；P1 闭环未完成）
+current_task: "T-012"             # 当前应执行的任务；无则写 none
+last_completed_task: "T-011"      # 最近完成任务；无则写 none
+next_action: "T-011 已完成（2026-10-26 16:02）；执行 T-012：保存 UI/冲突横幅/CloseGuard"
+verification_status: "partial"    # not_run | pass | fail | partial | skipped（T-001~T-011 全部 PASS；P1 闭环未完成）
 research_status: "pass"           # not_run | pass | partial | skipped
 call_chain_status: "partial"      # not_run | pass | partial | skipped（骨架/读写直接边已索引；前端 IPC 调用者与关闭链待 T-012 后重建）
-code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-010 后已重新校准）
+code_calibration_status: "pass"   # not_run | pass | fail | partial | skipped（T-001~T-011 后已重新校准）
 last_verification_command: "pnpm test && pnpm build && pnpm depcruise"
-last_updated: "2026-10-26T15:46:00+08:00"
+last_updated: "2026-10-26T16:02:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -81,7 +81,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 
 ## 1. 一句话结论
 
-Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存；`T-007` 建立可测试的 IpcPort/PlatformPort 与浏览器 fake adapter；`T-008` 打通欢迎页→原生 dialog→CM6 `EditorState` 的打开流程；`T-009` 建立 Markdown/语言/Compartment 的唯一编辑组合；`T-010` 接入唯一 `EditorView` 与节流状态栏。当前 `10/20` 任务完成，保存协调器、冲突 UI 与关闭守卫尚未接入；下一步 `T-011` SaveCoordinator。
+Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vite 7/React 19/TS 5 + Tauri 2 骨架与双基线 tag；`T-002` 收紧权限/CSP；`T-003` 冻结 IPC 契约；`T-004` 落地 UI token、App Shell、i18n、状态栏与 CommandRegistry；`T-005` 打通 Rust 原生 dialog、token 边界、严格编码/EOL 与 10MiB 读取；`T-006` 建立原子写、always-hash 冲突与字节级 UTF-16 保存；`T-007` 建立可测试的 IpcPort/PlatformPort 与浏览器 fake adapter；`T-008` 打通欢迎页→原生 dialog→CM6 `EditorState` 的打开流程；`T-009` 建立 Markdown/语言/Compartment 的唯一编辑组合；`T-010` 接入唯一 `EditorView` 与节流状态栏；`T-011` 建立 SaveCoordinator（去抖/单飞/flush/冲突暂停/退避）并接入每文档实例。当前 `11/20` 任务完成，保存 UI、冲突横幅与关闭守卫尚未接入；下一步 `T-012`。
 
 ---
 
@@ -132,7 +132,7 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 |---|---|---|---|
 | 官方文档调研 | pass | `01-实施计划.md §2.4.1`；`02 E-001~E-003` | Tauri 2 capabilities/CSP/commands/core 权限/window、CM6 decoration/ref/composition、atomic-write-file、ts-rs、encoding_rs UTF-16 限制已核对；tauri-specta v2 仍为 RC，P1 拒绝 |
 | GitHub 开源实现调研 | pass | `01-实施计划.md §2.4.2`；`02 E-004~E-005` | MarkEdit 的 ViewPlugin+Lezer、NoteGen/MarkFlowy 的自定义命令/保存、create-tauri-app 的 Vite 约定已对比；均不复制代码 |
-| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012~E-016/C-051/C-057/C-066/C-070/C-075`；`05` | Qingmo 已索引 1,477 nodes/3,220 edges（`2cedc60`）；骨架、读写、`invokeCommand -> normalizeError`、`WorkspaceLayout -> CommandRegistry.register`、`EditorSession -> createEditorState`、`EditorPage -> EditorHost/useEditorStatus` 与双 adapter 选择已验证；保存/关闭链待 T-011/T-012；参考项目 `call -> rawInvoke` 仅作方法参考 |
+| subagent/GitNexus 调用链分析 | partial | `01-实施计划.md §3`；`02 E-006/E-007/E-012~E-017/C-051/C-057/C-066/C-070/C-075/C-080`；`05` | Qingmo 已索引 1,691 nodes/4,210 edges（`beaa8ae`）；骨架、读写、`invokeCommand -> normalizeError`、`WorkspaceLayout -> CommandRegistry.register`、`EditorSession -> createEditorState`、`EditorPage -> EditorHost/useEditorStatus`、`DocumentSessionProvider.setSession -> SaveCoordinator` 与双 adapter 选择已验证；关闭链待 T-012；参考项目 `call -> rawInvoke` 仅作方法参考 |
 | 当前代码实时校准 | pass | `02-实施状态与验证.md §8`；`02 E-008/C-021` | T-001 前确认无代码、非 Git；T-001 后已有 `apps/desktop`、`packages/*`、`src-tauri` 骨架与双基线 tag |
 
 ### 3.2 目标调用链
@@ -180,8 +180,8 @@ Qingmo 已从纯文档阶段进入实施：`T-001` 建立了 pnpm workspace + Vi
 | T-008 | 文档会话 + 打开流程 + CM6 EditorState | done | T-004/T-007 | C-058~C-066 | T-009 |
 | T-009 | CM6 扩展组合（Markdown/语言/readOnly facet） | done | T-008 | C-067~C-070 | T-010 |
 | T-010 | React 绑定 + 唯一 EditorView + session store | done | T-009 | C-071~C-075 | T-011 |
-| T-011 | `SaveCoordinator` + flush 循环 + 错误分类 | todo | T-010 | none | 下一步 |
-| T-012 | 保存 UI + 冲突横幅 + Rust CloseGuard | todo | T-011/T-004/T-007 | none | T-011 后 |
+| T-011 | `SaveCoordinator` + flush 循环 + 错误分类 | done | T-010 | C-076~C-080 | T-012 |
+| T-012 | 保存 UI + 冲突横幅 + Rust CloseGuard | todo | T-011/T-004/T-007 | none | 下一步 |
 | T-013 | Live Preview v1（ViewPlugin + Lezer + 多选区/IME） | todo | T-010/T-004 | none | T-010 后 |
 | T-014 | 大文件降级 + IME 守卫 + 阈值提示 + LP 命令 | todo | T-012/T-013 | none | T-013 后 |
 | T-015 | 命令面板 + 快捷键（不新增命令） | todo | T-012/T-013/T-016 | none | 三个命令都注册后 |
@@ -270,7 +270,7 @@ P1 只有 1 个自定义事件；关闭不再使用前端 `onCloseRequested` 作
 | AC-001 | 启动与空窗口 | T-001/T-002 | C-021/C-024/C-027：dev 与生产二进制均渲染；控制台 0 error | PASS |
 | AC-002 | 打开/编辑/保存闭环 | T-008~T-012 | 打开闭环已由 C-061~C-065 在真实 Tauri 验证；编辑/保存待 T-010~T-012 | partial |
 | AC-003 | 原子写无半写 | T-006 | C-045/C-047：temp+fsync+rename；EACCES 保留旧文件；SIGKILL 后目标不变；ENOSPC 未在本机模拟 | partial |
-| AC-004 | 自动保存状态机 | T-011 | Vitest fake timers | todo |
+| AC-004 | 自动保存状态机 | T-011 | C-076/C-078/C-079：去抖/5s/单飞/退避/终态/只读 + 真实自动保存 | PASS |
 | AC-005 | 冲突不静默覆盖（含二次冲突） | T-006/T-012 | C-046：always-hash、CONFLICT details、expectedCurrentHash、二次冲突、只读/缺失 | PASS |
 | AC-006 | 10MiB 可编辑/降级 | T-014 | bench + 手动（5MB/10MiB） | todo |
 | AC-007 | Live Preview 正确（多选区/IME） | T-013 | 快照测试 + 手动 | todo |
@@ -342,6 +342,8 @@ pnpm bench
 | C-067~C-070 | editor-core 测试 + 全量门禁 + chunk 检查 | T-009（已运行） | PASS：78 测试；79 modules / 171 deps；最大 chunk 366.61KB |
 | C-075 | `gitnexus analyze --skip-agents-md` | T-010（已运行） | 1,477 nodes / 3,220 edges；`EditorPage -> EditorHost/useEditorStatus/useEditor` 入图 |
 | C-071~C-075 | binding 测试 + 全量门禁 + 真实输入/只读 | T-010（已运行） | PASS：85 测试；83 modules / 185 deps；StrictMode 单 view、节流、只读 |
+| C-080 | `gitnexus analyze --skip-agents-md` | T-011（已运行） | 1,691 nodes / 4,210 edges；`DocumentSessionProvider.setSession -> SaveCoordinator` 入图 |
+| C-076~C-080 | 协调器测试 + 覆盖率 + 全量门禁 + 真实自动保存/冲突 + GitNexus | T-011（已运行） | PASS：101 测试；86 modules / 204 deps；83.6% lines；等待保存→已同步、冲突不覆盖 |
 | C-058~C-066 | Vitest + 全量门禁 + 原生 dialog 打开 README/small/large/MDX + Cancel | T-008（已运行） | PASS：66 测试；72 modules / 158 deps；打开/取消/只读均验证 |
 | C-999 | 上述全量命令 + 三平台 CI | 全部任务后 | SKIPPED |
 
@@ -398,3 +400,6 @@ pnpm bench
 | 2026-10-26T14:25:00+08:00 | T-006 完成：原子写/冲突/UTF-16 字节级保存；atomic_writer 10 + conflict 7 + 全量 52 测试；SIGKILL 故障注入通过 | OpenCode / DeepSeek V4.1 | `02 §3/C-045~C-050`；`01 §6` |
 | 2026-10-26T14:35:00+08:00 | T-007 完成：IpcPort/PlatformPort/错误归一化/fake adapter；28 条端口测试 + depcruise 0 violations + 越界探针 | OpenCode / DeepSeek V4.1 | `02 §3/C-052~C-057`；`01 §6` |
 | 2026-10-26T15:08:00+08:00 | T-008 完成：文档会话/打开流程/CM6 EditorState；66 条 TS 测试 + 真实 dialog 打开 README/18KB/1.0MB/MDX + 取消 | OpenCode / DeepSeek V4.1 | `02 §3/C-058~C-066`；`01 §6` |
+| 2026-10-26T15:36:00+08:00 | T-009 完成：唯一 `createEditorState`、8 语言、3 Compartment、分包；78 条 TS 测试、构建无告警 | OpenCode / DeepSeek V4.1 | `02 §3/C-067~C-070`；`01 §6` |
+| 2026-10-26T15:46:00+08:00 | T-010 完成：唯一 EditorView、节流状态栏、真实输入/只读验证；85 条 TS 测试 | OpenCode / DeepSeek V4.1 | `02 §3/C-071~C-075`；`01 §6` |
+| 2026-10-26T16:02:00+08:00 | T-011 完成：SaveCoordinator（800ms/5s/单飞/flush/冲突暂停/退避）、每文档实例；101 条 TS 测试；真实等待保存→已同步、冲突不覆盖 | OpenCode / DeepSeek V4.1 | `02 §3/C-076~C-080`；`01 §6` |
