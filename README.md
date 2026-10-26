@@ -18,4 +18,4 @@ Qingmo 是一个本地优先、源码为真、支持沙箱化插件扩展的 Mar
 
 ## 状态
 
-当前处于 **P1 编辑器 MVP 实施** 阶段（T-001~T-008 已完成）。已建立 pnpm workspace、Vite 7 + React 19 + TypeScript 5、Tauri 2 外壳与质量工具，并完成安全基线、IPC 契约、UI 基础、Rust 文件读取/原子写、IpcPort/PlatformPort、浏览器 fake adapter 与「欢迎页 → 原生对话框 → CM6 EditorState」打开流程。EditorView、保存协调器与关闭守卫尚未接入，下一步是 T-009 CM6 扩展组合。
+当前处于 **P1 编辑器 MVP 实施** 阶段（T-001~T-009 已完成）。已建立 pnpm workspace、Vite 7 + React 19 + TypeScript 5、Tauri 2 外壳与质量工具，并完成安全基线、IPC 契约、UI 基础、Rust 文件读取/原子写、IpcPort/PlatformPort、浏览器 fake adapter、「欢迎页 → 原生对话框 → CM6 EditorState」打开流程与 Markdown/语言/Compartment 编辑组合。EditorView、保存协调器与关闭守卫尚未接入，下一步是 T-010 唯一 EditorView。

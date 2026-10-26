@@ -27,8 +27,37 @@ export default defineConfig({
     sourcemap: Boolean(process.env.TAURI_ENV_DEBUG),
     rollupOptions: {
       output: {
-        manualChunks: {
-          codemirror: ["@codemirror/state", "@codemirror/view"],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+          if (
+            /@codemirror\/(lang-markdown|lang-html|lang-css|lang-javascript)|@lezer\/(markdown|html|css|javascript)/.test(
+              id,
+            )
+          ) {
+            return "markdown";
+          }
+          if (
+            /@codemirror\/(state|view|language|commands|search|autocomplete)|@lezer\/(common|highlight|lr)/.test(
+              id,
+            )
+          ) {
+            return "codemirror";
+          }
+          if (/react-dom|scheduler|\/react\//.test(id)) {
+            return "react";
+          }
+          if (/react-router/.test(id)) {
+            return "router";
+          }
+          if (/i18next/.test(id)) {
+            return "i18n";
+          }
+          if (/@tauri-apps/.test(id)) {
+            return "tauri";
+          }
+          return undefined;
         },
       },
     },
