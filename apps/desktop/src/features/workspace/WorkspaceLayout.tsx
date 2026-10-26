@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Outlet, useNavigate, useOutletContext } from "react-router-dom";
 
 import { useAppServices } from "../../app/AppServices";
+import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
+import { useCloseGuard } from "../../app/useCloseGuard";
 import { useToast } from "../../components/ToastHost";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
@@ -20,11 +22,12 @@ export interface WorkspaceActions {
  * and an open document (T-015's palette) without duplicate registrations.
  */
 export function WorkspaceLayout() {
-  const { t } = useTranslation(["errors"]);
+  const { t } = useTranslation(["errors", "editor"]);
   const toast = useToast();
   const navigate = useNavigate();
-  const { ipc } = useAppServices();
-  const { setSession } = useDocumentSession();
+  const { ipc, platform } = useAppServices();
+  const { session, coordinator, setSession } = useDocumentSession();
+  const closeGuard = useCloseGuard({ ipc, platform, coordinator });
   const [opening, setOpening] = useState(false);
   const openingRef = useRef(false);
 
@@ -35,6 +38,14 @@ export function WorkspaceLayout() {
     openingRef.current = true;
     setOpening(true);
     try {
+      if (coordinator) {
+        const flushed = await coordinator.flush("switch");
+        if (!flushed.ok) {
+          toast.push(t("editor:save.resolveBeforeSwitch"));
+          return;
+        }
+      }
+
       const result = await openFile(ipc);
       if (!result.ok) {
         if (result.error.code !== "CANCELLED") {
@@ -48,7 +59,7 @@ export function WorkspaceLayout() {
       openingRef.current = false;
       setOpening(false);
     }
-  }, [ipc, navigate, setSession, t, toast]);
+  }, [coordinator, ipc, navigate, setSession, t, toast]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({
@@ -61,7 +72,33 @@ export function WorkspaceLayout() {
     return () => disposable.dispose();
   }, [openDocument]);
 
-  return <Outlet context={{ openDocument, opening } satisfies WorkspaceActions} />;
+  useEffect(() => {
+    if (!coordinator || !session) {
+      return;
+    }
+    const disposable = commandRegistry.register({
+      id: "file.save",
+      titleKey: "commands:file.save",
+      category: "commands:category.file",
+      keybinding: "Mod+S",
+      when: () => !session.getSnapshot().readOnly,
+      run: async () => {
+        await coordinator.flush("manual");
+      },
+    });
+    return () => disposable.dispose();
+  }, [coordinator, session]);
+
+  return (
+    <>
+      <Outlet context={{ openDocument, opening } satisfies WorkspaceActions} />
+      <CloseConfirmDialog
+        prompt={closeGuard.prompt}
+        onAllow={closeGuard.allowClose}
+        onCancel={closeGuard.cancelClose}
+      />
+    </>
+  );
 }
 
 export function useWorkspaceActions(): WorkspaceActions {
