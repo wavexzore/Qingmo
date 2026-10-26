@@ -141,6 +141,12 @@ export const commandLabels = {
     file: "File",
     view: "View",
   },
+  palette: {
+    title: "Command palette",
+    placeholder: "Search commands…",
+    empty: "No matching commands",
+    hint: "↑↓ select · Enter run · Esc close",
+  },
 } as const;
 
 export const en = { common, editor, errors, commands: commandLabels };
