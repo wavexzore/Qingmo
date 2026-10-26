@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Outlet, useNavigate, useOutletContext } from "react-router-dom";
 
+import type { AppError } from "@qingmo/shared";
+
 import { useAppServices } from "../../app/AppServices";
 import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
 import { useCloseGuard } from "../../app/useCloseGuard";
 import { useThemeService } from "../../app/useThemeService";
 import { useToast } from "../../components/ToastHost";
+import { CommandPalette } from "../commands/CommandPalette";
 import { commandRegistry } from "../commands/CommandRegistry";
+import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { EditorSession } from "../editor/EditorSession";
@@ -31,10 +35,28 @@ export function WorkspaceLayout() {
   const { session, coordinator, setSession } = useDocumentSession();
   const closeGuard = useCloseGuard({ ipc, platform, coordinator });
   const [opening, setOpening] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const openingRef = useRef(false);
 
   useThemeCommand();
   useThemeService(session);
+
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const handleCommandError = useCallback(
+    (error: AppError) => {
+      if (error.code === "CANCELLED") {
+        return;
+      }
+      toast.push(t(`errors:${error.code}`));
+    },
+    [t, toast],
+  );
+  useCommandKeybindings({
+    enabled: !paletteOpen && closeGuard.prompt === null,
+    onOpenPalette: openPalette,
+    onError: handleCommandError,
+  });
 
   const openDocument = useCallback(async () => {
     if (openingRef.current) {
@@ -115,6 +137,7 @@ export function WorkspaceLayout() {
   return (
     <>
       <Outlet context={{ openDocument, opening } satisfies WorkspaceActions} />
+      <CommandPalette open={paletteOpen} onClose={closePalette} onError={handleCommandError} />
       <CloseConfirmDialog
         prompt={closeGuard.prompt}
         onAllow={closeGuard.allowClose}

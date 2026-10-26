@@ -136,6 +136,12 @@ export const commandLabels = {
     file: "文件",
     view: "视图",
   },
+  palette: {
+    title: "命令面板",
+    placeholder: "搜索命令…",
+    empty: "没有匹配的命令",
+    hint: "↑↓ 选择 · Enter 执行 · Esc 关闭",
+  },
 } as const;
 
 export const zhCN = { common, editor, errors, commands: commandLabels };

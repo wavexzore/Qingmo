@@ -120,17 +120,18 @@ describe("welcome -> editor open flow", () => {
 
     expect(await screen.findByRole("heading", { name: "note.md" })).toBeInTheDocument();
     expect(screen.getByTestId("document-session")).toHaveTextContent("/docs/note.md");
-    expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md");
+    const statusBar = screen.getByTestId("status-bar");
+    await waitFor(() => expect(statusBar).toHaveTextContent("note.md"));
     // The body lives in CM6's DOM, never in the React metadata snapshot
     // (editor-session.test.ts asserts JSON.stringify(snapshot) has no text).
-    expect(screen.getByTestId("editor-host")).toHaveTextContent("secret body");
+    await waitFor(() => expect(screen.getByTestId("editor-host")).toHaveTextContent("secret body"));
     expect(router.state.location.pathname).toBe("/editor");
     expect(commandRegistry.list().filter((item) => item.id === "file.open")).toHaveLength(1);
     expect(commandRegistry.list().filter((item) => item.id === "file.save")).toHaveLength(1);
     expect(
       commandRegistry.list().filter((item) => item.id === "view.toggleLivePreview"),
     ).toHaveLength(1);
-    expect(screen.getByTestId("status-bar")).toHaveTextContent("实时预览");
+    await waitFor(() => expect(statusBar).toHaveTextContent("实时预览"));
 
     const saved = await commandRegistry.execute("file.save");
     expect(saved.ok).toBe(true);
@@ -146,6 +147,7 @@ describe("welcome -> editor open flow", () => {
     expect(commandRegistry.list().filter((item) => item.id === "view.toggleTheme")).toHaveLength(1);
     const themeBefore = document.documentElement.getAttribute("data-theme");
     const editorBefore = document.querySelector(".cm-editor")?.className;
+    expect(editorBefore).toBeTruthy();
     expect((await commandRegistry.execute("view.toggleTheme")).ok).toBe(true);
     const themeAfter = document.documentElement.getAttribute("data-theme");
     expect(themeAfter).toMatch(/^(light|dark)$/);
@@ -153,6 +155,37 @@ describe("welcome -> editor open flow", () => {
     await waitFor(() =>
       expect(document.querySelector(".cm-editor")?.className).not.toBe(editorBefore),
     );
+  });
+
+  it("opens the registry-backed palette with Mod+K and runs a command from the keyboard", async () => {
+    const ipc = fileIpc("# Palette\n");
+    renderApp(ipc);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
+    expect(await screen.findByRole("heading", { name: "note.md" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(4);
+    expect(options.map((option) => option.textContent)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("打开文件"),
+        expect.stringContaining("保存文件"),
+        expect.stringContaining("切换实时预览"),
+        expect.stringContaining("切换主题"),
+      ]),
+    );
+
+    const before = document.documentElement.getAttribute("data-theme");
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "主题" } });
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(document.documentElement.getAttribute("data-theme")).not.toBe(before);
   });
 
   it("shows the read-only reason for an MDX document", async () => {
