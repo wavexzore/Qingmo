@@ -1,0 +1,60 @@
+{
+  "capturedAt": "2026-10-26T18:34:00+08:00",
+  "method": "AX 标题+编辑器就绪轮询（open 上界）；编辑后等待“等待保存”再 Cmd+S，轮询“已同步”（save 上界）；ps -o rss= 记录打开后 RSS。每档 3 次，取中位数。",
+  "environment": "macOS 26 arm64 / Apple M3 Max / pnpm tauri dev（debug build）",
+  "fixtures": {
+    "small": {
+      "openMs": 328.3,
+      "saveMs": 23.4,
+      "rssMb": 171.1,
+      "livePreview": true,
+      "runs": [
+        { "openMs": 343.0, "saveMs": 19.7, "rssMb": 171.7 },
+        { "openMs": 323.4, "saveMs": 23.4, "rssMb": 171.0 },
+        { "openMs": 328.3, "saveMs": 44.2, "rssMb": 171.1 }
+      ],
+      "notes": "10 KiB；保存后文件 +1 字节（插入 z），状态栏回到“已同步”。"
+    },
+    "medium": {
+      "openMs": 304.7,
+      "saveMs": 112.4,
+      "rssMb": 175.4,
+      "livePreview": true,
+      "runs": [
+        { "openMs": 283.7, "saveMs": 63.3, "rssMb": 171.8 },
+        {
+          "openMs": 304.7,
+          "saveMs": 910.4,
+          "rssMb": 174.5,
+          "note": "Cmd+S 未抢在 800ms 自动保存前，测到的是自动保存上界"
+        },
+        {
+          "openMs": 346.9,
+          "saveMs": 35.8,
+          "rssMb": 175.4,
+          "note": "未捕获 dirty（焦点未进入编辑器），save 不计入中位数"
+        },
+        { "openMs": 359.3, "saveMs": 161.4, "rssMb": 176.8 },
+        {
+          "openMs": 296.3,
+          "saveMs": 884.2,
+          "rssMb": 177.0,
+          "note": "Cmd+S 未抢在 800ms 自动保存前，测到的是自动保存上界"
+        }
+      ],
+      "notes": "1 MiB；手动保存中位数 112.4ms（63.3/161.4），两次落入 800ms 自动保存上界；open 中位数 304.7ms。"
+    },
+    "large": {
+      "openMs": 853.2,
+      "saveMs": 449.1,
+      "rssMb": 250.1,
+      "livePreview": false,
+      "runs": [
+        { "openMs": 1317.3, "saveMs": 449.1, "rssMb": 238.9, "note": "应用冷启动后的首次打开" },
+        { "openMs": 799.7, "saveMs": 412.3, "rssMb": 259.7 },
+        { "openMs": 853.2, "saveMs": 500.2, "rssMb": 250.1 }
+      ],
+      "notes": "10 MiB，状态栏显示“大文档 · 预览关闭/源码”；精确 10MiB 插入会被拒绝（保存失败），改为前向删除 1 字符后保存成功（10MiB-1）。"
+    }
+  }
+}

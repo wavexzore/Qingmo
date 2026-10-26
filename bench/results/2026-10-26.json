@@ -1,0 +1,466 @@
+{
+  "task": "T-017",
+  "capturedAt": "2026-10-26T10:25:24.067Z",
+  "commit": "d0431ea-dirty",
+  "environment": {
+    "platform": "darwin arm64",
+    "release": "25.1.0",
+    "cpu": "Apple M3 Max",
+    "totalMemGb": 128,
+    "node": "v26.12.1",
+    "rust": "rustc 1.91.1 (ed61e7d7e 2025-11-07)"
+  },
+  "definitions": {
+    "open_ms": "createEditorState for an already-received FilePayload (fake adapter)",
+    "ipc_copy_ms": "JSON.stringify + JSON.parse of FilePayload (proxy)",
+    "decorate_ms": "80-line viewport, ensureSyntaxTree budget 8ms + decoration specs",
+    "key_p95_ms": "single-character dispatch/update p95",
+    "save_ms": "real AtomicWriter::write on a temp copy (release build)",
+    "max_rss_mb": "real Tauri process RSS after open (manual, ps)"
+  },
+  "fixtures": [
+    {
+      "fixture": "small",
+      "bytes": 10240,
+      "lines": 419,
+      "sha256": "f2b1a535acbbea91f6daece14e2de871d212b6d175a7cdba031821a7eff7f9d4",
+      "open_ms": {
+        "summary": {
+          "count": 20,
+          "min": 0.607,
+          "p50": 1.079,
+          "p95": 3.772,
+          "max": 4.091,
+          "mean": 1.339
+        },
+        "source": "EditorSession.create -> createEditorState (fake IPC payload)"
+      },
+      "ipc_copy_ms": {
+        "summary": {
+          "count": 20,
+          "min": 0.016,
+          "p50": 0.036,
+          "p95": 0.057,
+          "max": 0.181,
+          "mean": 0.042
+        },
+        "source": "JSON round-trip of FilePayload; proxy, not the Tauri transport"
+      },
+      "decorate_ms": {
+        "summary": {
+          "count": 20,
+          "min": 0.171,
+          "p50": 0.254,
+          "p95": 0.45,
+          "max": 0.621,
+          "mean": 0.294
+        },
+        "skipped": false,
+        "skipReason": null,
+        "specs": 174,
+        "viewportLines": 80,
+        "viewMountMs": 66.22504199999997,
+        "source": "ensureSyntaxTree(8ms) + buildLivePreviewDecorations"
+      },
+      "key_p95_ms": {
+        "value": 0.853,
+        "p50": 0.377,
+        "count": 80,
+        "source": "EditorView.dispatch (real view, LP on)"
+      },
+      "save_ms": {
+        "summary": {
+          "count": 30,
+          "max": 12.937,
+          "mean": 5.53,
+          "min": 4.4,
+          "p50": 5.157,
+          "p95": 10.578
+        },
+        "source": "AtomicWriter::write (real temp file, release build)"
+      },
+      "fake_save_ms": {
+        "summary": {
+          "count": 30,
+          "min": 0.071,
+          "p50": 0.114,
+          "p95": 0.147,
+          "max": 1.849,
+          "mean": 0.169
+        },
+        "readTextMs": {
+          "count": 30,
+          "min": 0.005,
+          "p50": 0.008,
+          "p95": 0.039,
+          "max": 0.046,
+          "mean": 0.014
+        },
+        "source": "FakeIpc.documentWriteAtomic (encode + FNV hash + copy)"
+      },
+      "max_rss_mb": {
+        "value": 171.1,
+        "source": "ps -o rss= after opening the file in the real Tauri app"
+      },
+      "node_peak_rss_mb": {
+        "value": 201.4,
+        "source": "process.resourceUsage().maxRSS"
+      },
+      "manual_tauri": {
+        "openMs": 328.3,
+        "saveMs": 23.4,
+        "rssMb": 171.1,
+        "livePreview": true,
+        "runs": [
+          {
+            "openMs": 343,
+            "saveMs": 19.7,
+            "rssMb": 171.7
+          },
+          {
+            "openMs": 323.4,
+            "saveMs": 23.4,
+            "rssMb": 171
+          },
+          {
+            "openMs": 328.3,
+            "saveMs": 44.2,
+            "rssMb": 171.1
+          }
+        ],
+        "notes": "10 KiB；保存后文件 +1 字节（插入 z），状态栏回到“已同步”。"
+      }
+    },
+    {
+      "fixture": "medium",
+      "bytes": 1048576,
+      "lines": 41618,
+      "sha256": "76bac1fd0465fb409b1d559b31c8c0c2a752e9e5bf61bf14596f7252f14e63c4",
+      "open_ms": {
+        "summary": {
+          "count": 8,
+          "min": 2.374,
+          "p50": 2.849,
+          "p95": 6.119,
+          "max": 6.119,
+          "mean": 3.398
+        },
+        "source": "EditorSession.create -> createEditorState (fake IPC payload)"
+      },
+      "ipc_copy_ms": {
+        "summary": {
+          "count": 8,
+          "min": 1.265,
+          "p50": 1.547,
+          "p95": 1.717,
+          "max": 1.717,
+          "mean": 1.546
+        },
+        "source": "JSON round-trip of FilePayload; proxy, not the Tauri transport"
+      },
+      "decorate_ms": {
+        "summary": {
+          "count": 10,
+          "min": 0.332,
+          "p50": 0.384,
+          "p95": 0.637,
+          "max": 0.637,
+          "mean": 0.406
+        },
+        "skipped": false,
+        "skipReason": null,
+        "specs": 174,
+        "viewportLines": 80,
+        "viewMountMs": 67.22233299999999,
+        "source": "ensureSyntaxTree(8ms) + buildLivePreviewDecorations"
+      },
+      "key_p95_ms": {
+        "value": 1.231,
+        "p50": 0.47,
+        "count": 40,
+        "source": "EditorView.dispatch (real view, LP on)"
+      },
+      "save_ms": {
+        "summary": {
+          "count": 12,
+          "max": 7.357,
+          "mean": 6.59,
+          "min": 5.93,
+          "p50": 6.53,
+          "p95": 7.357
+        },
+        "source": "AtomicWriter::write (real temp file, release build)"
+      },
+      "fake_save_ms": {
+        "summary": {
+          "count": 12,
+          "min": 6.571,
+          "p50": 6.768,
+          "p95": 6.91,
+          "max": 6.91,
+          "mean": 6.762
+        },
+        "readTextMs": {
+          "count": 12,
+          "min": 0.401,
+          "p50": 0.443,
+          "p95": 1.211,
+          "max": 1.211,
+          "mean": 0.557
+        },
+        "source": "FakeIpc.documentWriteAtomic (encode + FNV hash + copy)"
+      },
+      "max_rss_mb": {
+        "value": 175.4,
+        "source": "ps -o rss= after opening the file in the real Tauri app"
+      },
+      "node_peak_rss_mb": {
+        "value": 233,
+        "source": "process.resourceUsage().maxRSS"
+      },
+      "manual_tauri": {
+        "openMs": 304.7,
+        "saveMs": 112.4,
+        "rssMb": 175.4,
+        "livePreview": true,
+        "runs": [
+          {
+            "openMs": 283.7,
+            "saveMs": 63.3,
+            "rssMb": 171.8
+          },
+          {
+            "openMs": 304.7,
+            "saveMs": 910.4,
+            "rssMb": 174.5,
+            "note": "Cmd+S 未抢在 800ms 自动保存前，测到的是自动保存上界"
+          },
+          {
+            "openMs": 346.9,
+            "saveMs": 35.8,
+            "rssMb": 175.4,
+            "note": "未捕获 dirty（焦点未进入编辑器），save 不计入中位数"
+          },
+          {
+            "openMs": 359.3,
+            "saveMs": 161.4,
+            "rssMb": 176.8
+          },
+          {
+            "openMs": 296.3,
+            "saveMs": 884.2,
+            "rssMb": 177,
+            "note": "Cmd+S 未抢在 800ms 自动保存前，测到的是自动保存上界"
+          }
+        ],
+        "notes": "1 MiB；手动保存中位数 112.4ms（63.3/161.4），两次落入 800ms 自动保存上界；open 中位数 304.7ms。"
+      }
+    },
+    {
+      "fixture": "large",
+      "bytes": 10485760,
+      "lines": 408423,
+      "sha256": "0accc1ac10228dff36a85bc7ffd2b35cf6ff21d2888c304ac4d70942bfbf5409",
+      "open_ms": {
+        "summary": {
+          "count": 4,
+          "min": 16.868,
+          "p50": 23.695,
+          "p95": 43.99,
+          "max": 43.99,
+          "mean": 27.408
+        },
+        "source": "EditorSession.create -> createEditorState (fake IPC payload)"
+      },
+      "ipc_copy_ms": {
+        "summary": {
+          "count": 4,
+          "min": 13.709,
+          "p50": 14.002,
+          "p95": 14.248,
+          "max": 14.248,
+          "mean": 14.048
+        },
+        "source": "JSON round-trip of FilePayload; proxy, not the Tauri transport"
+      },
+      "decorate_ms": {
+        "summary": {
+          "count": 5,
+          "min": 0.001,
+          "p50": 0.001,
+          "p95": 0.004,
+          "max": 0.004,
+          "mean": 0.002
+        },
+        "skipped": true,
+        "skipReason": "document exceeds LP_MAX_UNITS",
+        "specs": 0,
+        "viewportLines": 80,
+        "viewMountMs": null,
+        "source": "ensureSyntaxTree(8ms) + buildLivePreviewDecorations"
+      },
+      "key_p95_ms": {
+        "value": 0.753,
+        "p50": 0.275,
+        "count": 20,
+        "source": "EditorState.update (LP off, no EditorView)"
+      },
+      "save_ms": {
+        "summary": {
+          "count": 5,
+          "max": 23.247,
+          "mean": 23.052,
+          "min": 22.799,
+          "p50": 23.138,
+          "p95": 23.247
+        },
+        "source": "AtomicWriter::write (real temp file, release build)"
+      },
+      "fake_save_ms": {
+        "summary": {
+          "count": 5,
+          "min": 67.739,
+          "p50": 69.564,
+          "p95": 79.585,
+          "max": 79.585,
+          "mean": 71.082
+        },
+        "readTextMs": {
+          "count": 5,
+          "min": 3.666,
+          "p50": 4.372,
+          "p95": 7.099,
+          "max": 7.099,
+          "mean": 4.759
+        },
+        "source": "FakeIpc.documentWriteAtomic (encode + FNV hash + copy)"
+      },
+      "max_rss_mb": {
+        "value": 250.1,
+        "source": "ps -o rss= after opening the file in the real Tauri app"
+      },
+      "node_peak_rss_mb": {
+        "value": 371.2,
+        "source": "process.resourceUsage().maxRSS"
+      },
+      "manual_tauri": {
+        "openMs": 853.2,
+        "saveMs": 449.1,
+        "rssMb": 250.1,
+        "livePreview": false,
+        "runs": [
+          {
+            "openMs": 1317.3,
+            "saveMs": 449.1,
+            "rssMb": 238.9,
+            "note": "应用冷启动后的首次打开"
+          },
+          {
+            "openMs": 799.7,
+            "saveMs": 412.3,
+            "rssMb": 259.7
+          },
+          {
+            "openMs": 853.2,
+            "saveMs": 500.2,
+            "rssMb": 250.1
+          }
+        ],
+        "notes": "10 MiB，状态栏显示“大文档 · 预览关闭/源码”；精确 10MiB 插入会被拒绝（保存失败），改为前向删除 1 字符后保存成功（10MiB-1）。"
+      }
+    }
+  ],
+  "manualTauri": {
+    "capturedAt": "2026-10-26T18:34:00+08:00",
+    "method": "AX 标题+编辑器就绪轮询（open 上界）；编辑后等待“等待保存”再 Cmd+S，轮询“已同步”（save 上界）；ps -o rss= 记录打开后 RSS。每档 3 次，取中位数。",
+    "environment": "macOS 26 arm64 / Apple M3 Max / pnpm tauri dev（debug build）",
+    "fixtures": {
+      "small": {
+        "openMs": 328.3,
+        "saveMs": 23.4,
+        "rssMb": 171.1,
+        "livePreview": true,
+        "runs": [
+          {
+            "openMs": 343,
+            "saveMs": 19.7,
+            "rssMb": 171.7
+          },
+          {
+            "openMs": 323.4,
+            "saveMs": 23.4,
+            "rssMb": 171
+          },
+          {
+            "openMs": 328.3,
+            "saveMs": 44.2,
+            "rssMb": 171.1
+          }
+        ],
+        "notes": "10 KiB；保存后文件 +1 字节（插入 z），状态栏回到“已同步”。"
+      },
+      "medium": {
+        "openMs": 304.7,
+        "saveMs": 112.4,
+        "rssMb": 175.4,
+        "livePreview": true,
+        "runs": [
+          {
+            "openMs": 283.7,
+            "saveMs": 63.3,
+            "rssMb": 171.8
+          },
+          {
+            "openMs": 304.7,
+            "saveMs": 910.4,
+            "rssMb": 174.5,
+            "note": "Cmd+S 未抢在 800ms 自动保存前，测到的是自动保存上界"
+          },
+          {
+            "openMs": 346.9,
+            "saveMs": 35.8,
+            "rssMb": 175.4,
+            "note": "未捕获 dirty（焦点未进入编辑器），save 不计入中位数"
+          },
+          {
+            "openMs": 359.3,
+            "saveMs": 161.4,
+            "rssMb": 176.8
+          },
+          {
+            "openMs": 296.3,
+            "saveMs": 884.2,
+            "rssMb": 177,
+            "note": "Cmd+S 未抢在 800ms 自动保存前，测到的是自动保存上界"
+          }
+        ],
+        "notes": "1 MiB；手动保存中位数 112.4ms（63.3/161.4），两次落入 800ms 自动保存上界；open 中位数 304.7ms。"
+      },
+      "large": {
+        "openMs": 853.2,
+        "saveMs": 449.1,
+        "rssMb": 250.1,
+        "livePreview": false,
+        "runs": [
+          {
+            "openMs": 1317.3,
+            "saveMs": 449.1,
+            "rssMb": 238.9,
+            "note": "应用冷启动后的首次打开"
+          },
+          {
+            "openMs": 799.7,
+            "saveMs": 412.3,
+            "rssMb": 259.7
+          },
+          {
+            "openMs": 853.2,
+            "saveMs": 500.2,
+            "rssMb": 250.1
+          }
+        ],
+        "notes": "10 MiB，状态栏显示“大文档 · 预览关闭/源码”；精确 10MiB 插入会被拒绝（保存失败），改为前向删除 1 字符后保存成功（10MiB-1）。"
+      }
+    }
+  }
+}
