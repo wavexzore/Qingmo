@@ -1,19 +1,42 @@
 @import "tailwindcss";
+@import "@qingmo/ui/tokens.css";
 
-@theme {
-  --font-sans:
-    "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei",
-    sans-serif;
-  --font-serif:
-    "Iowan Old Style", "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC", Georgia, serif;
-}
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+  body {
+    margin: 0;
+    background: var(--qm-paper);
+    color: var(--qm-ink);
+    font-family: var(--qm-font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 
-body {
-  margin: 0;
+  ::selection {
+    background: var(--qm-accent-soft);
+    color: var(--qm-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--qm-accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
