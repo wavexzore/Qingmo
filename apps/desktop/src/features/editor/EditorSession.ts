@@ -1,6 +1,6 @@
 import { StateEffect, type EditorState, type Extension } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
-import { createEditorState } from "@qingmo/editor-core";
+import { createEditorState, LP_MAX_UNITS, livePreview, setModeEffect } from "@qingmo/editor-core";
 import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
 
 import type { SaveState } from "../../lib/save-state";
@@ -43,6 +43,10 @@ export interface EditorSessionSnapshot extends EditorMetadataSnapshot {
   saveState: SaveState;
   /** Derived: saveState is neither clean nor readonly. */
   dirty: boolean;
+  /** Doc length exceeds the Live Preview unit budget. */
+  largeFile: boolean;
+  /** Effective mode: user preference AND not a large file. */
+  livePreview: boolean;
   selection: EditorSelectionSnapshot;
   cursor: EditorCursorSnapshot;
   version: number;
@@ -121,6 +125,7 @@ export class EditorSession {
   private metadata: EditorMetadataSnapshot;
   private state: EditorState;
   private snapshot: EditorSessionSnapshot;
+  private previewEnabled: boolean;
   private view: EditorView | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
@@ -138,12 +143,16 @@ export class EditorSession {
 
     const selection = selectionOf(this.state);
     const saveState: SaveState = payload.readOnly ? "readonly" : "clean";
+    const largeFile = this.state.doc.length > LP_MAX_UNITS;
+    this.previewEnabled = !largeFile;
     this.metadata = metadataOf(payload);
 
     this.snapshot = Object.freeze({
       ...this.metadata,
       saveState,
       dirty: false,
+      largeFile,
+      livePreview: this.previewEnabled,
       selection,
       cursor: cursorAt(this.state, selection.head),
       version: 0,
@@ -209,6 +218,8 @@ export class EditorSession {
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
     });
+    const largeFile = state.doc.length > LP_MAX_UNITS;
+    this.previewEnabled = !largeFile;
     this.metadata = metadataOf(payload);
 
     if (this.view) {
@@ -224,6 +235,8 @@ export class EditorSession {
       ...this.metadata,
       saveState: payload.readOnly ? "readonly" : "clean",
       dirty: false,
+      largeFile,
+      livePreview: this.previewEnabled,
       selection,
       cursor: cursorAt(current, selection.head),
       version: this.snapshot.version + 1,
@@ -271,6 +284,31 @@ export class EditorSession {
       return;
     }
     this.publish({ saveState: effective }, true);
+  }
+
+  /**
+   * Reconfigures the existing mode compartment. It never rebuilds the view or
+   * touches the document, so undo history and selection survive. Large files
+   * stay in source mode until they shrink below the unit budget.
+   */
+  toggleLivePreview(): boolean {
+    if (this.disposed) {
+      return this.snapshot.livePreview;
+    }
+    const largeFile = this.currentState.doc.length > LP_MAX_UNITS;
+    if (largeFile) {
+      return false;
+    }
+
+    this.previewEnabled = !this.previewEnabled;
+    const effect = setModeEffect(this.previewEnabled ? livePreview() : []);
+    if (this.view) {
+      this.view.dispatch({ effects: effect });
+    } else {
+      this.state = this.state.update({ effects: effect }).state;
+    }
+    this.publish({ largeFile: false, livePreview: this.previewEnabled }, true);
+    return this.previewEnabled;
   }
 
   /** SaveCoordinator subscribes here; the session never imports it. */
@@ -363,7 +401,17 @@ export class EditorSession {
 
     const selection = selectionOf(update.state);
     const cursor = cursorAt(update.state, selection.head);
-    this.publish({ saveState, selection, cursor }, immediateStatus);
+    const largeFile = update.state.doc.length > LP_MAX_UNITS;
+    this.publish(
+      {
+        saveState,
+        selection,
+        cursor,
+        largeFile,
+        livePreview: this.previewEnabled && !largeFile,
+      },
+      immediateStatus,
+    );
 
     // Notify after the dirty snapshot is visible, so SaveCoordinator can move
     // the same store from dirty to scheduled without being overwritten by the
@@ -376,17 +424,26 @@ export class EditorSession {
   }
 
   private publish(
-    patch: Partial<Pick<EditorSessionSnapshot, "saveState" | "selection" | "cursor">>,
+    patch: Partial<
+      Pick<
+        EditorSessionSnapshot,
+        "saveState" | "selection" | "cursor" | "largeFile" | "livePreview"
+      >
+    >,
     immediateStatus = false,
   ): void {
     const saveState = patch.saveState ?? this.snapshot.saveState;
     const selection = patch.selection ?? this.snapshot.selection;
     const cursor = patch.cursor ?? this.snapshot.cursor;
+    const largeFile = patch.largeFile ?? this.snapshot.largeFile;
+    const livePreview = patch.livePreview ?? this.snapshot.livePreview;
 
     if (
       saveState === this.snapshot.saveState &&
       sameSelection(selection, this.snapshot.selection) &&
-      sameCursor(cursor, this.snapshot.cursor)
+      sameCursor(cursor, this.snapshot.cursor) &&
+      largeFile === this.snapshot.largeFile &&
+      livePreview === this.snapshot.livePreview
     ) {
       return;
     }
@@ -395,6 +452,8 @@ export class EditorSession {
       ...this.snapshot,
       saveState,
       dirty: saveState !== "clean" && saveState !== "readonly",
+      largeFile,
+      livePreview,
       selection,
       cursor,
       version: this.snapshot.version + 1,

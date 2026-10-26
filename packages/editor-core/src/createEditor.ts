@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { basicExtensions } from "./extensions/basic";
 import { markdownExtensions } from "./extensions/markdown";
 import { qingmoEditorTheme } from "./extensions/theme";
+import { LP_MAX_UNITS } from "./limits";
 import { livePreview } from "./live-preview/plugin";
 
 /**
@@ -57,14 +58,19 @@ export function createEditorState({
   readOnly = false,
   extraExtensions = [],
 }: CreateEditorStateOptions): EditorState {
+  const normalized = normalizeLineEndings(doc);
+  // Large documents start in source mode; the plugin also refuses to decorate
+  // above the same limit, so growing past it degrades without a state rebuild.
+  const previewEnabled = normalized.length <= LP_MAX_UNITS;
+
   return EditorState.create({
-    doc: normalizeLineEndings(doc),
+    doc: normalized,
     extensions: [
       ...basicExtensions,
       ...markdownExtensions,
       themeCompartment.of(qingmoEditorTheme),
       readOnlyCompartment.of(readOnlyExtensions(readOnly)),
-      modeCompartment.of(livePreview()),
+      modeCompartment.of(previewEnabled ? livePreview() : []),
       ...extraExtensions,
     ],
   });

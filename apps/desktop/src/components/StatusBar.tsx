@@ -15,6 +15,8 @@ export interface StatusBarSnapshot {
   eol: string | null;
   size: number | null;
   mode: StatusBarMode;
+  /** Live Preview is off because the document exceeds the unit budget. */
+  largeFile: boolean;
 }
 
 export const EMPTY_STATUS_SNAPSHOT: StatusBarSnapshot = {
@@ -25,6 +27,7 @@ export const EMPTY_STATUS_SNAPSHOT: StatusBarSnapshot = {
   eol: null,
   size: null,
   mode: "source",
+  largeFile: false,
 };
 
 const saveStateTone: Record<SaveState, string> = {
@@ -113,8 +116,17 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
         <Item label={t("common:status.size")} value={formatSize(snapshot.size)} />
       </div>
 
-      <span className="ml-auto shrink-0 text-[10px] uppercase tracking-[0.14em] text-ink-faint">
-        {modeLabel}
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {snapshot.largeFile ? (
+          <span
+            data-testid="large-file-hint"
+            title={t("common:status.largeFileHint")}
+            className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-muted"
+          >
+            {t("common:status.largeFile")}
+          </span>
+        ) : null}
+        <span className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">{modeLabel}</span>
       </span>
     </footer>
   );

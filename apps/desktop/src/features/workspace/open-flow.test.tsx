@@ -48,6 +48,7 @@ function fileIpc(
 afterEach(() => {
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
+  commandRegistry.unregister("view.toggleLivePreview");
 });
 
 describe("openFile", () => {
@@ -121,10 +122,21 @@ describe("welcome -> editor open flow", () => {
     expect(router.state.location.pathname).toBe("/editor");
     expect(commandRegistry.list().filter((item) => item.id === "file.open")).toHaveLength(1);
     expect(commandRegistry.list().filter((item) => item.id === "file.save")).toHaveLength(1);
+    expect(
+      commandRegistry.list().filter((item) => item.id === "view.toggleLivePreview"),
+    ).toHaveLength(1);
+    expect(screen.getByTestId("status-bar")).toHaveTextContent("实时预览");
 
     const saved = await commandRegistry.execute("file.save");
     expect(saved.ok).toBe(true);
     expect(ipc.getFile("/docs/note.md")?.text).toBe("# Hello\n\nsecret body\n");
+
+    expect((await commandRegistry.execute("view.toggleLivePreview")).ok).toBe(true);
+    await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("源码"));
+    expect(screen.getByTestId("status-bar")).not.toHaveTextContent("实时预览");
+
+    expect((await commandRegistry.execute("view.toggleLivePreview")).ok).toBe(true);
+    await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("实时预览"));
   });
 
   it("shows the read-only reason for an MDX document", async () => {
@@ -146,6 +158,23 @@ describe("welcome -> editor open flow", () => {
       expect(saved.error.code).toBe("BUSY");
     }
   });
+
+  it("shows the large-document hint and disables preview above the unit budget", async () => {
+    const ipc = fileIpc(`# Big\n\n${"a".repeat(2_000_000)}`);
+    renderApp(ipc);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
+
+    expect(await screen.findByRole("heading", { name: "note.md" })).toBeInTheDocument();
+    expect(screen.getByTestId("large-file-hint")).toHaveTextContent("大文档 · 预览关闭");
+    expect(screen.getByTestId("status-bar")).toHaveTextContent("源码");
+
+    const toggled = await commandRegistry.execute("view.toggleLivePreview");
+    expect(toggled.ok).toBe(false);
+    if (!toggled.ok) {
+      expect(toggled.error.code).toBe("BUSY");
+    }
+  }, 20_000);
 
   it("shows an error toast for a rejected open and stays on the welcome page", async () => {
     const ipc = new FakeIpc({

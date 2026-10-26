@@ -89,6 +89,24 @@ export function WorkspaceLayout() {
     return () => disposable.dispose();
   }, [coordinator, session]);
 
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    const disposable = commandRegistry.register({
+      id: "view.toggleLivePreview",
+      titleKey: "commands:view.toggleLivePreview",
+      category: "commands:category.view",
+      // Large files stay in source mode until they shrink below the budget;
+      // re-enabling preview there would only run the plugin's own no-op guard.
+      when: () => !session.getSnapshot().largeFile,
+      run: () => {
+        session.toggleLivePreview();
+      },
+    });
+    return () => disposable.dispose();
+  }, [session]);
+
   return (
     <>
       <Outlet context={{ openDocument, opening } satisfies WorkspaceActions} />
