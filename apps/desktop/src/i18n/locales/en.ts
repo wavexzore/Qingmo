@@ -6,7 +6,7 @@ export const common = {
   tagline: "Quiet as paper, fast as a code editor.",
   actions: {
     openFile: "Open Markdown file",
-    openEditor: "View editor empty state",
+    openEditor: "View editor",
     backToWelcome: "Back to welcome",
     retry: "Retry",
   },
@@ -60,6 +60,20 @@ export const editor = {
     hint: "Once open, you will see the file name, encoding, line endings and save state.",
     openButton: "Open file",
   },
+  document: {
+    title: "Document loaded",
+    description:
+      "The body is now in CodeMirror EditorState; the editing view arrives in a later task.",
+    path: "Path",
+    readOnly: "Read-only",
+    readOnlyMdx: "MDX is read-only for now",
+    readOnlyMixedEol: "Mixed line endings are read-only",
+    format: "Format",
+    units: "UTF-16 units",
+    hash: "Base hash",
+    viewPending:
+      "Only EditorState exists right now; no EditorView is created, and the React snapshot contains no body text.",
+  },
   status: {
     position: "Line {{line}}, column {{column}}",
     size: "{{value}} bytes",
@@ -82,4 +96,13 @@ export const errors = {
   CANCELLED: "The operation was cancelled.",
 } as const satisfies Record<AppErrorCode, string>;
 
-export const en = { common, editor, errors };
+export const commandLabels = {
+  file: {
+    open: "Open file",
+  },
+  category: {
+    file: "File",
+  },
+} as const;
+
+export const en = { common, editor, errors, commands: commandLabels };

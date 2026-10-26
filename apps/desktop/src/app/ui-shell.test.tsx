@@ -1,9 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
 import { AppErrorBoundary } from "../components/AppErrorBoundary";
 import { ToastProvider } from "../components/ToastHost";
+import { AppServicesProvider } from "./AppServices";
+import { DocumentSessionProvider } from "../features/editor/DocumentSessionContext";
 import { routes } from "./routes";
 
 function renderAt(path: string) {
@@ -11,7 +13,11 @@ function renderAt(path: string) {
   render(
     <AppErrorBoundary>
       <ToastProvider>
-        <RouterProvider router={router} />
+        <AppServicesProvider>
+          <DocumentSessionProvider>
+            <RouterProvider router={router} />
+          </DocumentSessionProvider>
+        </AppServicesProvider>
       </ToastProvider>
     </AppErrorBoundary>,
   );
@@ -23,7 +29,7 @@ describe("App Shell", () => {
     renderAt("/");
 
     expect(screen.getByRole("heading", { name: "青墨" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打开 Markdown 文件" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开 Markdown 文件" })).toBeEnabled();
     expect(screen.getByRole("heading", { name: "最近文件" })).toBeInTheDocument();
   });
 
@@ -42,12 +48,5 @@ describe("App Shell", () => {
     expect(await screen.findByRole("heading", { name: "还没有打开的文档" })).toBeInTheDocument();
     await router.navigate("/");
     expect(await screen.findByRole("heading", { name: "最近文件" })).toBeInTheDocument();
-  });
-
-  it("shows a toast for the not-yet-wired open action", () => {
-    renderAt("/");
-    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
-
-    expect(screen.getByText("文件打开将在 T-008 接入。")).toBeInTheDocument();
   });
 });
