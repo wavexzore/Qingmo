@@ -7,6 +7,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
 {
     tauri::generate_handler![
         document::document_open,
+        document::document_take_pending,
         document::document_reload,
         document::document_save_as,
         document::document_write_atomic,

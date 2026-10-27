@@ -71,8 +71,10 @@ struct RegistryInner {
     docs: RwLock<HashMap<DocToken, Arc<DocumentRecord>>>,
 }
 
-/// P1 keeps exactly one active document. A successful `open` invalidates the
-/// previous token before the new one is returned.
+/// Registry of documents owned by open windows.
+///
+/// A window owns one [`DocToken`]; several windows may be open at the same
+/// time. Releasing a token happens when its window is confirmed closed.
 #[derive(Debug, Clone, Default)]
 pub struct DocumentRegistry {
     inner: Arc<RegistryInner>,
@@ -114,7 +116,6 @@ impl DocumentRegistry {
             .docs
             .write()
             .map_err(|_| AppError::new(AppErrorCode::Io, "document registry lock poisoned"))?;
-        docs.clear();
         docs.insert(token.clone(), record);
 
         Ok(parsed.into_payload(token.as_str(), path_to_display(&canonical_target)))
@@ -164,7 +165,6 @@ impl DocumentRegistry {
             .docs
             .write()
             .map_err(|_| AppError::new(AppErrorCode::Io, "document registry lock poisoned"))?;
-        docs.clear();
         docs.insert(token.clone(), record);
 
         Ok(FilePayload {
@@ -226,6 +226,17 @@ impl DocumentRegistry {
             .find(|(candidate, _)| candidate.as_str() == token)
             .map(|(_, record)| Arc::clone(record))
             .ok_or_else(|| AppError::new(AppErrorCode::InvalidPath, "invalid or expired docToken"))
+    }
+
+    /// Removes a document after its window has been closed.
+    ///
+    /// Returns `true` when the token existed. Unknown tokens are ignored so a
+    /// repeated close confirmation cannot fail the close itself.
+    pub fn release(&self, token: &str) -> bool {
+        let Ok(mut docs) = self.inner.docs.write() else {
+            return false;
+        };
+        docs.remove(&DocToken(token.to_string())).is_some()
     }
 
     pub fn len(&self) -> usize {

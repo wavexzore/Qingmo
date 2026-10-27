@@ -90,7 +90,7 @@ fn overwrites_existing_files_while_preserving_encoding_and_eol() {
 }
 
 #[test]
-fn invalidates_the_previous_token_after_save_as() {
+fn keeps_other_window_tokens_after_save_as() {
     let dir = TempDir::new().expect("temp dir");
     let first_path = dir.path().join("first.md");
     fs::write(&first_path, "first\n").expect("fixture must be written");
@@ -104,14 +104,12 @@ fn invalidates_the_previous_token_after_save_as() {
         .expect("save-as must create the second file");
 
     assert_ne!(first.doc_token, second.doc_token);
-    assert_eq!(
-        registry
-            .get(&first.doc_token)
-            .expect_err("old token must expire")
-            .code,
-        AppErrorCode::InvalidPath
+    assert!(
+        registry.get(&first.doc_token).is_ok(),
+        "another window must keep its token"
     );
     assert!(registry.get(&second.doc_token).is_ok());
+    assert_eq!(registry.len(), 2);
     assert_eq!(
         fs::read_to_string(first_path).expect("first file must still exist"),
         "first\n"

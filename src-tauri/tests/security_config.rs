@@ -43,6 +43,7 @@ fn capability_contains_only_expected_permissions() {
         app_permissions,
         vec![
             "allow-document-open",
+            "allow-document-take-pending",
             "allow-document-reload",
             "allow-document-save-as",
             "allow-document-write-atomic",
@@ -71,7 +72,7 @@ fn capability_contains_only_expected_permissions() {
         }
     }
 
-    assert_eq!(capability["windows"], serde_json::json!(["main"]));
+    assert_eq!(capability["windows"], serde_json::json!(["main", "doc-*"]));
 }
 
 #[test]

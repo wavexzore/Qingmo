@@ -5,6 +5,7 @@
 
 pub const COMMANDS: &[&str] = &[
     "document_open",
+    "document_take_pending",
     "document_reload",
     "document_save_as",
     "document_write_atomic",

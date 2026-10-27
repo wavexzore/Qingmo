@@ -223,7 +223,7 @@ fn handles_unicode_paths_and_counts_utf16_units() {
 }
 
 #[test]
-fn rejects_forged_tokens_and_invalidates_the_previous_document() {
+fn rejects_forged_tokens_and_keeps_each_window_document_alive() {
     let dir = TempDir::new().expect("temp dir");
     let registry = DocumentRegistry::new();
 
@@ -236,17 +236,25 @@ fn rejects_forged_tokens_and_invalidates_the_previous_document() {
     let first_payload = registry.open_path(first).expect("first must open");
     let second_payload = registry.open_path(second).expect("second must open");
 
-    assert_eq!(registry.len(), 1);
-    assert_eq!(
-        reload_code(&registry, &first_payload.doc_token),
-        AppErrorCode::InvalidPath
-    );
+    assert_eq!(registry.len(), 2);
+    let first_reload = registry
+        .reload(&first_payload.doc_token)
+        .expect("first window token must stay valid");
+    assert_eq!(first_reload.text, "first");
 
     let reloaded = registry
         .reload(&second_payload.doc_token)
         .expect("second token must stay valid");
     assert_eq!(reloaded.text, "second");
     assert_eq!(reloaded.doc_token, second_payload.doc_token);
+
+    assert!(registry.release(&first_payload.doc_token));
+    assert_eq!(registry.len(), 1);
+    assert_eq!(
+        reload_code(&registry, &first_payload.doc_token),
+        AppErrorCode::InvalidPath
+    );
+    assert!(!registry.release(&first_payload.doc_token));
 }
 
 #[test]

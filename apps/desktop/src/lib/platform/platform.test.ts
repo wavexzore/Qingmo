@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const tauriMocks = vi.hoisted(() => ({
   listen: vi.fn(),
+  windowLabel: "main",
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: tauriMocks.listen,
+}));
+
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: tauriMocks.windowLabel }),
 }));
 
 import { getCompositionTracker } from "./composition";
@@ -78,7 +83,8 @@ describe("composition tracker", () => {
 
 describe("Tauri PlatformPort adapter", () => {
   it("maps app://close-requested and unsubscribes the Tauri listener", async () => {
-    let handler: ((event: { payload: { reason: "window" | "exit" } }) => void) | undefined;
+    let handler:
+      ((event: { payload: { reason: "window" | "exit"; target: string } }) => void) | undefined;
     const unlisten = vi.fn<() => void>();
     tauriMocks.listen.mockImplementation(async (_event: string, callback: typeof handler) => {
       handler = callback;
@@ -90,17 +96,22 @@ describe("Tauri PlatformPort adapter", () => {
     const stop = platform.onCloseRequested((reason) => received.push(reason));
 
     await vi.waitFor(() => {
-      expect(tauriMocks.listen).toHaveBeenCalledWith("app://close-requested", expect.any(Function));
+      expect(tauriMocks.listen).toHaveBeenCalledWith(
+        "app://close-requested",
+        expect.any(Function),
+        { target: { kind: "WebviewWindow", label: "main" } },
+      );
       expect(handler).toBeTypeOf("function");
     });
 
-    handler?.({ payload: { reason: "exit" } });
+    handler?.({ payload: { reason: "exit", target: "main" } });
+    handler?.({ payload: { reason: "window", target: "doc-1" } });
     expect(received).toEqual(["exit"]);
 
     stop();
     expect(unlisten).toHaveBeenCalledTimes(1);
 
-    handler?.({ payload: { reason: "window" } });
+    handler?.({ payload: { reason: "window", target: "main" } });
     expect(received).toEqual(["exit"]);
   });
 
@@ -123,7 +134,7 @@ describe("Tauri PlatformPort adapter", () => {
   });
 
   it("maps app://menu-action, ignores unknown ids, and unsubscribes", async () => {
-    let handler: ((event: { payload: string }) => void) | undefined;
+    let handler: ((event: { payload: { action: string; target: string } }) => void) | undefined;
     const unlisten = vi.fn<() => void>();
     tauriMocks.listen.mockImplementation(async (_event: string, callback: typeof handler) => {
       handler = callback;
@@ -135,17 +146,20 @@ describe("Tauri PlatformPort adapter", () => {
     const stop = platform.onMenuAction((action) => received.push(action));
 
     await vi.waitFor(() => {
-      expect(tauriMocks.listen).toHaveBeenCalledWith("app://menu-action", expect.any(Function));
+      expect(tauriMocks.listen).toHaveBeenCalledWith("app://menu-action", expect.any(Function), {
+        target: { kind: "WebviewWindow", label: "main" },
+      });
       expect(handler).toBeTypeOf("function");
     });
 
-    handler?.({ payload: "theme.dark" });
-    handler?.({ payload: "unknown.action" });
+    handler?.({ payload: { action: "theme.dark", target: "main" } });
+    handler?.({ payload: { action: "unknown.action", target: "main" } });
+    handler?.({ payload: { action: "file.open", target: "doc-1" } });
     expect(received).toEqual(["theme.dark"]);
 
     stop();
     expect(unlisten).toHaveBeenCalledTimes(1);
-    handler?.({ payload: "file.open" });
+    handler?.({ payload: { action: "file.open", target: "main" } });
     expect(received).toEqual(["theme.dark"]);
   });
 
