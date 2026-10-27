@@ -17,18 +17,18 @@
 2. **10 MB 的 Markdown 仍然可编辑。** 大文档通过关闭预览计算来降级，而不是卡死或拒绝打开。
 3. **第三方代码不进入主线程。** 未来的插件运行时以 Web Worker、sandbox iframe 和能力代理（Capability Broker）为边界。
 
-![青墨正在编辑一篇带 Live Preview 和 Mermaid 图表的 Markdown 文档](docs/screenshots/editor-light.png)
+![青墨正在编辑一篇带 Live Preview 和 Mermaid 图表的 Markdown 文档](assets/screenshots/editor-light.png)
 
 <details>
 <summary>更多截图</summary>
 
 **深色主题**
 
-![青墨深色主题](docs/screenshots/editor-dark.png)
+![青墨深色主题](assets/screenshots/editor-dark.png)
 
 **命令面板**
 
-![青墨命令面板](docs/screenshots/command-palette.png)
+![青墨命令面板](assets/screenshots/command-palette.png)
 
 </details>
 
@@ -150,12 +150,7 @@ flowchart LR
 - **Live Preview 是视口装饰**，不是富文本双向同步。解析只覆盖可见范围；大文件直接关闭这一遍。
 - **端口隔离平台**：`IpcPort`、`PlatformPort`、`UpdatePort` 都有 Tauri 与 fake 实现，浏览器测试和 Playwright 从不触碰原生 API。
 
-贡献前请先读完整设计：
-
-- [项目蓝图](docs/BLUEPRINT.md) —— 架构、插件模型、数据模型、性能预算、路线图
-- [项目拓扑](docs/TOPOLOGY.md) —— 运行拓扑与信任边界
-- [调研与参考](docs/RESEARCH.md) —— 开源先例与证据
-- [实施级 ADR](docs/adr/README.md) —— 决策与已接受的代价
+完整的蓝图、运行拓扑、调研与实施级 ADR 在开发期保存在 `docs/`。该目录**不纳入 Git**；上面的架构小节已经保留贡献者需要知道的部分。ADR 文件名仍沿用 `docs/adr/NNNN-*.md`。
 
 ### 仓库结构
 
@@ -167,7 +162,7 @@ packages/ui/         设计 token 与共享原语
 src-tauri/           Rust 命令、原子 IO、关闭守卫、更新状态机
 e2e/                 Playwright 用例与 fixtures
 bench/               确定性性能 fixtures 与 runner
-docs/                蓝图、拓扑、ADR、任务记录
+docs/                本地设计文档与任务记录（不入库）
 ```
 
 ## 路线图

@@ -10,7 +10,7 @@
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
-const OUT = "docs/screenshots";
+const OUT = "assets/screenshots";
 mkdirSync(OUT, { recursive: true });
 
 const NOTE = `# 在湖边

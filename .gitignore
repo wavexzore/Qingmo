@@ -10,6 +10,10 @@ coverage/
 .gitnexus/
 .claude/
 
+# Local design docs and prototypes (not published)
+docs/
+prototypes/
+
 .env
 .env.*
 !.env.example
