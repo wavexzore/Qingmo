@@ -50,9 +50,12 @@ export const common = {
   },
   closeGuard: {
     title: "有未保存的修改",
+    unsaved: "关闭前确认",
     conflict: "文件存在冲突",
     error: "保存未完成",
     description: "当前文档未能保存。仍要关闭青墨吗？未保存的修改会丢失。",
+    unsavedDescription: "确认后将保存当前文档并关闭。",
+    confirm: "确认",
     allow: "仍要关闭",
     cancel: "取消",
   },
@@ -100,9 +103,6 @@ export const editor = {
     reloading: "正在重新加载…",
     overwriting: "正在保存…",
     failed: "操作未完成，请重试。",
-  },
-  save: {
-    resolveBeforeSwitch: "请先处理当前文档的冲突或保存错误，再打开其他文件。",
   },
 } as const;
 

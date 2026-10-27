@@ -19,6 +19,13 @@ export function CloseConfirmDialog({
     return null;
   }
 
+  const unsaved = prompt.kind === "unsaved";
+  const label = unsaved
+    ? t("common:closeGuard.unsaved")
+    : prompt.kind === "conflict"
+      ? t("common:closeGuard.conflict")
+      : t("common:closeGuard.error");
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-ink/30 p-6 backdrop-blur-[2px]"
@@ -31,16 +38,12 @@ export function CloseConfirmDialog({
         aria-describedby="close-confirm-description"
         className="w-full max-w-[420px] rounded-card border border-line bg-surface p-6 shadow-card"
       >
-        <p className="text-[10px] uppercase tracking-[0.18em] text-danger">
-          {prompt.failure === "conflict"
-            ? t("common:closeGuard.conflict")
-            : t("common:closeGuard.error")}
-        </p>
+        <p className="text-[10px] uppercase tracking-[0.18em] text-danger">{label}</p>
         <h2 id="close-confirm-title" className="mt-2 font-serif text-2xl tracking-[-0.02em]">
           {t("common:closeGuard.title")}
         </h2>
         <p id="close-confirm-description" className="mt-3 text-sm leading-7 text-ink-muted">
-          {t("common:closeGuard.description")}
+          {unsaved ? t("common:closeGuard.unsavedDescription") : t("common:closeGuard.description")}
         </p>
 
         <div className="mt-6 flex justify-end gap-2">
@@ -55,12 +58,12 @@ export function CloseConfirmDialog({
             {t("common:closeGuard.cancel")}
           </Button>
           <Button
-            data-testid="close-anyway"
+            data-testid={unsaved ? "close-confirm" : "close-anyway"}
             onClick={() => {
               void onAllow();
             }}
           >
-            {t("common:closeGuard.allow")}
+            {unsaved ? t("common:closeGuard.confirm") : t("common:closeGuard.allow")}
           </Button>
         </div>
       </section>

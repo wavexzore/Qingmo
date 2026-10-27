@@ -6,15 +6,18 @@ import type { IpcPort } from "../lib/ipc/port";
 import type { PlatformPort } from "../lib/platform/port";
 import type { SaveCoordinator } from "../features/editor/save/SaveCoordinator";
 
+export type ClosePromptKind = "unsaved" | "conflict" | "error";
+
 export interface ClosePrompt {
   reason: CloseReason;
-  failure: "conflict" | "error";
+  kind: ClosePromptKind;
 }
 
 export interface CloseGuardState {
   prompt: ClosePrompt | null;
   /** True while a native close request is flushing; updates must not overlap it. */
   closing: boolean;
+  /** Discards unsaved changes and confirms the close. */
   allowClose(): Promise<void>;
   cancelClose(): Promise<void>;
 }
@@ -28,8 +31,11 @@ export interface UseCloseGuardOptions {
 /**
  * Bridges the Rust CloseGuard event to SaveCoordinator.
  *
- * - A successful flush confirms the close immediately.
- * - Conflict/terminal error opens an explicit "close anyway?" prompt.
+ * - A dirty untitled document asks for exit confirmation first. Confirming
+ *   discards the unsaved text and closes; cancelling only dismisses the dialog.
+ *   Exit is never coupled to Save As.
+ * - Other documents flush first; a conflict/terminal error opens an explicit
+ *   "close anyway?" prompt.
  * - Blur flushes the coordinator unless an IME composition is active; a
  *   compositionend then performs the deferred flush.
  */
@@ -52,13 +58,8 @@ export function useCloseGuard({
     [ipc],
   );
 
-  const requestClose = useCallback(
+  const saveAndClose = useCallback(
     async (reason: CloseReason) => {
-      if (closingRef.current) {
-        return;
-      }
-      closingRef.current = true;
-      setClosing(true);
       try {
         const coordinator = coordinatorRef.current;
         const result = coordinator
@@ -69,16 +70,45 @@ export function useCloseGuard({
           await confirmClose(true);
           return;
         }
-        setPrompt({ reason, failure: result.failure ?? "error" });
+        setPrompt({ reason, kind: result.failure ?? "error" });
       } catch (error) {
         console.error("close confirmation failed", error);
-        setPrompt({ reason, failure: "error" });
+        setPrompt({ reason, kind: "error" });
+      }
+    },
+    [confirmClose],
+  );
+
+  const requestClose = useCallback(
+    async (reason: CloseReason) => {
+      if (closingRef.current) {
+        return;
+      }
+      closingRef.current = true;
+      setClosing(true);
+      try {
+        const coordinator = coordinatorRef.current;
+        const snapshot = coordinator?.getSnapshot();
+        const unsavedUntitled =
+          coordinator?.isUntitled === true &&
+          snapshot !== undefined &&
+          snapshot.state !== "clean" &&
+          snapshot.state !== "readonly";
+
+        // Untitled text has no path to autosave to, so exit only asks whether
+        // to discard it. Saving stays an explicit user action.
+        if (unsavedUntitled) {
+          setPrompt({ reason, kind: "unsaved" });
+          return;
+        }
+
+        await saveAndClose(reason);
       } finally {
         closingRef.current = false;
         setClosing(false);
       }
     },
-    [confirmClose],
+    [saveAndClose],
   );
 
   useEffect(() => {

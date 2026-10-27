@@ -12,34 +12,37 @@ import {
   openApp,
   openSeededFile,
   setDiskText,
-  setSaveAsFile,
   typeInEditor,
 } from "./helpers";
 
-test("closing an untitled dirty document saves it through Save As", async ({ page }) => {
+test("confirming an untitled dirty close discards and exits without Save As", async ({ page }) => {
   await openApp(page);
   await typeInEditor(page, "untitled-close");
 
   await emitClose(page);
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("有未保存的修改");
+  await expect(dialog.getByRole("button")).toHaveCount(2);
 
-  await expect.poll(() => getFileText(page, SAVE_AS_PATH)).toBe("untitled-close");
+  await page.getByTestId("close-confirm").click();
+
   await expect.poll(() => getCloseConfirms(page)).toEqual([{ allow: true }]);
+  expect(await getFileText(page, SAVE_AS_PATH)).toBeNull();
 });
 
-test("cancelling Save As during close keeps the untitled document open", async ({ page }) => {
+test("cancelling the close prompt never opens Save As", async ({ page }) => {
   await openApp(page);
   await typeInEditor(page, "draft");
-  await setSaveAsFile(page, null);
 
   await emitClose(page);
-
   const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toContainText("保存未完成");
+  await expect(dialog).toContainText("有未保存的修改");
   await page.getByTestId("close-cancel").click();
+
   await expect.poll(() => getCloseConfirms(page)).toEqual([{ allow: false }]);
+  expect(await getFileText(page, SAVE_AS_PATH)).toBeNull();
   await expect(page.getByTestId("untitled-editor")).toBeVisible();
   await expect(page.getByTestId("status-bar")).toContainText("未保存");
-  expect(await getFileText(page, SAVE_AS_PATH)).toBeNull();
 });
 
 test("a clean close is confirmed immediately without writing", async ({ page }) => {

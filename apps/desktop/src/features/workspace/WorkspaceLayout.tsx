@@ -92,16 +92,9 @@ export function WorkspaceLayout() {
     }
     openingRef.current = true;
     try {
-      // Flush first: browser harnesses adopt the file in place, and in Tauri a
-      // pending conflict must be resolved before opening another document.
-      if (coordinatorRef.current) {
-        const flushed = await coordinatorRef.current.flush("switch");
-        if (!flushed.ok) {
-          toast.push(t("editor:save.resolveBeforeSwitch"));
-          return;
-        }
-      }
-
+      // Opening never replaces this window: Tauri creates a new document
+      // window, so there is nothing to flush and a dirty untitled buffer must
+      // not be forced through Save As first.
       const result = await openFile(ipc);
       if (!result.ok) {
         if (result.error.code !== "CANCELLED") {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { FilePayload } from "@qingmo/shared";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,11 +14,20 @@ import { FakePlatform } from "../../lib/platform/fake";
 import { FakeUpdatePort } from "../../lib/update/fake";
 import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
-import { DocumentSessionProvider } from "../editor/DocumentSessionContext";
+import { DocumentSessionProvider, useDocumentSession } from "../editor/DocumentSessionContext";
+import type { EditorSession } from "../editor/EditorSession";
 import { UpdateProvider } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
 
-function renderApp(ipc: IpcPort) {
+function SessionProbe({ onSession }: { onSession: (session: EditorSession | null) => void }) {
+  onSession(useDocumentSession().session);
+  return null;
+}
+
+function renderApp(
+  ipc: IpcPort,
+  options: { onSession?: (session: EditorSession | null) => void } = {},
+) {
   const platform = new FakePlatform();
   const router = createMemoryRouter(routes, { initialEntries: ["/"] });
   render(
@@ -26,6 +35,7 @@ function renderApp(ipc: IpcPort) {
       <ToastProvider>
         <AppServicesProvider services={{ ipc, platform, updates: new FakeUpdatePort() }}>
           <DocumentSessionProvider>
+            {options.onSession ? <SessionProbe onSession={options.onSession} /> : null}
             <UpdateProvider autoCheck={false}>
               <RouterProvider router={router} />
             </UpdateProvider>
@@ -193,6 +203,37 @@ describe("blank editor -> editor open flow", () => {
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
     expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/");
+  });
+
+  it("opens another file from a dirty untitled document without Save As", async () => {
+    const ipc = fileIpc();
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockResolvedValue(null as unknown as FilePayload);
+    const saveAsSpy = vi.spyOn(ipc, "documentSaveAs");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "# draft" } });
+    });
+    await waitFor(() => expect(captured.current?.getSnapshot().dirty).toBe(true));
+
+    platform.emitMenuAction("file.open");
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    expect(saveAsSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+    expect(
+      screen.queryByText("请先处理当前文档的冲突或保存错误，再打开其他文件。"),
+    ).not.toBeInTheDocument();
   });
 
   it("opens the registry-backed palette with Mod+K and runs a command from the keyboard", async () => {

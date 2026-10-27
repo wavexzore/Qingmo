@@ -10,7 +10,7 @@ export const SAVE_MAX_WAIT_MS = 5_000;
 export const SAVE_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 export const SAVE_MAX_RETRY_DELAY_MS = 30_000;
 
-export type FlushReason = "manual" | "auto" | "blur" | "switch" | "close";
+export type FlushReason = "manual" | "auto" | "blur" | "close";
 export type FlushFailureReason = "conflict" | "error";
 
 export interface FlushResult {
@@ -92,7 +92,7 @@ function conflictDetailsOf(details: AppError["details"]): ConflictDetails | null
 /**
  * The only save path for an open document.
  *
- * - Manual, automatic, blur, switch and close all funnel through `flush`.
+ * - Manual, automatic, blur and close all funnel through `flush`.
  * - At most one `document_write_atomic` call is in flight; edits during a save
  *   only set `pending` and are written by the next loop round.
  * - Text is read from EditorSession at write time, so React never stores it.
@@ -146,6 +146,11 @@ export class SaveCoordinator {
 
   get conflictDetails(): ConflictDetails | null {
     return this.conflict;
+  }
+
+  /** Untitled documents need Save As, so close cannot auto-save them. */
+  get isUntitled(): boolean {
+    return this.session.isUntitled;
   }
 
   get lastSaveError(): AppError | null {
