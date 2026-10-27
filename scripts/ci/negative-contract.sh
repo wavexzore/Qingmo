@@ -32,10 +32,10 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-needle = '"document_open"'
+needle = '"app_update_install"'
 if needle not in text:
     raise SystemExit(f"missing probe anchor in {path}: {needle}")
-path.write_text(text.replace(needle, '"document_open_broken"', 1), encoding="utf-8")
+path.write_text(text.replace(needle, '"app_update_install_broken"', 1), encoding="utf-8")
 PY
 
 if cargo test \

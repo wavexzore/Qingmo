@@ -7,11 +7,15 @@ import { FakePlatform } from "../lib/platform/fake";
 import type { PlatformPort } from "../lib/platform/port";
 import { isTauriRuntime } from "../lib/platform/runtime";
 import { createTauriPlatform } from "../lib/platform/tauri";
+import { FakeUpdatePort } from "../lib/update/fake";
+import type { UpdatePort } from "../lib/update/port";
+import { createTauriUpdatePort } from "../lib/update/tauri";
 import { createE2eServices, isE2eMode } from "../e2e/bridge";
 
 export interface AppServices {
   ipc: IpcPort;
   platform: PlatformPort;
+  updates: UpdatePort;
 }
 
 /**
@@ -28,12 +32,14 @@ export function createAppServices(): AppServices {
     return {
       ipc: createTauriIpc(),
       platform: createTauriPlatform(),
+      updates: createTauriUpdatePort(),
     };
   }
 
   return {
     ipc: new FakeIpc(),
     platform: new FakePlatform(),
+    updates: new FakeUpdatePort(),
   };
 }
 

@@ -1,7 +1,7 @@
 # Qingmo 项目目标拓扑图
 
-- 版本：0.1
-- 日期：2026-10-26
+- 版本：0.2
+- 日期：2026-10-27
 - 关联文档：[项目蓝图](BLUEPRINT.md) · [调研与参考](RESEARCH.md)
 - 图形文件：
   - `docs/qingmo-topology.drawio` —— draw.io 源文件，可继续编辑
@@ -73,7 +73,7 @@ flowchart TB
 
   subgraph EXT["外部服务"]
     MARKET["插件市场 CDN"]
-    UPDATE["更新服务器"]
+    UPDATE["GitHub Releases<br/>latest.json + 产物 + minisign 签名"]
     API["第三方 API"]
   end
 
@@ -168,6 +168,25 @@ Plugin Worker / iframe
   → 等待 activation event
 ```
 
+### 3.5 应用更新（macOS universal / stable）
+
+```text
+启动 8s 后 / 用户命令
+  → Tauri IPC: app_update_check
+  → Rust UpdateManager: Checking（单飞，30s 超时，HTTPS only）
+  → GitHub Releases: latest.json（文档不签名）
+  → 有更新 → Available；无更新/失败 → Idle（静默无感）
+  → 用户确认 → app_update_download
+  → 下载 .app.tar.gz（10min 超时，进度 100ms 节流）
+  → minisign 验签 + requireSignedVersion 绑定清单版本
+  → Ready
+  → 保存：SaveCoordinator.flush("close")
+  → app_update_install（CloseGuard 进入 Installing）
+  → macOS 交换 .app / 授权 → request_restart()
+```
+
+信任根分离：应用代码由 Xcode `Developer ID Application` 签名并公证；更新产物由独立 minisign 私钥签名。`latest.json` 是未签名文档，只有各产物的 `signature` 受 minisign 保护；静态清单无百分比灰度，安装失败保留旧版本，无自动回滚。
+
 ---
 
 ## 4. 信任边界
@@ -179,6 +198,7 @@ Plugin Worker / iframe
 | 插件 ↔ Rust | 经 Broker 的受控命令 | 直接调用 Tauri IPC、直接访问 SQLite |
 | 插件 ↔ 网络 | 经 Broker 的 origin 白名单 | 任意 URL、任意请求体大小 |
 | 插件 ↔ 文件 | 工作区（授权后）或插件私有目录 | 应用数据目录、系统目录、符号链接逃逸 |
+| 主窗口 ↔ Rust 更新器 | 4 条 `app_update_*` 命令 + 2 条快照/进度事件 | `updater:*`、下载 URL、签名、安装路径、直接安装 |
 
 ---
 

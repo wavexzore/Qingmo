@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppServicesProvider } from "../../app/AppServices";
 import { FakeIpc } from "../../lib/ipc/fake";
 import { FakePlatform } from "../../lib/platform/fake";
+import { FakeUpdatePort } from "../../lib/update/fake";
 import { DocumentSessionProvider, useDocumentSession } from "./DocumentSessionContext";
 import { EditorSession } from "./EditorSession";
 import { SAVE_DEBOUNCE_MS } from "./save/SaveCoordinator";
@@ -40,7 +41,9 @@ describe("DocumentSessionProvider", () => {
 
     const { unmount } = render(
       <StrictMode>
-        <AppServicesProvider services={{ ipc, platform: new FakePlatform() }}>
+        <AppServicesProvider
+          services={{ ipc, platform: new FakePlatform(), updates: new FakeUpdatePort() }}
+        >
           <DocumentSessionProvider>
             <Probe
               ipc={ipc}

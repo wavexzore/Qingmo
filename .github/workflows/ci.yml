@@ -35,6 +35,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      - name: Version single source
+        run: node scripts/release/check-versions.mjs
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -168,8 +171,16 @@ jobs:
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 
-      - name: Tauri debug build
-        run: pnpm tauri build --debug
+      - name: Install minisign
+        run: brew install minisign
+
+      - name: Release gate fixtures
+        run: pnpm release:test
+
+      - name: Tauri debug build (no bundle)
+        # Bundling signs updater artifacts; without the release key the .sig is
+        # missing. The release workflow owns bundling/signing; CI only compiles.
+        run: pnpm tauri build --debug --no-bundle
 
       - name: Upload failure artifacts
         if: failure()

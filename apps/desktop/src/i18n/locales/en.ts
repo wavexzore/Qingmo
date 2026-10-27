@@ -124,7 +124,55 @@ export const errors = {
   BUSY: "The previous operation is still running. Try again shortly.",
   IO: "An error occurred while reading or writing the file.",
   CANCELLED: "The operation was cancelled.",
+  UPDATE_CHECK_FAILED: "Could not check for updates. Try again later.",
+  UPDATE_DOWNLOAD_FAILED: "Could not download the update. Try again later.",
+  UPDATE_SIGNATURE_INVALID: "The update signature is invalid; installation was refused.",
+  UPDATE_INSTALL_FAILED:
+    "The update could not be installed; the current version is still available.",
+  UPDATE_UNSUPPORTED: "Automatic updates are not supported on this system or architecture.",
+  UPDATE_NOT_READY: "The update is not ready to install.",
 } as const satisfies Record<AppErrorCode, string>;
+
+export const update = {
+  banner: {
+    kicker: "App update",
+    available: "Version {{version}} is available",
+    downloading: "Downloading the update…",
+    ready: "The update is downloaded and ready to install",
+    installing: "Installing the update…",
+    view: "View",
+    later: "Later",
+    install: "Install and restart",
+    progress: "Downloaded {{percent}}%",
+    keepOpen: "Keep Qingmo open",
+  },
+  dialog: {
+    kicker: "App update",
+    title: "Update Qingmo",
+    phase: {
+      idle: "You are on the latest version.",
+      checking: "Checking for updates…",
+      available: "A new version is available. Download it to install.",
+      downloading: "Downloading the update. Keep your connection open.",
+      ready: "The update is downloaded. Qingmo saves the current document, installs, and restarts.",
+      installing: "Installing the update. Do not close Qingmo.",
+    },
+    currentVersion: "Current version",
+    latestVersion: "Latest version",
+    released: "Released",
+    notes: "Release notes",
+    noNotes: "This release has no notes.",
+    downloading: "Downloading…",
+    progress: "Downloading… {{percent}}%",
+    download: "Download update",
+    install: "Install and restart",
+    later: "Later",
+  },
+  toast: {
+    upToDate: "You are on the latest version.",
+    busy: "An update operation is already running. Try again shortly.",
+  },
+} as const;
 
 export const commandLabels = {
   file: {
@@ -135,9 +183,13 @@ export const commandLabels = {
     toggleLivePreview: "Toggle Live Preview",
     toggleTheme: "Toggle theme",
   },
+  update: {
+    checkForUpdates: "Check for updates",
+  },
   category: {
     file: "File",
     view: "View",
+    app: "Application",
   },
   palette: {
     title: "Command palette",
@@ -147,4 +199,4 @@ export const commandLabels = {
   },
 } as const;
 
-export const en = { common, editor, errors, commands: commandLabels };
+export const en = { common, editor, errors, update, commands: commandLabels };

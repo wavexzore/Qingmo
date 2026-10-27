@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FakeIpc } from "../lib/ipc/fake";
 import { FakePlatform } from "../lib/platform/fake";
 import { isTauriRuntime } from "../lib/platform/runtime";
+import { FakeUpdatePort } from "../lib/update/fake";
 import { createAppServices } from "./AppServices";
 
 afterEach(() => {
@@ -15,6 +16,7 @@ describe("runtime service selection", () => {
     const services = createAppServices();
     expect(services.ipc).toBeInstanceOf(FakeIpc);
     expect(services.platform).toBeInstanceOf(FakePlatform);
+    expect(services.updates).toBeInstanceOf(FakeUpdatePort);
   });
 
   it("selects the Tauri adapters when the internals bridge is present", () => {
@@ -29,5 +31,6 @@ describe("runtime service selection", () => {
     expect(services.platform).not.toBeInstanceOf(FakePlatform);
     expect(typeof services.ipc.documentOpen).toBe("function");
     expect(typeof services.platform.onCloseRequested).toBe("function");
+    expect(typeof services.updates.status).toBe("function");
   });
 });

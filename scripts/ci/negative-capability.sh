@@ -36,7 +36,7 @@ data = json.loads(path.read_text(encoding="utf-8"))
 permissions = data.get("permissions")
 if not isinstance(permissions, list):
     raise SystemExit("capability permissions must be a list")
-needle = "allow-app-close-confirm"
+needle = "allow-app-update-check"
 if needle not in permissions:
     raise SystemExit(f"missing probe permission: {needle}")
 data["permissions"] = [item for item in permissions if item != needle]

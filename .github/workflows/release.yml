@@ -1,0 +1,190 @@
+name: Release
+
+# OPTIONAL TEMPLATE — currently INACTIVE. Local releases use ./.release/release.sh.
+# Tag push -> draft release -> macOS universal build/notarize -> validate -> manual publish.
+# The `release` Environment holds the Xcode certificate, notarization credentials and
+# updater minisign key. It is requested twice: once for build, once for publish.
+# The environment and its secrets were deleted for the local-first workflow; recreate
+# them before enabling this workflow.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  create-release:
+    name: Create draft release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+    steps:
+      - name: Create or reuse draft release
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "release $TAG already exists and is published; refusing to overwrite" >&2
+              exit 1
+            fi
+            echo "reusing existing draft release $TAG"
+          else
+            gh release create "$TAG" --draft --title "$TAG" --generate-notes
+          fi
+          echo "release_id=$(gh release view "$TAG" --json databaseId --jq .databaseId)" >>"$GITHUB_OUTPUT"
+
+  build:
+    name: macOS universal build, sign and notarize
+    needs: create-release
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check tag matches every version file
+        run: node scripts/release/check-versions.mjs --expect "${GITHUB_REF_NAME#v}"
+      - uses: dtolnay/rust-toolchain@8632757d5a758c452f724e9d837848c694a7bb48 # 1.91.1
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build, sign, notarize and upload draft assets
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: true
+          tauriScript: pnpm tauri
+          args: --target universal-apple-darwin --bundles app,dmg
+
+      # Tauri notarizes and staples the .app, not the .dmg. Notarize the DMG
+      # separately, staple it, then replace the asset that tauri-action uploaded.
+      - name: Notarize, staple and re-upload DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          DMG="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$DMG"
+          if ! xcrun stapler validate "$DMG" >/dev/null 2>&1; then
+            xcrun notarytool submit "$DMG" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+            xcrun stapler staple "$DMG"
+          fi
+          xcrun stapler validate "$DMG"
+          gh release upload "$TAG" "$DMG" --clobber
+
+  validate:
+    name: Validate manifest, signature and notarization
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install minisign
+        run: brew install minisign
+      - name: Download draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh release download "$TAG" --dir artifacts
+          ls -l artifacts
+      - name: Validate latest.json and updater signatures
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PUBKEY="$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")"
+          node scripts/release/check-latest-json.mjs \
+            --latest-json artifacts/latest.json \
+            --tag "$TAG" \
+            --pubkey "$PUBKEY" \
+            --artifacts artifacts
+      - name: Verify Developer ID signature and notarization ticket
+        run: |
+          set -euo pipefail
+          APP_TGZ="$(find artifacts -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
+          test -n "$APP_TGZ"
+          mkdir -p extracted
+          tar -xzf "$APP_TGZ" -C extracted
+          APP_PATH="$(find extracted -maxdepth 4 -name '*.app' -type d -print -quit)"
+          test -n "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          DMG="$(find artifacts -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$DMG"
+          xcrun stapler validate "$DMG"
+
+  publish:
+    name: Publish validated release
+    needs: [build, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Remove draft flag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false --latest

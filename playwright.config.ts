@@ -19,7 +19,7 @@ export default defineConfig({
   webServer: {
     command: "pnpm build:e2e && pnpm --filter @qingmo/desktop preview:e2e",
     url: `http://127.0.0.1:${PORT}`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 180_000,
     stdout: "pipe",
     stderr: "pipe",

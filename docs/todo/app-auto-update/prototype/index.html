@@ -1,0 +1,2503 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>青墨 · 自动更新高保真原型</title>
+<style>
+  /* ============================================================
+     Qingmo updater prototype
+     Tokens mirror packages/ui/src/tokens.css (warm paper / ink / green).
+     No network, no storage, no real updater calls.
+     ============================================================ */
+
+  :root {
+    color-scheme: light;
+    --qm-font-sans: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    --qm-font-serif: "Iowan Old Style", "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+    --qm-font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+
+    --paper: #f4efe5;
+    --surface: #fbf8f1;
+    --raised: #fffdf8;
+    --muted: #ece5d8;
+    --ink: #1d1c19;
+    --ink-muted: #6f675b;
+    --ink-faint: #938a7c;
+    --line: rgba(48, 42, 32, 0.14);
+    --line-strong: rgba(48, 42, 32, 0.24);
+    --accent: #2c6a5a;
+    --accent-strong: #1f5145;
+    --accent-soft: rgba(44, 106, 90, 0.12);
+    --on-accent: #fbf8f1;
+    --danger: #a33a2b;
+    --danger-soft: rgba(163, 58, 43, 0.09);
+    --on-danger: #fffaf4;
+    --warning: #8a641c;
+    --warning-soft: rgba(138, 100, 28, 0.1);
+    --success: #2f6b4f;
+
+    --stage: #e9e1d2;
+    --stage-ink: #26231d;
+    --stage-muted: #6e6659;
+    --stage-faint: #9a9183;
+    --stage-hover: rgba(48, 42, 32, 0.06);
+    --stage-line: rgba(48, 42, 32, 0.16);
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-card: 18px;
+    --shadow-window: 0 40px 100px rgba(53, 43, 27, 0.24), 0 2px 8px rgba(53, 43, 27, 0.08);
+    --shadow-dialog: 0 28px 80px rgba(29, 24, 16, 0.28), 0 2px 10px rgba(29, 24, 16, 0.08);
+    --shadow-float: 0 14px 34px rgba(20, 18, 14, 0.18);
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #151714;
+    --surface: #1c1f1b;
+    --raised: #23271f;
+    --muted: #20241e;
+    --ink: #ece7dc;
+    --ink-muted: #b4ada0;
+    --ink-faint: #857e72;
+    --line: rgba(236, 231, 220, 0.14);
+    --line-strong: rgba(236, 231, 220, 0.24);
+    --accent: #7fb5a2;
+    --accent-strong: #a5d0c1;
+    --accent-soft: rgba(127, 181, 162, 0.16);
+    --on-accent: #101d18;
+    --danger: #e08b7c;
+    --danger-soft: rgba(224, 139, 124, 0.12);
+    --on-danger: #24100c;
+    --warning: #d4ac63;
+    --warning-soft: rgba(212, 172, 99, 0.12);
+    --success: #8fc7a8;
+
+    --stage: #0f110e;
+    --stage-ink: #ece7dc;
+    --stage-muted: #a9a294;
+    --stage-faint: #736d62;
+    --stage-hover: rgba(236, 231, 220, 0.06);
+    --stage-line: rgba(236, 231, 220, 0.14);
+
+    --shadow-window: 0 48px 120px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --shadow-dialog: 0 30px 90px rgba(0, 0, 0, 0.55);
+    --shadow-float: 0 14px 34px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 620px at 74% -8%, rgba(255, 255, 255, 0.52), transparent 62%),
+      radial-gradient(900px 600px at 0% 100%, rgba(44, 106, 90, 0.06), transparent 58%),
+      var(--stage);
+    color: var(--stage-ink);
+    font-family: var(--qm-font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color 240ms var(--ease), color 240ms var(--ease);
+  }
+  html[data-theme="dark"] body {
+    background:
+      radial-gradient(1100px 620px at 74% -8%, rgba(127, 181, 162, 0.055), transparent 62%),
+      radial-gradient(900px 600px at 0% 100%, rgba(255, 255, 255, 0.025), transparent 58%),
+      var(--stage);
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  }
+  html[data-theme="dark"] body::before { opacity: 0.08; mix-blend-mode: screen; }
+
+  ::selection { background: var(--accent-soft); color: var(--ink); }
+  button, input { font: inherit; }
+  button { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+  .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .icon { width: 14px; height: 14px; flex: none; display: block; }
+
+  /* ---------- Stage + rail ---------- */
+
+  .stage {
+    position: relative;
+    z-index: 1;
+    max-width: 1600px;
+    margin: 0 auto;
+    min-height: 100dvh;
+    padding: clamp(26px, 4vh, 48px) clamp(20px, 4vw, 56px);
+    display: grid;
+    grid-template-columns: 272px minmax(0, 1fr);
+    gap: clamp(28px, 4vw, 64px);
+    align-items: start;
+  }
+
+  .rail {
+    position: sticky;
+    top: clamp(26px, 4vh, 48px);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-height: calc(100dvh - clamp(52px, 8vh, 96px));
+    overflow: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--stage-line) transparent;
+  }
+  .rail::-webkit-scrollbar { width: 4px; }
+  .rail::-webkit-scrollbar-thumb { background: var(--stage-line); border-radius: 4px; }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--qm-font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    color: var(--stage-muted);
+  }
+  .seal {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: var(--qm-font-serif);
+    font-size: 17px;
+    line-height: 1;
+    box-shadow: 0 5px 14px rgba(44, 106, 90, 0.22);
+  }
+
+  .rail h1 {
+    margin: 13px 0 8px;
+    font-family: var(--qm-font-serif);
+    font-size: clamp(27px, 2.4vw, 33px);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+    color: var(--stage-ink);
+  }
+  .rail h1 em { font-style: normal; color: var(--accent); }
+  .rail-lede {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--stage-muted);
+    max-width: 31ch;
+  }
+  .rail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 9px;
+    margin-top: 10px;
+    font-family: var(--qm-font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--stage-faint);
+  }
+  .rail-meta span + span::before {
+    content: "·";
+    margin-right: 9px;
+    color: var(--stage-line);
+  }
+
+  .rail-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 4px;
+    font-family: var(--qm-font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--stage-faint);
+  }
+  .rail-label b { color: var(--accent); font-weight: 500; letter-spacing: 0.08em; }
+  .state-group + .state-group { margin-top: 11px; }
+  .state-list { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+
+  .state-btn {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) 6px;
+    align-items: center;
+    gap: 8px;
+    padding: 4.5px 8px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--stage-muted);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+  }
+  .state-btn:hover { background: var(--stage-hover); color: var(--stage-ink); }
+  .state-btn .idx {
+    font-family: var(--qm-font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.04em;
+    color: var(--stage-faint);
+    transition: color 140ms var(--ease);
+  }
+  .state-btn .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--stage-line);
+    justify-self: end;
+    transition: background 140ms var(--ease), box-shadow 140ms var(--ease);
+  }
+  .state-btn .dot[data-tone="danger"] { background: var(--danger); opacity: 0.78; }
+  .state-btn .dot[data-tone="warning"] { background: var(--warning); opacity: 0.78; }
+  .state-btn .dot[data-tone="success"] { background: var(--success); opacity: 0.78; }
+  .state-btn[aria-pressed="true"] {
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--ink);
+    box-shadow: 0 5px 18px rgba(53, 43, 27, 0.09);
+  }
+  html[data-theme="dark"] .state-btn[aria-pressed="true"] { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28); }
+  .state-btn[aria-pressed="true"] .idx { color: var(--accent); }
+  .state-btn[aria-pressed="true"] .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  .rail-foot { display: flex; flex-direction: column; gap: 9px; padding-top: 2px; }
+  .seg {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--stage-line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  html[data-theme="dark"] .seg { background: rgba(255, 255, 255, 0.025); }
+  .seg button {
+    border: 0;
+    border-radius: 6px;
+    padding: 5px 8px;
+    background: transparent;
+    color: var(--stage-muted);
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 2px 8px rgba(53, 43, 27, 0.1);
+  }
+  .rail-tools { display: flex; align-items: center; gap: 8px; }
+  .text-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    color: var(--stage-muted);
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+  .text-btn:hover { color: var(--stage-ink); }
+  .text-btn .icon { width: 11px; height: 11px; }
+  .text-btn.is-running { color: var(--accent); }
+  .rail-tools .sep { width: 1px; height: 11px; background: var(--stage-line); }
+  .rail-note {
+    margin: 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--stage-line);
+    font-family: var(--qm-font-mono);
+    font-size: 8px;
+    line-height: 1.55;
+    letter-spacing: 0.04em;
+    color: var(--stage-faint);
+  }
+
+  /* ---------- Desk + window ---------- */
+
+  .desk { min-width: 0; display: flex; flex-direction: column; gap: 13px; }
+  .window {
+    position: relative;
+    width: 100%;
+    max-width: 1180px;
+    height: min(760px, calc(100dvh - 124px));
+    min-height: 600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    box-shadow: var(--shadow-window);
+    overflow: hidden;
+    color: var(--ink);
+    transition: background-color 240ms var(--ease), border-color 240ms var(--ease);
+  }
+
+  .titlebar {
+    position: relative;
+    flex: none;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    background: linear-gradient(var(--raised), var(--surface));
+    border-bottom: 1px solid var(--line);
+    user-select: none;
+  }
+  .lights { display: flex; gap: 8px; align-items: center; }
+  .light {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 0.5px solid rgba(0, 0, 0, 0.14);
+    box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
+  }
+  .light.red { background: #ff5f57; }
+  .light.yellow { background: #febc2e; }
+  .light.green { background: #28c840; }
+  .titlebar-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 58%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    letter-spacing: 0.01em;
+    color: var(--ink-muted);
+  }
+  .titlebar-right {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--qm-font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .titlebar-right::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+
+  .app { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+
+  .doc-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 17px 30px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .doc-heading { min-width: 0; }
+  .doc-title-row { display: flex; align-items: center; gap: 9px; }
+  .doc-heading h1 {
+    margin: 0;
+    font-family: var(--qm-font-serif);
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .doc-path {
+    margin: 3px 0 0;
+    font-family: var(--qm-font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+  }
+  .dirty-pill {
+    flex: none;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--warning-soft);
+    color: var(--warning);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .doc-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 27px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface-muted);
+    color: var(--ink-muted);
+    font-size: 10.5px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 140ms var(--ease), color 140ms var(--ease), background 140ms var(--ease);
+  }
+  .chip:hover { border-color: var(--line-strong); color: var(--ink); }
+  .chip .icon { width: 11px; height: 11px; color: var(--accent); }
+  .chip--success { background: var(--accent-soft); border-color: transparent; color: var(--accent-strong); cursor: default; }
+  .chip--success:hover { border-color: transparent; color: var(--accent-strong); }
+  .chip--success .icon { color: var(--accent); }
+  .chip .chip-x {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    margin-right: -4px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: currentColor;
+    cursor: pointer;
+    opacity: 0.65;
+  }
+  .chip .chip-x:hover { opacity: 1; background: rgba(0, 0, 0, 0.06); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 31px;
+    padding: 0 13px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ink);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease), transform 140ms var(--ease), box-shadow 140ms var(--ease);
+  }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn .icon { width: 12px; height: 12px; }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+    box-shadow: 0 3px 10px rgba(44, 106, 90, 0.16);
+  }
+  .btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); transform: translateY(-1px); }
+  html[data-theme="dark"] .btn-primary:hover { background: #96c9b4; border-color: #96c9b4; }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-ghost { border-color: var(--line); color: var(--ink-muted); }
+  .btn-ghost:hover { background: var(--surface-muted); color: var(--ink); border-color: var(--line-strong); }
+  .btn-quiet { color: var(--ink-muted); }
+  .btn-quiet:hover { background: var(--surface-muted); color: var(--ink); }
+  .btn-danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+  .btn-danger:hover { filter: brightness(0.94); }
+  .btn-danger-outline { border-color: var(--danger); color: var(--danger); }
+  .btn-danger-outline:hover { background: var(--danger-soft); }
+  .btn-sm { height: 28px; padding: 0 11px; font-size: 11px; }
+
+  /* ---------- Banner ---------- */
+
+  .banner-stack { flex: none; }
+  .banner {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px 10px 28px;
+    background: linear-gradient(90deg, var(--accent-soft), rgba(44, 106, 90, 0.035));
+    border-bottom: 1px solid var(--line);
+    animation: bannerIn 240ms var(--ease);
+  }
+  html[data-theme="dark"] .banner { background: linear-gradient(90deg, var(--accent-soft), rgba(127, 181, 162, 0.03)); }
+  .banner--danger { background: linear-gradient(90deg, var(--danger-soft), rgba(163, 58, 43, 0.025)); }
+  .banner-icon {
+    display: grid;
+    place-items: center;
+    width: 27px;
+    height: 27px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--surface-raised, var(--raised));
+    color: var(--accent);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  .banner-icon .icon { width: 13px; height: 13px; }
+  .banner--danger .banner-icon { color: var(--danger); }
+  .banner-copy { min-width: 0; flex: 1; }
+  .banner-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .banner-sub {
+    margin: 2px 0 0;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: var(--ink-muted);
+  }
+  .banner-sub .mono { font-family: var(--qm-font-mono); font-size: 9.5px; color: var(--ink-faint); }
+  .banner-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  .banner-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: var(--qm-font-mono);
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+  .banner-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    overflow: hidden;
+    background: rgba(44, 106, 90, 0.12);
+  }
+  .banner-progress > span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    transition: width 180ms linear;
+  }
+  .banner-progress.is-indeterminate > span {
+    width: 32%;
+    animation: indeterminate 1.25s ease-in-out infinite;
+  }
+  .spin { animation: spin 1.5s linear infinite; }
+
+  /* ---------- Document ---------- */
+
+  .doc-scroll { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+  .doc-scroll::-webkit-scrollbar { width: 9px; }
+  .doc-scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; border: 2px solid var(--surface); }
+  .doc { max-width: 668px; margin: 0 auto; padding: 42px 40px 72px; }
+  .doc-kicker {
+    margin: 0 0 15px;
+    font-family: var(--qm-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .doc h1 {
+    margin: 0 0 9px;
+    font-family: var(--qm-font-serif);
+    font-size: 37px;
+    font-weight: 600;
+    line-height: 1.18;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+  .doc-meta {
+    margin: 0 0 30px;
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+  }
+  .doc p {
+    margin: 0 0 19px;
+    font-family: var(--qm-font-serif);
+    font-size: 16.5px;
+    line-height: 1.95;
+    color: var(--ink);
+  }
+  .doc p.lead { font-size: 17.5px; color: var(--ink); }
+  .doc h2 {
+    margin: 34px 0 12px;
+    font-family: var(--qm-font-serif);
+    font-size: 23px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .doc blockquote {
+    margin: 26px 0 28px;
+    padding: 2px 0 2px 20px;
+    border-left: 2px solid var(--accent);
+    font-family: var(--qm-font-serif);
+    font-size: 18px;
+    line-height: 1.86;
+    color: var(--ink-muted);
+  }
+  .doc .end-mark {
+    margin-top: 34px;
+    font-family: var(--qm-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+  }
+
+  .statusbar {
+    flex: none;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 0 16px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    font-size: 10px;
+    color: var(--ink-muted);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .status-file { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex: none; transition: background 160ms var(--ease); }
+  .status-dot.is-warning { background: var(--warning); }
+  .status-dot.is-danger { background: var(--danger); }
+  .status-file-name { overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--ink); }
+  .status-sep { width: 1px; height: 11px; background: var(--line); flex: none; }
+  .status-items { display: flex; align-items: center; gap: 13px; min-width: 0; overflow: hidden; }
+  .status-item { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+  .status-item b {
+    font-family: var(--qm-font-mono);
+    font-size: 7.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .status-item span { color: var(--ink-muted); }
+  .status-mode {
+    margin-left: auto;
+    font-family: var(--qm-font-mono);
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- Overlays + dialogs ---------- */
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(24, 22, 18, 0.34);
+    -webkit-backdrop-filter: blur(3px) saturate(0.92);
+    backdrop-filter: blur(3px) saturate(0.92);
+    animation: fadeIn 180ms var(--ease);
+  }
+  html[data-theme="dark"] .overlay { background: rgba(0, 0, 0, 0.52); }
+  .overlay--dim { background: rgba(24, 22, 18, 0.56); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  html[data-theme="dark"] .overlay--dim { background: rgba(0, 0, 0, 0.66); }
+  .overlay--top { align-items: start; padding-top: 10vh; }
+
+  .dialog {
+    position: relative;
+    width: min(560px, 100%);
+    min-width: 0;
+    max-height: calc(100% - 8px);
+    overflow: auto;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-card);
+    background: var(--raised);
+    box-shadow: var(--shadow-dialog);
+    animation: dialogIn 260ms var(--ease);
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  .dialog-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+  }
+  .dialog-close:hover { background: var(--surface-muted); color: var(--ink); }
+  .dialog-close .icon { width: 13px; height: 13px; }
+  .dialog-head { padding: 27px 28px 18px; }
+  .kicker {
+    margin: 0 0 9px;
+    font-family: var(--qm-font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .kicker--danger { color: var(--danger); }
+  .kicker--warning { color: var(--warning); }
+  .dialog-head h2, .dialog h2 {
+    margin: 0;
+    font-family: var(--qm-font-serif);
+    font-size: 29px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+  .dialog-head h2 span { color: var(--accent); }
+  .dialog-lede {
+    margin: 10px 0 0;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--ink-muted);
+  }
+  .version-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 17px;
+    font-size: 10.5px;
+    color: var(--ink-muted);
+  }
+  .version-pill {
+    padding: 2px 7px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface-muted);
+    font-family: var(--qm-font-mono);
+    font-size: 9.5px;
+    color: var(--ink-muted);
+  }
+  .version-pill--new { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+  .version-row .icon { width: 11px; height: 11px; color: var(--ink-faint); }
+  .version-sep { width: 1px; height: 10px; background: var(--line); margin: 0 2px; }
+
+  .dialog-body { padding: 0 28px 20px; }
+  .section-label {
+    margin: 0 0 2px;
+    font-family: var(--qm-font-mono);
+    font-size: 8px;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .release-notes { margin: 0; padding: 0; list-style: none; }
+  .release-notes li {
+    display: flex;
+    gap: 11px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .release-notes li:last-child { border-bottom: 0; padding-bottom: 2px; }
+  .note-mark {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    margin-top: 1px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: var(--qm-font-mono);
+    font-size: 10px;
+    line-height: 1;
+  }
+  .release-notes strong { display: block; font-size: 11.5px; font-weight: 600; color: var(--ink); }
+  .release-notes p { margin: 2px 0 0; font-size: 10.5px; line-height: 1.6; color: var(--ink-muted); }
+
+  .trust-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px 16px;
+    padding: 11px 28px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+    font-size: 9.5px;
+    color: var(--ink-muted);
+  }
+  .trust-strip span { display: inline-flex; align-items: center; gap: 5px; }
+  .trust-strip .icon { width: 11px; height: 11px; color: var(--accent); }
+
+  .dialog-foot {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 15px 28px 19px;
+  }
+  .dialog-foot > p {
+    flex: 1;
+    max-width: 290px;
+    margin: 0;
+    font-size: 9.5px;
+    line-height: 1.65;
+    color: var(--ink-faint);
+  }
+  .dialog-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+
+  /* ---------- Conflict ---------- */
+
+  .file-card {
+    margin-top: 17px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-muted);
+  }
+  .file-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .file-card-top .icon { width: 13px; height: 13px; color: var(--danger); }
+  .file-card-top strong { overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; font-weight: 600; color: var(--ink); }
+  .file-card-badge {
+    margin-left: auto;
+    flex: none;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--danger-soft);
+    font-family: var(--qm-font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--danger);
+  }
+  .file-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 11px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .file-meta dt {
+    margin: 0;
+    font-family: var(--qm-font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .file-meta dd { margin: 2px 0 0; font-family: var(--qm-font-mono); font-size: 9.5px; color: var(--ink-muted); }
+  .conflict-hint { margin: 13px 0 0; font-size: 10.5px; line-height: 1.65; color: var(--ink-muted); }
+  .confirm-box {
+    margin-top: 14px;
+    padding: 12px 13px;
+    border: 1px solid var(--danger);
+    border-radius: 9px;
+    background: var(--danger-soft);
+    animation: bannerIn 180ms var(--ease);
+  }
+  .confirm-box p { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--ink); }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 10px; }
+  .conflict-actions { flex-wrap: wrap; }
+  .conflict-actions .btn { height: 29px; font-size: 10.5px; }
+
+  /* ---------- Installing ---------- */
+
+  .install-panel {
+    width: min(430px, 100%);
+    min-width: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-card);
+    background: var(--raised);
+    box-shadow: var(--shadow-dialog);
+    padding: 26px 27px 22px;
+    animation: dialogIn 260ms var(--ease);
+  }
+  .install-head { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+  .install-mark {
+    display: grid;
+    place-items: center;
+    width: 31px;
+    height: 31px;
+    border-radius: 9px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .install-mark .icon { width: 15px; height: 15px; }
+  .install-head .kicker { margin: 0; }
+  .install-panel h2 {
+    margin: 0;
+    font-family: var(--qm-font-serif);
+    font-size: 27px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+  .install-desc { margin: 8px 0 0; font-size: 11px; line-height: 1.65; color: var(--ink-muted); }
+  .steps { margin: 21px 0 18px; padding: 0; list-style: none; }
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-faint);
+    transition: color 160ms var(--ease), opacity 160ms var(--ease);
+  }
+  .step:last-child { border-bottom: 0; }
+  .step[data-status="pending"] { opacity: 0.55; }
+  .step[data-status="active"] { color: var(--ink); }
+  .step[data-status="done"] { color: var(--ink-muted); }
+  .step-indicator {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    margin-top: 1px;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    font-family: var(--qm-font-mono);
+    font-size: 8px;
+    color: var(--ink-faint);
+    transition: background 160ms var(--ease), border-color 160ms var(--ease), color 160ms var(--ease);
+  }
+  .step[data-status="active"] .step-indicator {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .step[data-status="done"] .step-indicator {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: none;
+  }
+  .step-text strong { display: block; font-size: 11.5px; font-weight: 600; }
+  .step-text span { display: block; margin-top: 1px; font-family: var(--qm-font-mono); font-size: 8.5px; color: var(--ink-faint); }
+  .install-progress .progress-track {
+    height: 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--accent-soft);
+  }
+  .install-progress .progress-track span {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 420ms var(--ease);
+  }
+  .progress-meta { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--qm-font-mono); font-size: 8.5px; color: var(--ink-faint); }
+  .install-lock {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 15px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 9.5px;
+    line-height: 1.5;
+    color: var(--ink-faint);
+  }
+  .install-lock .icon { width: 11px; height: 11px; }
+  .install-panel:focus, .install-panel:focus-visible { outline: none; }
+
+  /* ---------- Error / check failed ---------- */
+
+  .dialog--narrow { width: min(438px, 100%); }
+  .fail-icon {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    margin-bottom: 17px;
+    border-radius: 50%;
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+  .fail-icon .icon { width: 18px; height: 18px; }
+  .fail-icon.is-danger { background: var(--danger-soft); color: var(--danger); }
+  .dialog--narrow h2 { font-size: 24px; }
+  .detail-list {
+    margin: 18px 0 0;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+  }
+  .detail-list div { min-width: 0; }
+  .detail-list dt {
+    margin: 0;
+    font-family: var(--qm-font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .detail-list dd { margin: 2px 0 0; font-family: var(--qm-font-mono); font-size: 9.5px; color: var(--ink-muted); overflow-wrap: anywhere; }
+  .error-code {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 4px 8px;
+    border: 1px solid var(--danger);
+    border-radius: 5px;
+    background: var(--danger-soft);
+    font-family: var(--qm-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    color: var(--danger);
+  }
+  .dialog--narrow .dialog-foot { padding-top: 18px; }
+  .dialog--narrow .dialog-foot > p { max-width: none; }
+
+  /* ---------- Command palette ---------- */
+
+  .palette {
+    width: min(524px, 100%);
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    background: var(--raised);
+    box-shadow: var(--shadow-dialog);
+    animation: dialogIn 220ms var(--ease);
+  }
+  .palette-input { display: flex; align-items: center; gap: 9px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+  .palette-input .icon { width: 15px; height: 15px; color: var(--ink-faint); }
+  .palette-input input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 14px;
+    outline: none;
+  }
+  .palette-input input::placeholder { color: var(--ink-faint); }
+  .key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    border: 1px solid var(--line);
+    border-bottom-color: var(--line-strong);
+    border-radius: 4px;
+    background: var(--surface);
+    font-family: var(--qm-font-mono);
+    font-size: 8.5px;
+    color: var(--ink-muted);
+    white-space: nowrap;
+  }
+  .palette-list { max-height: min(330px, 42vh); overflow: auto; margin: 0; padding: 6px; list-style: none; }
+  .palette-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+  .palette-list li.is-active { background: var(--accent-soft); color: var(--ink); }
+  .palette-list li:hover { background: var(--surface-muted); color: var(--ink); }
+  .cmd-main { min-width: 0; flex: 1; }
+  .cmd-title { display: flex; align-items: center; gap: 7px; font-size: 12px; line-height: 1.4; }
+  .cmd-category {
+    margin-top: 1px;
+    font-family: var(--qm-font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .cmd-badge {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: var(--qm-font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.04em;
+  }
+  .palette-foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    font-family: var(--qm-font-mono);
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+  }
+  .palette-foot span:last-child { margin-left: auto; letter-spacing: 0.13em; text-transform: uppercase; }
+
+  /* ---------- Toast ---------- */
+
+  .toast-region {
+    position: absolute;
+    left: 50%;
+    bottom: 52px;
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    width: max-content;
+    max-width: calc(100% - 36px);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    padding: 8px 13px;
+    border-radius: 8px;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 10.5px;
+    line-height: 1.4;
+    box-shadow: var(--shadow-float);
+    animation: toastIn 200ms var(--ease);
+  }
+  .toast .icon { width: 11px; height: 11px; }
+  html[data-theme="dark"] .toast { background: #ece7dc; color: #171914; }
+
+  /* ---------- Desk caption ---------- */
+
+  .desk-caption {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 2px;
+    font-family: var(--qm-font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.07em;
+    color: var(--stage-faint);
+  }
+  .desk-caption .rule { flex: 1; height: 1px; background: var(--stage-line); }
+  .desk-caption b { font-weight: 500; letter-spacing: 0.13em; text-transform: uppercase; color: var(--stage-muted); }
+
+  /* ---------- Motion ---------- */
+
+  @keyframes bannerIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes dialogIn { from { opacity: 0; transform: translateY(7px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes indeterminate {
+    0% { transform: translateX(-110%); }
+    100% { transform: translateX(360%); }
+  }
+
+  /* ---------- Responsive ---------- */
+
+  @media (max-width: 1120px) {
+    .stage { grid-template-columns: 236px minmax(0, 1fr); gap: 32px; padding: 30px 28px; }
+    .window { height: min(740px, calc(100dvh - 106px)); }
+  }
+
+  @media (max-width: 960px) {
+    .stage { display: block; max-width: 880px; padding: 24px 22px 34px; }
+    .rail {
+      position: static;
+      display: block;
+      max-height: none;
+      overflow: visible;
+      margin-bottom: 22px;
+      padding: 0;
+    }
+    .rail h1 { font-size: 30px; margin-top: 14px; }
+    .rail-lede { max-width: 56ch; }
+    .rail-meta { margin-top: 12px; }
+    .state-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .state-group + .state-group { margin-top: 0; }
+    .rail-label { margin-bottom: 4px; }
+    .state-btn { padding: 5px 6px; font-size: 11.5px; }
+    .rail-foot { display: grid; grid-template-columns: 220px 1fr; align-items: center; gap: 16px; margin-top: 16px; }
+    .rail-note { display: none; }
+    .rail-tools { justify-content: flex-end; }
+    .window { height: min(720px, calc(100dvh - 80px)); min-height: 580px; }
+  }
+
+  @media (max-width: 720px) {
+    .stage { padding: 16px 14px 26px; }
+    .rail h1 { font-size: 24px; line-height: 1.32; margin: 10px 0 0; }
+    .rail h1 br { display: none; }
+    .rail-lede { display: none; }
+    .rail-meta { margin-top: 6px; }
+    .state-groups {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: repeat(7, auto);
+      grid-auto-flow: column;
+      gap: 0 6px;
+      margin-top: 12px;
+    }
+    .state-group { display: contents; }
+    .state-group + .state-group { margin-top: 0; }
+    .rail-label { display: none; }
+    .state-list { display: contents; }
+    .state-btn { padding: 4px 6px; font-size: 11px; grid-template-columns: 18px minmax(0, 1fr) 5px; gap: 5px; }
+    .rail-foot { grid-template-columns: 1fr; gap: 8px; margin-top: 12px; align-items: center; }
+    .rail-tools { justify-content: flex-start; }
+    .rail-note { display: none; }
+    .window { height: min(680px, 78dvh); min-height: 520px; border-radius: 11px; }
+    .titlebar-right { display: none; }
+    .doc-header { padding: 14px 18px 12px; gap: 8px; }
+    .doc-heading h1 { font-size: 18px; }
+    .doc-actions .btn-ghost { display: none; }
+    .chip { height: 25px; font-size: 9.5px; }
+    .banner { flex-wrap: wrap; padding: 10px 18px; gap: 8px 10px; }
+    .banner-icon { width: 24px; height: 24px; }
+    .banner-copy { flex: 1 1 120px; }
+    .banner-actions { flex: 1 0 100%; margin-left: 0; justify-content: flex-end; }
+    .doc { padding: 30px 24px 58px; }
+    .doc h1 { font-size: 30px; }
+    .doc p { font-size: 15.5px; line-height: 1.9; }
+    .doc h2 { font-size: 20px; }
+    .statusbar { gap: 9px; padding: 0 12px; }
+    .status-items { gap: 9px; }
+    .status-item:nth-child(4), .status-item:nth-child(5) { display: none; }
+    .dialog-head, .dialog-body { padding-left: 22px; padding-right: 22px; }
+    .dialog-foot { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 22px 18px; }
+    .dialog-foot > p { max-width: none; }
+    .dialog-actions { justify-content: flex-end; flex-wrap: wrap; }
+    .dialog-actions .btn { flex: 0 1 auto; }
+    .trust-strip { padding-left: 22px; padding-right: 22px; }
+    .file-meta { grid-template-columns: 1fr 1fr; }
+    .overlay { padding: 14px; }
+    .overlay--top { padding-top: 7vh; }
+    .conflict-actions { justify-content: flex-end; }
+    .detail-list { grid-template-columns: 1fr; }
+    .desk-caption span:last-child { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-download" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 2.6v7.1M8 9.7 5.2 6.9M8 9.7l2.8-2.8M3.2 12.9h9.6"/>
+  </symbol>
+  <symbol id="i-refresh" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12.7 6.1A5 5 0 1 0 13 9.4M12.7 2.9v3.2h-3.2"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m3.2 8.5 3 3 6.6-7.1"/>
+  </symbol>
+  <symbol id="i-alert" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 2.7 14.1 13H1.9L8 2.7ZM8 6.2v3.1M8 11.3h.01"/>
+  </symbol>
+  <symbol id="i-shield" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 2.1 13 4v3.6c0 2.9-2 5-5 6.1-3-1.1-5-3.2-5-6.1V4l5-1.9Z"/>
+    <path d="m5.7 7.9 1.6 1.6 3.1-3.2"/>
+  </symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.6 7V5.3a3.4 3.4 0 0 1 6.8 0V7M3.4 7h9.2v6.3H3.4z"/>
+  </symbol>
+  <symbol id="i-close" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+    <path d="m4.2 4.2 7.6 7.6M11.8 4.2l-7.6 7.6"/>
+  </symbol>
+  <symbol id="i-search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+    <circle cx="7.2" cy="7.2" r="4.7"/><path d="m10.7 10.7 2.8 2.8"/>
+  </symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.8 8h10M9.4 4.6 12.8 8l-3.4 3.4"/>
+  </symbol>
+  <symbol id="i-play" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M5.1 3.6 12.5 8l-7.4 4.4V3.6Z"/>
+  </symbol>
+</svg>
+
+<div class="stage">
+  <aside class="rail" aria-label="原型控制">
+    <div>
+      <div class="brand">
+        <span class="seal" aria-hidden="true">青</span>
+        <span>Qingmo / Prototype</span>
+      </div>
+      <h1>更新，<br><em>不该打断写作。</em></h1>
+      <p class="rail-lede">青墨 macOS 自动更新原型：检查、下载、验签、保存守卫与安装重启。</p>
+      <div class="rail-meta">
+        <span>macOS Universal</span>
+        <span>38.4 MB</span>
+        <span>2026.10</span>
+      </div>
+    </div>
+
+    <div class="state-groups">
+      <div class="state-group">
+        <p class="rail-label"><span>更新流程</span><b>01—07</b></p>
+        <ul class="state-list">
+          <li><button type="button" class="state-btn" data-state="idle" aria-pressed="true"><span class="idx">01</span><span>日常写作</span><span class="dot"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="checking" aria-pressed="false"><span class="idx">02</span><span>检查更新</span><span class="dot"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="available" aria-pressed="false"><span class="idx">03</span><span>发现新版本</span><span class="dot"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="dialog" aria-pressed="false"><span class="idx">04</span><span>更新说明</span><span class="dot"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="downloading" aria-pressed="false"><span class="idx">05</span><span>下载中</span><span class="dot"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="ready" aria-pressed="false"><span class="idx">06</span><span>下载完成</span><span class="dot"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="installing" aria-pressed="false"><span class="idx">07</span><span>安装中</span><span class="dot"></span></button></li>
+        </ul>
+      </div>
+
+      <div class="state-group">
+        <p class="rail-label"><span>中断与边界</span><b>08—10</b></p>
+        <ul class="state-list">
+          <li><button type="button" class="state-btn" data-state="conflict" aria-pressed="false"><span class="idx">08</span><span>保存冲突</span><span class="dot" data-tone="danger"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="error" aria-pressed="false"><span class="idx">09</span><span>下载失败</span><span class="dot" data-tone="danger"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="offline" aria-pressed="false"><span class="idx">10</span><span>检查失败</span><span class="dot" data-tone="warning"></span></button></li>
+        </ul>
+      </div>
+
+      <div class="state-group">
+        <p class="rail-label"><span>入口与结果</span><b>11—13</b></p>
+        <ul class="state-list">
+          <li><button type="button" class="state-btn" data-state="palette" aria-pressed="false"><span class="idx">11</span><span>命令面板</span><span class="dot"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="uptodate" aria-pressed="false"><span class="idx">12</span><span>已是最新</span><span class="dot" data-tone="success"></span></button></li>
+          <li><button type="button" class="state-btn" data-state="updated" aria-pressed="false"><span class="idx">13</span><span>更新完成</span><span class="dot" data-tone="success"></span></button></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="rail-foot">
+      <div class="seg" role="group" aria-label="配色">
+        <button type="button" data-theme-set="light" aria-pressed="true">浅色</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false">深色</button>
+      </div>
+      <div class="rail-tools">
+        <button type="button" class="text-btn" id="demoBtn" data-action="demo">
+          <svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>
+          <span>自动演示</span>
+        </button>
+        <span class="sep" aria-hidden="true"></span>
+        <button type="button" class="text-btn" data-action="reset">重置原型</button>
+      </div>
+      <p class="rail-note">纯静态原型 · 无网络请求 · 不写入本地存储<br>Xcode Developer ID / Apple 公证 / minisign 为演示文案</p>
+    </div>
+  </aside>
+
+  <div class="desk">
+    <div class="window" id="window">
+      <div class="titlebar">
+        <div class="lights" aria-hidden="true">
+          <span class="light red"></span><span class="light yellow"></span><span class="light green"></span>
+        </div>
+        <span class="titlebar-title">山间笔记.md — 青墨</span>
+        <span class="titlebar-right">本地文档</span>
+      </div>
+
+      <div class="app">
+        <header class="doc-header">
+          <div class="doc-heading">
+            <div class="doc-title-row">
+              <h1>山间笔记</h1>
+              <span class="dirty-pill" id="dirtyPill" hidden>未保存</span>
+            </div>
+            <p class="doc-path">~/Documents/写作/山间笔记.md</p>
+          </div>
+          <div class="doc-actions">
+            <button type="button" class="chip" id="updateChip" data-action="restore-ready" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>
+              更新待安装
+            </button>
+            <span class="chip chip--success" id="updatedChip" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>
+              已更新至 0.2.0
+              <button type="button" class="chip-x" aria-label="关闭更新提示" data-action="dismiss-updated">
+                <svg class="icon" aria-hidden="true" style="width:9px;height:9px"><use href="#i-close"/></svg>
+              </button>
+            </span>
+            <button type="button" class="btn btn-ghost">打开 Markdown 文件</button>
+          </div>
+        </header>
+
+        <div class="banner-stack" aria-live="polite">
+          <section class="banner" data-banner="checking" hidden>
+            <span class="banner-icon" aria-hidden="true"><svg class="icon spin"><use href="#i-refresh"/></svg></span>
+            <div class="banner-copy">
+              <p class="banner-title">正在检查更新…</p>
+              <p class="banner-sub">连接 GitHub Releases · 不会上传任何文档内容</p>
+            </div>
+            <div class="banner-actions">
+              <button type="button" class="btn btn-quiet btn-sm" data-action="cancel-check">取消</button>
+            </div>
+            <div class="banner-progress is-indeterminate" aria-hidden="true"><span></span></div>
+          </section>
+
+          <section class="banner" data-banner="available" hidden>
+            <span class="banner-icon" aria-hidden="true"><svg class="icon"><use href="#i-download"/></svg></span>
+            <div class="banner-copy">
+              <p class="banner-title">青墨 0.2.0 已发布 <span class="banner-badge">通用版</span></p>
+              <p class="banner-sub">38.4 MB</p>
+            </div>
+            <div class="banner-actions">
+              <button type="button" class="btn btn-quiet btn-sm" data-action="later-available">稍后</button>
+              <button type="button" class="btn btn-primary btn-sm" data-action="open-update">查看更新</button>
+            </div>
+          </section>
+
+          <section class="banner" data-banner="downloading" hidden>
+            <span class="banner-icon" aria-hidden="true"><svg class="icon"><use href="#i-download"/></svg></span>
+            <div class="banner-copy">
+              <p class="banner-title">正在下载青墨 0.2.0</p>
+              <p class="banner-sub"><span id="dlBytes">17.7 / 38.4 MB</span> · <span id="dlSpeed">6.4 MB/s</span></p>
+            </div>
+            <div class="banner-actions">
+              <button type="button" class="btn btn-quiet btn-sm" data-action="cancel-download">取消</button>
+            </div>
+            <div class="banner-progress" id="dlTrack" role="progressbar" aria-label="下载进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="dlBar"></span></div>
+          </section>
+
+          <section class="banner" data-banner="ready" hidden>
+            <span class="banner-icon" aria-hidden="true"><svg class="icon"><use href="#i-check"/></svg></span>
+            <div class="banner-copy">
+              <p class="banner-title">更新已就绪</p>
+              <p class="banner-sub">青墨 0.2.0 已下载并验签 · 重启后完成安装</p>
+            </div>
+            <div class="banner-actions">
+              <button type="button" class="btn btn-quiet btn-sm" data-action="later-ready">稍后</button>
+              <button type="button" class="btn btn-primary btn-sm" data-action="install">安装并重启</button>
+            </div>
+          </section>
+
+          <section class="banner banner--danger" data-banner="error" hidden>
+            <span class="banner-icon" aria-hidden="true"><svg class="icon"><use href="#i-alert"/></svg></span>
+            <div class="banner-copy">
+              <p class="banner-title">下载没有完成</p>
+              <p class="banner-sub">网络连接中断 · <span class="mono">UPDATE_DOWNLOAD_FAILED</span> · 未完成的文件已被丢弃</p>
+            </div>
+            <div class="banner-actions">
+              <button type="button" class="btn btn-quiet btn-sm" data-action="show-error-detail">详情</button>
+              <button type="button" class="btn btn-primary btn-sm" data-action="retry-download">重试</button>
+            </div>
+          </section>
+        </div>
+
+        <div class="doc-scroll" id="docScroll">
+          <article class="doc">
+            <p class="doc-kicker">山谷笔记 · 第 14 篇</p>
+            <h1>山间笔记</h1>
+            <p class="doc-meta">2026 年 10 月 27 日 · 星期二 · 晴</p>
+
+            <p class="lead">清晨六点，雾还停在半山腰。窗外的松针滴着水，屋里只有键盘和热水壶的声音。</p>
+            <p>我最近在练习一件很小的事：打开一个文件，只做一件事，然后把它关掉。不是关掉电脑，是关掉脑子里那些同时亮着的窗口。</p>
+
+            <blockquote>写作不是把世界说尽，而是为它留出一处安静的空地。</blockquote>
+
+            <h2>把注意力还给文字</h2>
+            <p>工具最好的状态，是让你忘记它正在工作。保存应该是安静的，版本应该是可追溯的，更新也应该如此——它发生在背景里，结束时你只需要继续写。</p>
+            <p>所以这一次，我们把“重启”交还给用户：先下载，再验签，保存好当前文档，最后才换上新版本。任何一步不确定，就停在原地。</p>
+
+            <h2>停在原地，也是一种完成</h2>
+            <p>山里的路常常没有终点，只有一块又一块可以坐下来的石头。写到一半卡住的时候，我会把窗口缩小，听一会儿水声，再回来读最后一段。</p>
+            <p>如果更新也能这样就好了：不催促，不遮挡，不在你正写下重要句子的时候突然重启。它只在旁边轻轻放一张纸条，等你准备好了，再一起往前走。</p>
+
+            <p class="end-mark">—— 写于山间，窗外的雾刚散</p>
+          </article>
+        </div>
+
+        <footer class="statusbar">
+          <span class="status-file">
+            <span class="status-dot" id="saveDot" aria-hidden="true"></span>
+            <span class="status-file-name">山间笔记.md</span>
+          </span>
+          <span class="status-sep" aria-hidden="true"></span>
+          <div class="status-items">
+            <span class="status-item"><b>保存</b><span id="saveValue">已同步</span></span>
+            <span class="status-item"><b>光标</b><span>L12, C8</span></span>
+            <span class="status-item"><b>编码</b><span>UTF-8</span></span>
+            <span class="status-item"><b>换行</b><span>LF</span></span>
+            <span class="status-item"><b>大小</b><span id="fileSize">12.4 KB</span></span>
+          </div>
+          <span class="status-mode">实时预览</span>
+        </footer>
+      </div>
+
+      <!-- Update dialog -->
+      <div class="overlay" data-overlay="update" hidden>
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="updateTitle" aria-describedby="updateDesc">
+          <button type="button" class="dialog-close" data-action="close-update" aria-label="关闭更新说明">
+            <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
+          </button>
+          <header class="dialog-head">
+            <p class="kicker">软件更新</p>
+            <h2 id="updateTitle">青墨 <span>0.2.0</span></h2>
+            <p class="dialog-lede" id="updateDesc">一次安静的更新。你的文档、窗口位置和主题都会保留。</p>
+            <div class="version-row">
+              <span class="version-pill">0.1.0</span>
+              <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              <span class="version-pill version-pill--new">0.2.0</span>
+              <span class="version-sep" aria-hidden="true"></span>
+              <span>38.4 MB</span>
+              <span>·</span>
+              <span>macOS 通用版</span>
+            </div>
+          </header>
+          <div class="dialog-body">
+            <p class="section-label">本次更新</p>
+            <ul class="release-notes">
+              <li>
+                <span class="note-mark" aria-hidden="true">＋</span>
+                <div><strong>命令面板</strong><p>按下 ⌘K，搜索并执行打开、保存与视图命令。</p></div>
+              </li>
+              <li>
+                <span class="note-mark" aria-hidden="true">＋</span>
+                <div><strong>保存冲突保护</strong><p>磁盘上的文件被其他程序修改时，不再静默覆盖。</p></div>
+              </li>
+              <li>
+                <span class="note-mark" aria-hidden="true">＋</span>
+                <div><strong>更安静的启动</strong><p>启动后的检查失败不会弹窗，也不会打断写作。</p></div>
+              </li>
+              <li>
+                <span class="note-mark" aria-hidden="true">↻</span>
+                <div><strong>实时预览性能</strong><p>改善长文档滚动时的重绘开销。</p></div>
+              </li>
+            </ul>
+          </div>
+          <div class="trust-strip" aria-label="更新包信任信息">
+            <span><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Developer ID 签名</span>
+            <span><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Apple 公证</span>
+            <span><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>minisign 验签</span>
+          </div>
+          <footer class="dialog-foot">
+            <p>下载完成后由你决定何时重启；安装前会先保存当前文档。</p>
+            <div class="dialog-actions">
+              <button type="button" class="btn btn-quiet" data-action="close-update">稍后</button>
+              <button type="button" class="btn btn-primary" data-action="start-download" data-autofocus>
+                <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>
+                下载更新
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+
+      <!-- Conflict dialog -->
+      <div class="overlay" data-overlay="conflict" hidden>
+        <section class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="conflictTitle" aria-describedby="conflictDesc">
+          <header class="dialog-head">
+            <p class="kicker kicker--danger">安装已暂停</p>
+            <h2 id="conflictTitle">先处理保存冲突</h2>
+            <p class="dialog-lede" id="conflictDesc">安装更新前，青墨需要保存「山间笔记.md」。磁盘上的文件已被其他程序修改，自动保存可能覆盖别人的改动。</p>
+            <div class="file-card">
+              <div class="file-card-top">
+                <svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>
+                <strong>山间笔记.md</strong>
+                <span class="file-card-badge">磁盘版本较新</span>
+              </div>
+              <dl class="file-meta">
+                <div><dt>修改时间</dt><dd>今天 14:32</dd></div>
+                <div><dt>大小</dt><dd>12.6 KB</dd></div>
+                <div><dt>基线哈希</dt><dd>8f3a…c21d</dd></div>
+              </dl>
+            </div>
+          </header>
+          <div class="dialog-body">
+            <p class="conflict-hint">你可以重新载入磁盘上的版本，或保留自己的修改并覆盖。两个操作都不会在单击后立即执行。</p>
+            <div class="confirm-box" id="conflictConfirm" hidden>
+              <p id="conflictConfirmText"></p>
+              <div class="confirm-actions">
+                <button type="button" class="btn btn-quiet btn-sm" data-action="conflict-back">返回</button>
+                <button type="button" class="btn btn-danger btn-sm" data-action="conflict-confirm" data-autofocus>确认并继续</button>
+              </div>
+            </div>
+          </div>
+          <footer class="dialog-foot">
+            <p>保存成功之前，青墨不会调用安装命令。</p>
+            <div class="dialog-actions conflict-actions" id="conflictActions">
+              <button type="button" class="btn btn-quiet" data-action="conflict-cancel">取消安装</button>
+              <button type="button" class="btn btn-ghost" data-action="conflict-reload">重新载入磁盘版本</button>
+              <button type="button" class="btn btn-danger-outline" data-action="conflict-overwrite">保留修改并覆盖</button>
+            </div>
+          </footer>
+        </section>
+      </div>
+
+      <!-- Installing -->
+      <div class="overlay overlay--dim" data-overlay="installing" hidden>
+        <section class="install-panel" role="alertdialog" aria-modal="true" aria-labelledby="installTitle" aria-describedby="installDesc" tabindex="-1" data-autofocus>
+          <div class="install-head">
+            <span class="install-mark" aria-hidden="true"><svg class="icon"><use href="#i-download"/></svg></span>
+            <p class="kicker">正在安装</p>
+          </div>
+          <h2 id="installTitle">青墨 0.2.0</h2>
+          <p class="install-desc" id="installDesc">正在替换应用。安装期间青墨不会响应关闭请求，完成后会自动重启。</p>
+          <ol class="steps" id="installSteps">
+            <li class="step" data-step="0" data-status="active">
+              <span class="step-indicator" aria-hidden="true">1</span>
+              <div class="step-text"><strong>保存当前文档</strong><span>通过唯一的保存路径写入磁盘</span></div>
+            </li>
+            <li class="step" data-step="1" data-status="pending">
+              <span class="step-indicator" aria-hidden="true">2</span>
+              <div class="step-text"><strong>校验签名与版本</strong><span>minisign · trusted comment</span></div>
+            </li>
+            <li class="step" data-step="2" data-status="pending">
+              <span class="step-indicator" aria-hidden="true">3</span>
+              <div class="step-text"><strong>写入应用并重启</strong><span>/Applications/青墨.app</span></div>
+            </li>
+          </ol>
+          <div class="install-progress">
+            <div class="progress-track" role="progressbar" aria-label="安装进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="installTrack"><span id="installBar"></span></div>
+            <div class="progress-meta"><span id="installLabel">正在保存当前文档…</span><span id="installPct">0%</span></div>
+          </div>
+          <p class="install-lock"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>请保持青墨开启，不要强制退出。</p>
+        </section>
+      </div>
+
+      <!-- Check failed -->
+      <div class="overlay" data-overlay="check-error" hidden>
+        <section class="dialog dialog--narrow" role="alertdialog" aria-modal="true" aria-labelledby="checkFailTitle" aria-describedby="checkFailDesc">
+          <div class="dialog-head">
+            <div class="fail-icon" aria-hidden="true"><svg class="icon"><use href="#i-alert"/></svg></div>
+            <p class="kicker kicker--warning">检查更新</p>
+            <h2 id="checkFailTitle">无法连接更新服务器</h2>
+            <p class="dialog-lede" id="checkFailDesc">青墨没有上传任何文档内容。请检查网络后重试；已安装的版本不受影响。</p>
+            <span class="error-code">UPDATE_CHECK_FAILED · 请求超时（30 秒）</span>
+          </div>
+          <footer class="dialog-foot">
+            <div class="dialog-actions">
+              <button type="button" class="btn btn-quiet" data-action="close-check-error">稍后</button>
+              <button type="button" class="btn btn-primary" data-action="retry-check" data-autofocus>重试</button>
+            </div>
+          </footer>
+        </section>
+      </div>
+
+      <!-- Error detail -->
+      <div class="overlay" data-overlay="error-detail" hidden>
+        <section class="dialog dialog--narrow" role="dialog" aria-modal="true" aria-labelledby="errorDetailTitle">
+          <div class="dialog-head">
+            <div class="fail-icon is-danger" aria-hidden="true"><svg class="icon"><use href="#i-alert"/></svg></div>
+            <p class="kicker kicker--danger">下载失败</p>
+            <h2 id="errorDetailTitle">连接中断</h2>
+            <p class="dialog-lede">更新包没有下载完整，青墨已丢弃未完成的文件。重试会从零开始，并重新校验签名。</p>
+            <dl class="detail-list">
+              <div><dt>错误码</dt><dd>UPDATE_DOWNLOAD_FAILED</dd></div>
+              <div><dt>阶段</dt><dd>download</dd></div>
+              <div><dt>目标版本</dt><dd>0.2.0</dd></div>
+              <div><dt>发生时间</dt><dd>14:36:08</dd></div>
+            </dl>
+          </div>
+          <footer class="dialog-foot">
+            <div class="dialog-actions">
+              <button type="button" class="btn btn-quiet" data-action="close-error-detail">关闭</button>
+              <button type="button" class="btn btn-primary" data-action="retry-download" data-autofocus>重试下载</button>
+            </div>
+          </footer>
+        </section>
+      </div>
+
+      <!-- Command palette -->
+      <div class="overlay overlay--top" data-overlay="palette" hidden>
+        <section class="palette" role="dialog" aria-modal="true" aria-labelledby="paletteTitle">
+          <h2 id="paletteTitle" class="sr-only">命令面板</h2>
+          <div class="palette-input">
+            <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <input id="paletteInput" type="text" role="combobox" aria-expanded="true" aria-controls="paletteList" aria-autocomplete="list" placeholder="搜索命令…" autocomplete="off" spellcheck="false" data-autofocus>
+            <span class="key">esc</span>
+          </div>
+          <ul class="palette-list" id="paletteList" role="listbox" aria-label="命令">
+            <li role="option" aria-selected="false" data-command="open" data-search="打开 markdown 文件 文件 ⌘o">
+              <div class="cmd-main"><div class="cmd-title">打开 Markdown 文件</div><div class="cmd-category">文件</div></div>
+              <span class="key">⌘O</span>
+            </li>
+            <li role="option" aria-selected="false" data-command="save" data-search="保存 文件 ⌘s">
+              <div class="cmd-main"><div class="cmd-title">保存</div><div class="cmd-category">文件</div></div>
+              <span class="key">⌘S</span>
+            </li>
+            <li role="option" aria-selected="false" data-command="preview" data-search="切换实时预览 视图">
+              <div class="cmd-main"><div class="cmd-title">切换实时预览</div><div class="cmd-category">视图</div></div>
+            </li>
+            <li role="option" aria-selected="true" class="is-active" data-command="check" data-search="检查更新 更新 0.2.0">
+              <div class="cmd-main"><div class="cmd-title">检查更新… <span class="cmd-badge">0.2.0</span></div><div class="cmd-category">更新</div></div>
+            </li>
+            <li role="option" aria-selected="false" data-command="theme" data-search="切换深浅色 主题 视图">
+              <div class="cmd-main"><div class="cmd-title">切换深浅色</div><div class="cmd-category">视图</div></div>
+            </li>
+          </ul>
+          <div class="palette-foot">
+            <span>↑↓ 选择</span><span>↵ 执行</span><span>esc 关闭</span>
+            <span>Qingmo Commands</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="toast-region" id="toastRegion" aria-live="polite" aria-label="通知"></div>
+    </div>
+
+    <p class="desk-caption">
+      <b>更新状态机</b>
+      <span>单一保存路径 · 安装期间关闭被阻断 · 无真实网络与安装</span>
+      <span class="rule" aria-hidden="true"></span>
+      <span>QINGMO / 2026.10</span>
+    </p>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const STATES = [
+    "idle", "checking", "available", "dialog", "downloading", "ready",
+    "installing", "conflict", "error", "offline", "palette", "uptodate", "updated"
+  ];
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let current = "idle";
+  let uiTimers = new Set();
+  let downloadTimer = null;
+  let downloadProgress = 0;
+  let pendingResolution = null;
+  let paletteReturn = "idle";
+  let lastFocused = null;
+
+  let demoToken = 0;
+  let demoRunning = false;
+  let stateWaiters = [];
+
+  const schedule = (fn, ms) => {
+    const id = window.setTimeout(() => {
+      uiTimers.delete(id);
+      fn();
+    }, ms);
+    uiTimers.add(id);
+    return id;
+  };
+
+  const clearTimers = () => {
+    uiTimers.forEach((id) => window.clearTimeout(id));
+    uiTimers.clear();
+    if (downloadTimer !== null) {
+      window.clearInterval(downloadTimer);
+      downloadTimer = null;
+    }
+  };
+
+  const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const toast = (message, ok = false) => {
+    const region = $("#toastRegion");
+    if (!region) return;
+    const el = document.createElement("div");
+    el.className = "toast";
+    el.setAttribute("role", "status");
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("class", "icon");
+    icon.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", ok ? "#i-check" : "#i-refresh");
+    icon.appendChild(use);
+    el.appendChild(icon);
+    el.appendChild(document.createTextNode(message));
+    region.appendChild(el);
+    window.setTimeout(() => {
+      el.style.transition = "opacity 180ms ease, transform 180ms ease";
+      el.style.opacity = "0";
+      el.style.transform = "translateY(4px)";
+      window.setTimeout(() => el.remove(), 200);
+    }, 3200);
+  };
+
+  const setStatus = (mode) => {
+    const dot = $("#saveDot");
+    const value = $("#saveValue");
+    const dirty = $("#dirtyPill");
+    const size = $("#fileSize");
+    dot.className = "status-dot";
+    dirty.hidden = true;
+    size.textContent = "12.4 KB";
+    if (mode === "conflict") {
+      dot.classList.add("is-warning");
+      value.textContent = "有冲突";
+      dirty.hidden = false;
+      size.textContent = "12.6 KB";
+      return;
+    }
+    if (mode === "saving") {
+      dot.classList.add("is-warning");
+      value.textContent = "保存中";
+      return;
+    }
+    value.textContent = "已同步";
+  };
+
+  const showBanner = (name) => {
+    const banner = $(`[data-banner="${name}"]`);
+    if (banner) banner.hidden = false;
+  };
+
+  const showOverlay = (name) => {
+    const overlay = $(`[data-overlay="${name}"]`);
+    if (!overlay) return;
+    lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    overlay.hidden = false;
+  };
+
+  const closeOverlay = (name) => {
+    const overlay = $(`[data-overlay="${name}"]`);
+    if (overlay) overlay.hidden = true;
+  };
+
+  const updateRail = (name) => {
+    $$(".state-btn").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.state === name));
+    });
+  };
+
+  const updateHash = (name) => {
+    try {
+      window.history.replaceState(null, "", "#" + name);
+    } catch (_) {
+      /* file:// with a locked history entry: harmless */
+    }
+  };
+
+  const focusOverlay = () => {
+    window.requestAnimationFrame(() => {
+      const overlay = $$(".overlay").find((el) => !el.hidden);
+      if (!overlay) return;
+      const focusables = $$(
+        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"]), [data-autofocus]',
+        overlay
+      ).filter((el) => el instanceof HTMLElement && el.offsetParent !== null);
+      const target = focusables.find((el) => el.hasAttribute("data-autofocus")) || focusables[0];
+      if (target instanceof HTMLElement) {
+        target.focus({ preventScroll: true });
+      }
+    });
+  };
+
+  const resolveWaiters = (name, value) => {
+    stateWaiters = stateWaiters.filter((waiter) => {
+      if (waiter.name !== name) return true;
+      waiter.done = true;
+      window.clearTimeout(waiter.timer);
+      waiter.resolve(value);
+      return false;
+    });
+  };
+
+  const waitForState = (name, timeout = 12000) => new Promise((resolve) => {
+    const waiter = { name, resolve, done: false, timer: null };
+    waiter.timer = window.setTimeout(() => {
+      if (waiter.done) return;
+      waiter.done = true;
+      stateWaiters = stateWaiters.filter((item) => item !== waiter);
+      resolve(false);
+    }, timeout);
+    stateWaiters.push(waiter);
+  });
+
+  const stopDemo = () => {
+    demoToken += 1;
+    demoRunning = false;
+    stateWaiters.forEach((waiter) => {
+      if (!waiter.done) {
+        waiter.done = true;
+        window.clearTimeout(waiter.timer);
+        waiter.resolve(false);
+      }
+    });
+    stateWaiters = [];
+    const button = $("#demoBtn");
+    if (button) {
+      button.classList.remove("is-running");
+      const label = button.querySelector("span");
+      if (label) label.textContent = "自动演示";
+    }
+  };
+
+  const resetInstallSteps = () => {
+    $$("#installSteps .step").forEach((step, index) => {
+      step.dataset.status = index === 0 ? "active" : "pending";
+      const indicator = step.querySelector(".step-indicator");
+      if (indicator) indicator.textContent = String(index + 1);
+    });
+    setInstallProgress(0, "正在保存当前文档…");
+  };
+
+  const markStep = (index, status) => {
+    const step = $(`#installSteps .step[data-step="${index}"]`);
+    if (!step) return;
+    step.dataset.status = status;
+    const indicator = step.querySelector(".step-indicator");
+    if (indicator) indicator.textContent = status === "done" ? "✓" : String(Number(index) + 1);
+  };
+
+  const setInstallProgress = (pct, label) => {
+    const bar = $("#installBar");
+    const pctLabel = $("#installPct");
+    const track = $("#installTrack");
+    const text = $("#installLabel");
+    if (bar) bar.style.width = pct + "%";
+    if (pctLabel) pctLabel.textContent = Math.round(pct) + "%";
+    if (track) track.setAttribute("aria-valuenow", String(Math.round(pct)));
+    if (text && label) text.textContent = label;
+  };
+
+  const setDownloadUI = (pct) => {
+    const clamped = Math.max(0, Math.min(100, pct));
+    const bar = $("#dlBar");
+    const track = $("#dlTrack");
+    if (bar) bar.style.width = clamped.toFixed(1) + "%";
+    if (track) track.setAttribute("aria-valuenow", String(Math.round(clamped)));
+    const bytes = (38.4 * clamped / 100).toFixed(1);
+    const bytesLabel = $("#dlBytes");
+    if (bytesLabel) bytesLabel.textContent = bytes + " / 38.4 MB";
+  };
+
+  const startDownload = (from = 46) => {
+    downloadProgress = from;
+    setDownloadUI(downloadProgress);
+    if (downloadTimer !== null) window.clearInterval(downloadTimer);
+    downloadTimer = window.setInterval(() => {
+      downloadProgress = Math.min(100, downloadProgress + (reduceMotion ? 5 : 0.7 + Math.random() * 1.35));
+      setDownloadUI(downloadProgress);
+      if (downloadProgress >= 100) {
+        window.clearInterval(downloadTimer);
+        downloadTimer = null;
+        setState("ready", { fromUser: false });
+        toast("更新已下载并通过签名校验", true);
+      }
+    }, 180);
+  };
+
+  const runInstall = () => {
+    resetInstallSteps();
+    schedule(() => {
+      markStep(0, "done");
+      markStep(1, "active");
+      setInstallProgress(30, "正在校验签名与版本…");
+    }, 720);
+    schedule(() => {
+      markStep(1, "done");
+      markStep(2, "active");
+      setInstallProgress(68, "正在写入应用…");
+    }, 1750);
+    schedule(() => {
+      setInstallProgress(94, "正在重启…");
+    }, 2850);
+    schedule(() => {
+      markStep(2, "done");
+      setInstallProgress(100, "安装完成");
+    }, 3350);
+    schedule(() => {
+      setState("updated", { fromUser: false });
+    }, 3850);
+  };
+
+  const resetConflict = () => {
+    pendingResolution = null;
+    const confirm = $("#conflictConfirm");
+    const actions = $("#conflictActions");
+    if (confirm) confirm.hidden = true;
+    if (actions) actions.hidden = false;
+  };
+
+  const chooseConflict = (kind) => {
+    pendingResolution = kind;
+    const text = $("#conflictConfirmText");
+    const confirm = $("#conflictConfirm");
+    const actions = $("#conflictActions");
+    if (text) {
+      text.textContent = kind === "overwrite"
+        ? "确认覆盖磁盘上的版本？对方刚刚的修改会丢失，此操作不可撤销。"
+        : "确认重新载入磁盘上的版本？当前未保存的修改会丢失。";
+    }
+    if (confirm) confirm.hidden = false;
+    if (actions) actions.hidden = true;
+    window.requestAnimationFrame(() => {
+      const target = confirm && confirm.querySelector("[data-autofocus]");
+      if (target) target.focus({ preventScroll: true });
+    });
+  };
+
+  const resetPalette = () => {
+    const input = $("#paletteInput");
+    if (input) input.value = "";
+    setPaletteActive($$("#paletteList li").find((item) => item.dataset.command === "check") || null);
+  };
+
+  const setPaletteActive = (item) => {
+    $$("#paletteList li").forEach((row) => {
+      const active = row === item;
+      row.classList.toggle("is-active", active);
+      row.setAttribute("aria-selected", String(active));
+      if (active) row.scrollIntoView({ block: "nearest" });
+    });
+  };
+
+  const visiblePaletteItems = () => $$("#paletteList li").filter((item) => !item.hidden);
+
+  const filterPalette = (query) => {
+    const needle = query.trim().toLowerCase();
+    let first = null;
+    $$("#paletteList li").forEach((item) => {
+      const show = !needle || (item.dataset.search || "").includes(needle);
+      item.hidden = !show;
+      if (show && !first) first = item;
+    });
+    setPaletteActive(first);
+  };
+
+  const setState = (name, options = {}) => {
+    if (!STATES.includes(name)) name = "idle";
+    if (options.fromUser !== false) stopDemo();
+    clearTimers();
+    current = name;
+
+    $$(".banner").forEach((banner) => { banner.hidden = true; });
+    $$(".overlay").forEach((overlay) => { overlay.hidden = true; });
+    const updateChip = $("#updateChip");
+    const updatedChip = $("#updatedChip");
+    if (updateChip) updateChip.hidden = true;
+    if (updatedChip) updatedChip.hidden = true;
+    setStatus("clean");
+
+    switch (name) {
+      case "idle":
+        break;
+      case "checking":
+        showBanner("checking");
+        break;
+      case "available":
+        showBanner("available");
+        break;
+      case "dialog":
+        showBanner("available");
+        showOverlay("update");
+        break;
+      case "downloading":
+        showBanner("downloading");
+        startDownload(46);
+        break;
+      case "ready":
+        showBanner("ready");
+        break;
+      case "installing":
+        showOverlay("installing");
+        setStatus("saving");
+        runInstall();
+        break;
+      case "conflict":
+        showOverlay("conflict");
+        setStatus("conflict");
+        resetConflict();
+        break;
+      case "error":
+        showBanner("error");
+        break;
+      case "offline":
+        showOverlay("check-error");
+        break;
+      case "palette":
+        showOverlay("palette");
+        resetPalette();
+        break;
+      case "uptodate":
+        toast("已是最新版本 · 青墨 0.1.0", true);
+        break;
+      case "updated":
+        if (updatedChip) updatedChip.hidden = false;
+        setStatus("clean");
+        toast("已更新到青墨 0.2.0", true);
+        break;
+      default:
+        break;
+    }
+
+    updateRail(name);
+    updateHash(name);
+    resolveWaiters(name, true);
+    focusOverlay();
+  };
+
+  const openPalette = () => {
+    paletteReturn = current === "palette" ? "idle" : current;
+    setState("palette");
+  };
+
+  const closePalette = () => {
+    setState(paletteReturn && paletteReturn !== "palette" ? paletteReturn : "idle");
+  };
+
+  const runCheck = () => {
+    setState("checking");
+    schedule(() => setState("dialog"), 1500);
+  };
+
+  const runFailedCheck = () => {
+    setState("checking");
+    schedule(() => {
+      setState("offline", { fromUser: false });
+      toast("仍无法连接更新服务器");
+    }, 1600);
+  };
+
+  const executeCommand = (command) => {
+    if (command === "check") {
+      runCheck();
+      return;
+    }
+    if (command === "theme") {
+      const back = paletteReturn;
+      setState(back && back !== "palette" ? back : "idle");
+      toggleTheme();
+      return;
+    }
+    setState(paletteReturn && paletteReturn !== "palette" ? paletteReturn : "idle");
+    toast("原型中仅演示更新相关流程");
+  };
+
+  const toggleTheme = () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    setTheme(next);
+  };
+
+  const setTheme = (theme) => {
+    document.documentElement.dataset.theme = theme;
+    $$("[data-theme-set]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.themeSet === theme));
+    });
+  };
+
+  const runDemo = async () => {
+    stopDemo();
+    const token = ++demoToken;
+    demoRunning = true;
+    const button = $("#demoBtn");
+    if (button) {
+      button.classList.add("is-running");
+      const label = button.querySelector("span");
+      if (label) label.textContent = "停止演示";
+    }
+
+    setState("idle", { fromUser: false });
+    await sleep(650);
+    if (token !== demoToken) return;
+
+    setState("checking", { fromUser: false });
+    await sleep(1450);
+    if (token !== demoToken) return;
+
+    setState("dialog", { fromUser: false });
+    await sleep(1800);
+    if (token !== demoToken) return;
+
+    setState("downloading", { fromUser: false });
+    await waitForState("ready", 14000);
+    if (token !== demoToken) return;
+
+    await sleep(1200);
+    if (token !== demoToken) return;
+
+    setState("installing", { fromUser: false });
+    await waitForState("updated", 8000);
+    if (token !== demoToken) return;
+
+    demoRunning = false;
+    if (button) {
+      button.classList.remove("is-running");
+      const label = button.querySelector("span");
+      if (label) label.textContent = "自动演示";
+    }
+  };
+
+  /* ---------- Events ---------- */
+
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+
+    const railButton = target.closest(".state-btn");
+    if (railButton) {
+      setState(railButton.dataset.state);
+      return;
+    }
+
+    const themeButton = target.closest("[data-theme-set]");
+    if (themeButton) {
+      setTheme(themeButton.dataset.themeSet);
+      return;
+    }
+
+    const commandItem = target.closest("[data-command]");
+    if (commandItem) {
+      executeCommand(commandItem.dataset.command);
+      return;
+    }
+
+    const actionTarget = target.closest("[data-action]");
+    if (!actionTarget) return;
+    const action = actionTarget.dataset.action;
+
+    switch (action) {
+      case "demo":
+        if (demoRunning) {
+          stopDemo();
+          setState("idle");
+        } else {
+          void runDemo();
+        }
+        break;
+      case "reset":
+        stopDemo();
+        setState("idle");
+        const scroll = $("#docScroll");
+        if (scroll) scroll.scrollTop = 0;
+        break;
+      case "later-available":
+        setState("idle");
+        toast("本次启动不再提醒");
+        break;
+      case "open-update":
+        setState("dialog");
+        break;
+      case "close-update":
+        setState("available");
+        break;
+      case "cancel-check":
+        setState("idle");
+        break;
+      case "start-download":
+        setState("downloading");
+        break;
+      case "cancel-download":
+        setState("available");
+        toast("已取消下载");
+        break;
+      case "install":
+        setState("installing");
+        break;
+      case "later-ready": {
+        const banner = $('[data-banner="ready"]');
+        if (banner) banner.hidden = true;
+        const chip = $("#updateChip");
+        if (chip) chip.hidden = false;
+        toast("安装入口已收起，可从命令面板继续");
+        break;
+      }
+      case "restore-ready": {
+        setState("ready");
+        break;
+      }
+      case "dismiss-updated": {
+        const chip = $("#updatedChip");
+        if (chip) chip.hidden = true;
+        break;
+      }
+      case "retry-download":
+        setState("downloading");
+        break;
+      case "show-error-detail":
+        showOverlay("error-detail");
+        focusOverlay();
+        break;
+      case "close-error-detail":
+        closeOverlay("error-detail");
+        break;
+      case "close-check-error":
+        setState("idle");
+        break;
+      case "retry-check":
+        runFailedCheck();
+        break;
+      case "conflict-cancel":
+        setState("ready");
+        break;
+      case "conflict-reload":
+        chooseConflict("reload");
+        break;
+      case "conflict-overwrite":
+        chooseConflict("overwrite");
+        break;
+      case "conflict-back":
+        resetConflict();
+        break;
+      case "conflict-confirm":
+        if (pendingResolution) {
+          pendingResolution = null;
+          setState("installing");
+        }
+        break;
+      case "close-palette":
+        closePalette();
+        break;
+      default:
+        break;
+    }
+  });
+
+  $$(".overlay").forEach((overlay) => {
+    overlay.addEventListener("mousedown", (event) => {
+      if (event.target !== overlay) return;
+      const name = overlay.dataset.overlay;
+      if (name === "update") setState("available");
+      else if (name === "palette") closePalette();
+      else if (name === "check-error") setState("idle");
+      else if (name === "error-detail") closeOverlay("error-detail");
+    });
+  });
+
+  const paletteInput = $("#paletteInput");
+  if (paletteInput) {
+    paletteInput.addEventListener("input", (event) => {
+      filterPalette(event.target.value);
+    });
+    paletteInput.addEventListener("keydown", (event) => {
+      const items = visiblePaletteItems();
+      if (items.length === 0) {
+        if (event.key === "Escape") closePalette();
+        return;
+      }
+      const index = Math.max(0, items.findIndex((item) => item.classList.contains("is-active")));
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setPaletteActive(items[(index + 1) % items.length]);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setPaletteActive(items[(index - 1 + items.length) % items.length]);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        const active = items[index];
+        if (active) executeCommand(active.dataset.command);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        closePalette();
+      }
+    });
+  }
+
+  document.addEventListener("keydown", (event) => {
+    const meta = event.metaKey || event.ctrlKey;
+    if (meta && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      const overlayOpen = $$(".overlay").some((overlay) => !overlay.hidden);
+      if (current === "palette") closePalette();
+      else if (!overlayOpen && current !== "installing") openPalette();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      if (current === "installing") {
+        event.preventDefault();
+        toast("安装期间不能关闭窗口");
+        return;
+      }
+      if (current === "palette") {
+        event.preventDefault();
+        closePalette();
+        return;
+      }
+      if (current === "dialog") {
+        event.preventDefault();
+        setState("available");
+        return;
+      }
+      if (current === "conflict") {
+        event.preventDefault();
+        setState("ready");
+        return;
+      }
+      if (current === "offline") {
+        event.preventDefault();
+        setState("idle");
+        return;
+      }
+      if (current === "error") {
+        const detail = $('[data-overlay="error-detail"]');
+        if (detail && !detail.hidden) {
+          event.preventDefault();
+          closeOverlay("error-detail");
+        }
+      }
+      return;
+    }
+
+    if (event.key !== "Tab") return;
+    const overlay = $$(".overlay").find((item) => !item.hidden);
+    if (!overlay) return;
+    const focusables = $$(
+      'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      overlay
+    ).filter((el) => el instanceof HTMLElement && el.offsetParent !== null);
+    if (focusables.length === 0) {
+      // Installing has no controls: keep focus on the alertdialog itself
+      // instead of letting Tab reach the interrupted document behind it.
+      event.preventDefault();
+      const panel = overlay.querySelector("[data-autofocus]");
+      if (panel instanceof HTMLElement) panel.focus({ preventScroll: true });
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  /* ---------- Boot ---------- */
+
+  const initial = window.location.hash.replace("#", "");
+  const themeParam = new URLSearchParams(window.location.search).get("theme");
+  setTheme(themeParam === "dark" ? "dark" : "light");
+  if (STATES.includes(initial)) {
+    setState(initial, { fromUser: false });
+  } else {
+    setState("idle", { fromUser: false });
+  }
+})();
+</script>
+</body>
+</html>

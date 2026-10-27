@@ -47,12 +47,16 @@ fn capability_contains_only_expected_permissions() {
             "allow-document-save-as",
             "allow-document-write-atomic",
             "allow-app-close-confirm",
+            "allow-app-update-status",
+            "allow-app-update-check",
+            "allow-app-update-download",
+            "allow-app-update-install",
         ]
     );
 
     let forbidden_prefixes = [
         "fs:", "shell:", "http:", "store:", "sql:", "dialog:", "path:", "menu:", "tray:", "image:",
-        "webview:", "window:",
+        "webview:", "window:", "updater:",
     ];
     for permission in &permissions {
         assert!(
@@ -114,6 +118,50 @@ fn production_csp_is_strict_and_has_no_wildcards() {
     assert!(!dev_csp.contains('*'), "dev CSP must not contain wildcards");
     assert!(dev_csp.contains("ws://localhost:1420"));
     assert!(dev_csp.contains("http://localhost:1420"));
+}
+
+#[test]
+fn updater_config_is_signed_https_and_non_downgrading() {
+    let config = read_json("tauri.conf.json");
+    assert_eq!(
+        config["bundle"]["createUpdaterArtifacts"],
+        Value::Bool(true)
+    );
+
+    let updater = &config["plugins"]["updater"];
+    let pubkey = updater["pubkey"]
+        .as_str()
+        .expect("plugins.updater.pubkey must be a string");
+    assert!(
+        !pubkey.trim().is_empty(),
+        "updater pubkey must not be empty"
+    );
+    assert_eq!(updater["requireSignedVersion"], Value::Bool(true));
+    assert!(
+        updater.get("dangerousInsecureTransportProtocol").is_none(),
+        "insecure transport must stay disabled"
+    );
+    assert!(
+        updater.get("allowDowngrades").is_none(),
+        "downgrades must stay disabled"
+    );
+    assert!(
+        updater.get("windows").is_none(),
+        "Windows install settings are outside the macOS MVP"
+    );
+
+    let endpoints = updater["endpoints"]
+        .as_array()
+        .expect("plugins.updater.endpoints must be an array");
+    assert_eq!(endpoints.len(), 1);
+    let endpoint = endpoints[0]
+        .as_str()
+        .expect("updater endpoint must be a string");
+    assert!(endpoint.starts_with("https://"), "endpoint must use HTTPS");
+    assert_eq!(
+        endpoint,
+        "https://github.com/wavexzore/Qingmo/releases/latest/download/latest.json"
+    );
 }
 
 #[test]

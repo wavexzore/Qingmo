@@ -10,9 +10,11 @@ import { COMMANDS } from "../../lib/ipc/commands";
 import { FakeIpc } from "../../lib/ipc/fake";
 import type { IpcPort } from "../../lib/ipc/port";
 import { FakePlatform } from "../../lib/platform/fake";
+import { FakeUpdatePort } from "../../lib/update/fake";
 import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider } from "../editor/DocumentSessionContext";
+import { UpdateProvider } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
 
 function renderApp(ipc: IpcPort) {
@@ -20,9 +22,13 @@ function renderApp(ipc: IpcPort) {
   render(
     <AppErrorBoundary>
       <ToastProvider>
-        <AppServicesProvider services={{ ipc, platform: new FakePlatform() }}>
+        <AppServicesProvider
+          services={{ ipc, platform: new FakePlatform(), updates: new FakeUpdatePort() }}
+        >
           <DocumentSessionProvider>
-            <RouterProvider router={router} />
+            <UpdateProvider autoCheck={false}>
+              <RouterProvider router={router} />
+            </UpdateProvider>
           </DocumentSessionProvider>
         </AppServicesProvider>
       </ToastProvider>
@@ -169,13 +175,14 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(4);
+    expect(options).toHaveLength(5);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("打开文件"),
         expect.stringContaining("保存文件"),
         expect.stringContaining("切换实时预览"),
         expect.stringContaining("切换主题"),
+        expect.stringContaining("检查更新"),
       ]),
     );
 
@@ -262,9 +269,17 @@ describe("blank editor -> editor open flow", () => {
     const { unmount } = render(
       <AppErrorBoundary>
         <ToastProvider>
-          <AppServicesProvider services={{ ipc: fileIpc(), platform: new FakePlatform() }}>
+          <AppServicesProvider
+            services={{
+              ipc: fileIpc(),
+              platform: new FakePlatform(),
+              updates: new FakeUpdatePort(),
+            }}
+          >
             <DocumentSessionProvider>
-              <RouterProvider router={createMemoryRouter(routes, { initialEntries: ["/"] })} />
+              <UpdateProvider autoCheck={false}>
+                <RouterProvider router={createMemoryRouter(routes, { initialEntries: ["/"] })} />
+              </UpdateProvider>
             </DocumentSessionProvider>
           </AppServicesProvider>
         </ToastProvider>

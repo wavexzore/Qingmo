@@ -1049,13 +1049,18 @@ src-tauri/src/
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
     "store:default",
-    "updater:default"
+    "allow-app-update-status",
+    "allow-app-update-check",
+    "allow-app-update-download",
+    "allow-app-update-install"
   ]
 }
 ```
 
 注意：
 
+- **更新不授予 `updater:*`。** 更新由 Rust `UpdateManager` 通过 4 条 `app_update_*` 命令驱动；WebView 只拿快照/事件，不接触下载 URL、签名或安装路径。
+- 上例的 `fs`/`dialog`/`store` 权限是 P2/P3 目标；P1 当前 capability 只有 2 条 core event 权限 + 9 条 `allow-app-*`，不开放 fs/dialog 前端权限（见 ADR-0003）。
 - 不授予 `fs:scope **`；工作区路径通过 dialog 选择后加入 scope，并用 `tauri-plugin-persisted-scope` 持久化。
 - 文件读写优先走自定义命令，命令内做路径校验；这样比直接暴露 fs 插件更可控。
 - `withGlobalTauri: false`；前端只用 `@tauri-apps/api` 的模块导入。
@@ -1082,7 +1087,11 @@ src-tauri/src/
 
 ### 9.4 更新与系统集成
 
-- `tauri-plugin-updater`：签名 manifest，stable/beta 通道，灰度比例。
+- `tauri-plugin-updater`：**macOS universal + stable 单通道**；Rust `UpdateManager` 是唯一状态机；WebView 只通过 4 条 `app_update_*` 命令与 2 条事件观察，不授予 `updater:*`。
+- 信任根分离：应用代码用 Xcode `Developer ID Application` 签名并公证；更新产物用独立 minisign 私钥签名。两者不得复用。
+- `latest.json` 作为文档**不签名**；每个平台产物的 `signature` 是 minisign 签名，`requireSignedVersion=true` 将签名中的 `version:` 与清单版本绑定；只接受更高 semver，`allowDowngrades=false`。
+- 静态 `latest.json` 不支持百分比灰度；首版全量 stable，beta/灰度进入 `NEXT-AU-002`。安装失败尽量保留旧版本，**无自动跨版本回滚**。
+- 安装前必须复用 `SaveCoordinator.flush("close")`；安装中 `CloseGuard` 阻断关闭。
 - `tauri-plugin-single-instance`：第二次启动聚焦已有窗口，并处理 `qingmo://` 深链接。
 - 托盘：最近文件、新建窗口、退出。
 - 崩溃日志：本地 ring buffer + 可选上传；默认关闭。
@@ -1159,9 +1168,11 @@ bench/fixtures/
 
 ## 12. 发布与更新
 
-- **构建矩阵**：macOS universal（x64 + arm64）、Windows x64/arm64、Linux AppImage/deb/rpm。
+> **MVP 范围（2026-10-27）：** 自动更新首版仅 macOS universal + stable；Windows/Linux 构建与安装语义进入 `NEXT-AU-007`。下表的后两平台是产品长期目标，不是首版交付。
+
+- **构建矩阵**：macOS universal（x64 + arm64）；Windows x64/arm64、Linux AppImage/deb/rpm 为后续阶段。
 - **签名**：Apple Developer ID + notarization；Windows Azure Trusted Signing / EV；Linux 可选签名。
-- **更新**：Tauri updater，签名 manifest；stable/beta 双通道；失败自动回滚到上一版本。
+- **更新**：Tauri updater；产物 minisign 签名 + `requireSignedVersion` 绑定版本；`latest.json` 文档本身不签名；stable 单通道，无百分比灰度；安装失败保留旧版本，**无自动回滚**（坏版本撤下 + hotfix）。
 - **版本**：应用 semver；插件 API `apiVersion` 独立；插件自身 semver。
 - **崩溃与日志**：本地优先；上传需显式 opt-in；不包含文档内容。
 - **发布说明**：自动从 changeset 生成；标注插件 API 变更。
@@ -1176,7 +1187,7 @@ bench/fixtures/
 | **P1 编辑器 MVP** | 第 2–4 周 | CM6、打开/保存、Source/Live Preview、主题、命令面板、快捷键 | 1MB 文档流畅；按键 p95 < 16ms；保存原子性测试通过 |
 | **P2 工作区** | 第 5–6 周 | 文件树、搜索、自动保存、恢复、冲突检测、watcher | 1000 文件工作区可用；外部修改不丢字 |
 | **P3 插件 MVP** | 第 7–9 周 | Plugin SDK、Worker host、iframe UI、权限、3 个第一方插件（Mermaid/Math/Export） | 插件无法直接 invoke；权限拒绝有测试；插件崩溃不影响主界面 |
-| **P4 市场与安全** | 第 10–11 周 | 市场、签名、安装/卸载、权限管理、审计日志、更新器 | 安装恶意路径包被拒绝；签名校验通过；灰度更新可用 |
+| **P4 市场与安全** | 第 10–11 周 | 市场、签名、安装/卸载、权限管理、审计日志、更新器 | 安装恶意路径包被拒绝；更新签名/版本绑定校验通过；安装前保存与关闭门闩生效 |
 | **P5 Beta 硬化** | 第 12 周 | 性能基准、可访问性、跨平台测试、文档 | 10MB 文档达标；三平台冒烟通过 |
 | **P6 1.0 之后** | — | 协作（Yjs/Eg-walker 评估）、移动端、WYSIWYG 插件、AI 插件 | 单独立项 |
 

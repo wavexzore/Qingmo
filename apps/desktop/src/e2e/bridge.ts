@@ -1,15 +1,29 @@
-import type { AppErrorCode, CloseReason, ReadOnlyReason, TextFormat } from "@qingmo/shared";
+import type {
+  AppErrorCode,
+  CloseReason,
+  ReadOnlyReason,
+  TextFormat,
+  UpdateSnapshot,
+} from "@qingmo/shared";
 
 import { COMMANDS } from "../lib/ipc/commands";
+import { AppError as AppErrorClass } from "../lib/ipc/errors";
 import { FakeIpc, type FakeFileSnapshot } from "../lib/ipc/fake";
 import type { CloseConfirmRequest } from "../lib/ipc/port";
 import { FakePlatform } from "../lib/platform/fake";
+import { FakeUpdatePort, type FakeUpdateCalls } from "../lib/update/fake";
 
 export interface E2eSeedFile {
   path: string;
   text?: string;
   format?: Partial<TextFormat>;
   readOnlyReason?: ReadOnlyReason | null;
+}
+
+export interface E2eUpdateInfo {
+  version: string;
+  date?: string | null;
+  body?: string | null;
 }
 
 /**
@@ -31,6 +45,13 @@ export interface E2eBridge {
   failSaveAlways(code?: AppErrorCode): void;
   clearErrors(): void;
   getCloseConfirms(): CloseConfirmRequest[];
+  setUpdateAvailable(update: E2eUpdateInfo | null): void;
+  setUpdateError(operation: "check" | "download" | "install", code: AppErrorCode | null): void;
+  holdUpdateDownload(): void;
+  releaseUpdateDownload(): void;
+  emitUpdateProgress(downloaded: number, total?: number | null): void;
+  getUpdateCalls(): FakeUpdateCalls;
+  getUpdateSnapshot(): UpdateSnapshot;
 }
 
 declare global {
@@ -44,10 +65,15 @@ export function isE2eMode(): boolean {
   return import.meta.env.MODE === "e2e";
 }
 
-export function createE2eServices(): { ipc: FakeIpc; platform: FakePlatform } {
+export function createE2eServices(): {
+  ipc: FakeIpc;
+  platform: FakePlatform;
+  updates: FakeUpdatePort;
+} {
   const files = window.__QINGMO_E2E_SEED__ ?? [];
   const ipc = new FakeIpc({ files });
   const platform = new FakePlatform();
+  const updates = new FakeUpdatePort();
 
   window.__QINGMO_E2E__ = {
     setDiskText: (path, text) => {
@@ -76,7 +102,35 @@ export function createE2eServices(): { ipc: FakeIpc; platform: FakePlatform } {
       ipc.clearInjectedErrors();
     },
     getCloseConfirms: () => [...ipc.closeConfirmCalls],
+    setUpdateAvailable: (update) => {
+      updates.setUpdate(
+        update
+          ? {
+              version: update.version,
+              date: update.date ?? null,
+              body: update.body ?? null,
+            }
+          : null,
+      );
+    },
+    setUpdateError: (operation, code) => {
+      updates.setError(
+        operation,
+        code ? new AppErrorClass(code, `e2e ${operation} failure`) : null,
+      );
+    },
+    holdUpdateDownload: () => {
+      updates.holdNextDownload();
+    },
+    releaseUpdateDownload: () => {
+      updates.releaseDownload();
+    },
+    emitUpdateProgress: (downloaded, total = null) => {
+      updates.emitDownloadProgress(downloaded, total);
+    },
+    getUpdateCalls: () => ({ ...updates.calls }),
+    getUpdateSnapshot: () => updates.currentSnapshot,
   };
 
-  return { ipc, platform };
+  return { ipc, platform, updates };
 }

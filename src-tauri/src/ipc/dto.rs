@@ -95,3 +95,54 @@ pub enum CloseReason {
 pub struct CloseRequestedPayload {
     pub reason: CloseReason,
 }
+
+/// Lifecycle phase owned by the Rust `UpdateManager`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdatePhase {
+    Idle,
+    Checking,
+    Available,
+    Downloading,
+    Ready,
+    Installing,
+}
+
+/// User-visible metadata for an available update.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    /// RFC3339 timestamp from the updater manifest; display only.
+    pub date: Option<String>,
+    /// Plain text, truncated by the Rust side before it reaches the webview.
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProgress {
+    pub downloaded: u64,
+    pub total: Option<u64>,
+}
+
+/// Complete update state returned by every update command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSnapshot {
+    pub phase: UpdatePhase,
+    /// Monotonic operation generation; stale progress/events are discarded by the UI.
+    pub generation: u64,
+    pub current_version: String,
+    pub update: Option<UpdateInfo>,
+    pub progress: Option<UpdateProgress>,
+}
+
+/// Payload of `app://update-progress`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProgressPayload {
+    pub generation: u64,
+    pub downloaded: u64,
+    pub total: Option<u64>,
+}
