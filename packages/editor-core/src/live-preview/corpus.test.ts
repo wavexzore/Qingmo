@@ -120,9 +120,9 @@ describe("MARKDOWN-SYNTAX corpus", () => {
       // 23 regular quotes plus 6 GitHub-style alerts.
       blockquotes: 29,
       alerts: 6,
-      // 127 fenced blocks include the 34 Mermaid diagrams and one fence
+      // 128 fenced blocks include the 35 Mermaid diagrams and one fence
       // inside a blockquote; the indented example is a CodeBlock.
-      codeFences: 127,
+      codeFences: 128,
       indentedCode: 1,
       rules: 29,
       links: 48,
@@ -135,7 +135,7 @@ describe("MARKDOWN-SYNTAX corpus", () => {
       footnoteDefinitions: 2,
       htmlBlocks: 4,
       htmlTags: 33,
-      mermaid: 34,
+      mermaid: 35,
       mathBlocks: 3,
       media: 3,
       details: 1,

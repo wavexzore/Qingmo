@@ -5,7 +5,8 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mermaid-theme": "./src/live-preview/mermaid-theme.ts"
   },
   "types": "./src/index.ts",
   "scripts": {

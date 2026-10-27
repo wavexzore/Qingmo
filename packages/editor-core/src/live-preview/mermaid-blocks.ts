@@ -4,6 +4,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemir
 
 import { currentMermaidTheme, renderMermaid } from "./mermaid-render";
 import { sanitizeMermaidSvg } from "./mermaid-sanitize";
+import { diagramInfo } from "./mermaid-theme";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import type { MarkdownNode } from "./markdown-node";
@@ -126,11 +127,73 @@ function buildMermaidBlocks(state: EditorState): MermaidBlockState {
   };
 }
 
-function statusElement(text: string, className: string): HTMLElement {
-  const element = document.createElement("div");
-  element.className = className;
-  element.textContent = text;
-  return element;
+const MIN_MERMAID_SCALE = 0.6;
+const MAX_MERMAID_SCALE = 2;
+const MERMAID_SCALE_STEP = 0.1;
+/**
+ * Fitting a very wide diagram to the card can shrink its labels below a
+ * readable size. Above this fit ratio the diagram keeps its natural width and
+ * the canvas scrolls instead.
+ */
+const MERMAID_MIN_FIT_SCALE = 0.7;
+
+function createTool(label: string, ariaLabel: string, extraClass = ""): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = extraClass ? `cm-md-mermaid-tool ${extraClass}` : "cm-md-mermaid-tool";
+  button.textContent = label;
+  button.title = ariaLabel;
+  button.setAttribute("aria-label", ariaLabel);
+  return button;
+}
+
+function createSkeleton(): HTMLElement {
+  const skeleton = document.createElement("div");
+  skeleton.className = "cm-md-mermaid-skeleton";
+  skeleton.setAttribute("aria-hidden", "true");
+  for (let index = 0; index < 3; index += 1) {
+    const node = document.createElement("span");
+    node.className = "cm-md-mermaid-skeleton-node";
+    skeleton.append(node);
+    if (index < 2) {
+      const link = document.createElement("span");
+      link.className = "cm-md-mermaid-skeleton-link";
+      skeleton.append(link);
+    }
+  }
+  return skeleton;
+}
+
+function createError(message: string, onEdit: () => void): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "cm-md-mermaid-error";
+  const text = document.createElement("span");
+  text.className = "cm-md-mermaid-error-message";
+  text.textContent = message;
+  const edit = createTool("编辑源码", "编辑 Mermaid 源码", "cm-md-mermaid-edit");
+  edit.addEventListener("mousedown", (event) => event.stopPropagation());
+  edit.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onEdit();
+  });
+  box.append(text, edit);
+  return box;
+}
+
+function readNaturalWidth(svg: SVGSVGElement): number {
+  const width = Number.parseFloat(svg.getAttribute("width") ?? "");
+  if (Number.isFinite(width) && width > 0) {
+    return width;
+  }
+  const viewBox = (svg.getAttribute("viewBox") ?? "")
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const viewBoxWidth = viewBox[2];
+  if (viewBox.length === 4 && viewBoxWidth !== undefined && viewBoxWidth > 0) {
+    return viewBoxWidth;
+  }
+  return svg.getBoundingClientRect().width;
 }
 
 class MermaidBlockWidget extends WidgetType {
@@ -154,38 +217,169 @@ class MermaidBlockWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
+    const info = diagramInfo(this.code);
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-mermaid";
-    wrapper.title = "点击编辑 Mermaid 源码";
-    wrapper.setAttribute("role", "img");
-    wrapper.setAttribute("aria-label", "Mermaid 图表");
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("role", "group");
+    wrapper.setAttribute("aria-label", `Mermaid ${info.label}`);
+    wrapper.dataset.mermaidKind = info.kind;
 
-    wrapper.addEventListener("mousedown", (event) => {
-      if (event.button !== 0) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
+    const openSource = (): void => {
       view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
       view.focus();
-    });
+    };
 
-    const body = document.createElement("div");
-    body.className = "cm-md-mermaid-body";
-    wrapper.append(body);
+    const head = document.createElement("div");
+    head.className = "cm-md-mermaid-head";
+
+    const title = document.createElement("div");
+    title.className = "cm-md-mermaid-title";
+    const icon = document.createElement("span");
+    icon.className = "cm-md-mermaid-icon";
+    icon.setAttribute("aria-hidden", "true");
+    const badge = document.createElement("span");
+    badge.className = "cm-md-mermaid-badge";
+    badge.textContent = "MERMAID";
+    const separator = document.createElement("span");
+    separator.className = "cm-md-mermaid-sep";
+    separator.textContent = "/";
+    separator.setAttribute("aria-hidden", "true");
+    const kind = document.createElement("span");
+    kind.className = "cm-md-mermaid-kind";
+    kind.textContent = info.label;
+    title.append(icon, badge, separator, kind);
+
+    const actions = document.createElement("div");
+    actions.className = "cm-md-mermaid-actions";
+    const hint = document.createElement("span");
+    hint.className = "cm-md-mermaid-hint";
+    hint.textContent = "点击「源码」编辑";
+
+    const tools = document.createElement("div");
+    tools.className = "cm-md-mermaid-tools";
+    const zoomOut = createTool("−", "缩小图表");
+    const zoomReset = createTool("100%", "恢复 100%");
+    const zoomIn = createTool("+", "放大图表");
+    const fitWidth = createTool("适应", "适应画布宽度");
+    const source = createTool("源码", "编辑 Mermaid 源码");
+    tools.append(zoomOut, zoomReset, zoomIn, fitWidth, source);
+    actions.append(hint, tools);
+    head.append(title, actions);
+
+    const canvas = document.createElement("div");
+    canvas.className = "cm-md-mermaid-canvas";
+    const figure = document.createElement("div");
+    figure.className = "cm-md-mermaid-figure";
+    canvas.append(figure);
+    wrapper.append(head, canvas);
 
     let generation = 0;
     let theme = currentMermaidTheme();
+    let scale = 1;
+    let fitMode = false;
+    let naturalWidth = 0;
+
+    const contentWidth = (): number => {
+      if (canvas.clientWidth <= 0) {
+        return naturalWidth;
+      }
+      const style = getComputedStyle(canvas);
+      const left = Number.parseFloat(style.paddingLeft) || 0;
+      const right = Number.parseFloat(style.paddingRight) || 0;
+      return Math.max(1, canvas.clientWidth - left - right);
+    };
+
+    const applyScale = (): void => {
+      const svg = figure.querySelector("svg");
+      if (!(svg instanceof SVGSVGElement)) {
+        return;
+      }
+      if (!naturalWidth) {
+        naturalWidth = readNaturalWidth(svg);
+      }
+      const available = contentWidth();
+      if (naturalWidth <= 0 || available <= 0) {
+        return;
+      }
+      // The fit control is only useful when the default 100% view overflows
+      // because shrinking to the card would drop below the readability floor.
+      const fitsReadably = available >= naturalWidth * MERMAID_MIN_FIT_SCALE;
+      const canFit = naturalWidth > available + 0.5 && !fitsReadably;
+      if (fitMode && !canFit) {
+        fitMode = false;
+        scale = 1;
+      }
+      if (fitMode) {
+        scale = Math.min(1, available / naturalWidth);
+      }
+      zoomReset.textContent = `${Math.round(scale * 100)}%`;
+      fitWidth.hidden = !canFit;
+      fitWidth.classList.toggle("is-active", fitMode);
+      zoomOut.disabled = fitMode || scale <= MIN_MERMAID_SCALE + 0.001;
+      zoomIn.disabled = scale >= MAX_MERMAID_SCALE - 0.001;
+
+      // Prefer a readable natural width over an arbitrarily tiny fit. Only
+      // shrink to the card when the result stays above the readability floor.
+      const baseWidth =
+        naturalWidth <= available || fitsReadably
+          ? Math.min(naturalWidth, available)
+          : naturalWidth;
+      const displayWidth = baseWidth * scale;
+      svg.style.width = `${Math.round(displayWidth)}px`;
+      svg.style.maxWidth = "none";
+      figure.classList.toggle("is-zoomed", displayWidth > available + 0.5);
+
+      const overflows = canvas.scrollWidth > canvas.clientWidth + 1;
+      hint.textContent = overflows ? "可横向滚动查看" : "点击「源码」编辑";
+    };
+
+    const changeScale = (delta: number): void => {
+      const next = Math.round((scale + delta) * 10) / 10;
+      fitMode = false;
+      scale = Math.min(MAX_MERMAID_SCALE, Math.max(MIN_MERMAID_SCALE, next));
+      applyScale();
+    };
+
+    const stop = (event: Event): void => event.stopPropagation();
+    for (const button of [zoomOut, zoomReset, zoomIn, fitWidth, source]) {
+      button.addEventListener("mousedown", stop);
+      button.addEventListener("click", stop);
+    }
+    zoomOut.addEventListener("click", () => changeScale(-MERMAID_SCALE_STEP));
+    zoomReset.addEventListener("click", () => {
+      fitMode = false;
+      scale = 1;
+      applyScale();
+    });
+    zoomIn.addEventListener("click", () => changeScale(MERMAID_SCALE_STEP));
+    fitWidth.addEventListener("click", () => {
+      fitMode = true;
+      applyScale();
+    });
+    source.addEventListener("click", openSource);
+
+    const setKindState = (failed: boolean): void => {
+      head.classList.toggle("is-error", failed);
+      kind.textContent = failed ? "渲染失败" : info.label;
+    };
 
     const paint = async (): Promise<void> => {
       const current = ++generation;
-      body.replaceChildren(statusElement("正在渲染图表…", "cm-md-mermaid-status"));
       const paintTheme = currentMermaidTheme();
       theme = paintTheme;
+      const previous = figure.querySelector("svg");
+      if (previous) {
+        canvas.classList.add("is-refreshing");
+      } else {
+        figure.replaceChildren(createSkeleton());
+        canvas.classList.remove("is-refreshing");
+      }
+      setKindState(false);
 
       try {
         const svg = await renderMermaid(this.code, paintTheme);
-        if (!body.isConnected || current !== generation) {
+        if (!figure.isConnected || current !== generation) {
           return;
         }
         const sanitized = sanitizeMermaidSvg(svg);
@@ -199,16 +393,27 @@ class MermaidBlockWidget extends WidgetType {
         ) {
           throw new Error("图表 SVG 无效");
         }
-        body.replaceChildren(document.importNode(parsed.documentElement, true));
+        const imported = document.importNode(
+          parsed.documentElement,
+          true,
+        ) as unknown as SVGSVGElement;
+        figure.replaceChildren(imported);
+        naturalWidth = readNaturalWidth(imported);
+        applyScale();
+        canvas.classList.remove("is-refreshing");
         wrapper.dataset.mermaidTheme = paintTheme;
+        setKindState(false);
       } catch (error) {
-        if (!body.isConnected || current !== generation) {
+        if (!figure.isConnected || current !== generation) {
           return;
         }
         const raw = error instanceof Error ? error.message : String(error);
         const message = raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
+        figure.replaceChildren(createError(message, openSource));
+        naturalWidth = 0;
+        canvas.classList.remove("is-refreshing");
         delete wrapper.dataset.mermaidTheme;
-        body.replaceChildren(statusElement(`Mermaid 渲染失败：${message}`, "cm-md-mermaid-error"));
+        setKindState(true);
       }
     };
 
@@ -221,7 +426,17 @@ class MermaidBlockWidget extends WidgetType {
       attributes: true,
       attributeFilter: ["data-theme"],
     });
-    this.teardowns.set(wrapper, () => observer.disconnect());
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            applyScale();
+          });
+    resizeObserver?.observe(canvas);
+    this.teardowns.set(wrapper, () => {
+      observer.disconnect();
+      resizeObserver?.disconnect();
+    });
 
     void paint();
     return wrapper;
@@ -233,7 +448,11 @@ class MermaidBlockWidget extends WidgetType {
   }
 
   override ignoreEvent(): boolean {
-    return false;
+    // The plate is a self-contained rendered artifact: clicking the diagram,
+    // selecting its labels or dragging its zoomed scrollbar must not move the
+    // editor selection into the fence and reveal the source. Only the explicit
+    // 源码 button (or the error-state edit button) dispatches `openSource`.
+    return true;
   }
 }
 

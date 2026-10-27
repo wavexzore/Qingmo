@@ -2,6 +2,7 @@ import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import {
+  EditorView,
   crosshairCursor,
   drawSelection,
   dropCursor,
@@ -28,6 +29,10 @@ export function createBasicExtensions(): Extension[] {
     dropCursor(),
     rectangularSelection(),
     crosshairCursor(),
+    // A writing surface wraps at the window edge; block widgets (tables,
+    // Mermaid plates) then measure against the viewport instead of the
+    // document's longest unbroken line.
+    EditorView.lineWrapping,
     EditorState.allowMultipleSelections.of(true),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
     search({ top: true }),

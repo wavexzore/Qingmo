@@ -64,6 +64,23 @@ export {
 } from "./live-preview/comment-blocks";
 export type { CommentBlock, CommentKind } from "./live-preview/comment-blocks";
 export { renderMermaid, type MermaidTheme } from "./live-preview/mermaid-render";
+export {
+  MERMAID_THEME_VERSION,
+  buildMermaidTheme,
+  diagramInfo,
+  diagramKind,
+  isMermaidDiagramKind,
+  mermaidDiagramConfig,
+  mermaidElkConfig,
+  mermaidLayout,
+  mermaidPaletteKey,
+  resolveMermaidPalette,
+  sanitizeMermaidPalette,
+  type MermaidDiagramInfo,
+  type MermaidDiagramKind,
+  type MermaidPalette,
+  type MermaidThemeConfig,
+} from "./live-preview/mermaid-theme";
 export { sanitizeMermaidSvg } from "./live-preview/mermaid-sanitize";
 export { livePreviewTheme } from "./live-preview/theme";
 

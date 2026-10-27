@@ -180,17 +180,20 @@ test("renders Mermaid diagrams from the guide in a sandboxed frame", async ({ pa
   await go("渲染效果：", DOC_TEXT.indexOf("## 23."));
   const diagram = page.locator(".cm-md-mermaid").first();
   await expect(diagram.locator("svg")).toBeVisible({ timeout: 30_000 });
-  await expect(diagram).toHaveAttribute("role", "img");
+  await expect(diagram).toHaveAttribute("role", "group");
+  await expect(diagram.locator("svg")).toHaveAttribute("role", "img");
 
   // The renderer page itself lives in an off-screen sandbox iframe.
   const sandbox = page.locator("iframe.cm-md-mermaid-sandbox");
   await expect(sandbox).toHaveCount(1);
   await expect(sandbox).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
 
-  // Clicking the diagram returns the caret to the fence source.
+  // Only the explicit source tool returns the caret to the fence; clicking
+  // the rendered plate itself must keep it visible (scrollbars stay usable).
   const clicked = await diagram.elementHandle();
   expect(clicked).not.toBeNull();
-  await diagram.click();
+  await diagram.hover();
+  await diagram.getByRole("button", { name: "编辑 Mermaid 源码" }).click();
   await expect.poll(async () => clicked?.evaluate((element) => element.isConnected)).toBe(false);
   await expect(page.locator(".cm-line").filter({ hasText: "flowchart LR" }).first()).toBeVisible();
 });
@@ -255,7 +258,7 @@ test("renders Mermaid under the production CSP", async ({ page }) => {
 test("renders every top-level Mermaid diagram in the guide", async ({ page }) => {
   test.setTimeout(180_000);
   const diagrams = topLevelFences(DOC_TEXT, "mermaid");
-  expect(diagrams).toHaveLength(34);
+  expect(diagrams).toHaveLength(35);
 
   await page.addInitScript(() => {
     (window as unknown as { __mermaidReady?: boolean }).__mermaidReady = false;

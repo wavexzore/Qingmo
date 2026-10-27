@@ -2277,3 +2277,115 @@ flowchart LR
 ---
 
 > 文档结束。建议将本文件作为团队 Markdown 写作的参考基线，按需裁剪方言语法。
+
+
+
+
+```mermaid
+graph TB
+  subgraph ENTRY["进程入口"]
+    MAIN["main<br/>cmd/unified_main.cpp:111"]
+    CFG["parseUnifiedConfig<br/>config.cpp"]
+    RG["RuntimeGraph::build/start/stop<br/>app/runtime_graph.cpp"]
+    MAIN --> CFG --> RG
+  end
+
+  subgraph CTRL["控制面（明文 HTTP）"]
+    HS["HttpServer (raw socket)<br/>control/http_server.cpp"]
+    HM["HttpManager + Router<br/>http_manager.cpp / http_router.cpp"]
+    MW["Auth / JSON middleware<br/>http_middleware.cpp"]
+    H1["initialize"]:::h
+    H2["restart"]:::h
+    H3["task/create"]:::h
+    H4["task/update"]:::h
+    H5["task/stop"]:::h
+    H6["task/select"]:::h
+    H7["alarm/push · debug/stats"]:::h
+    TS["TaskStore / TaskManager<br/>task/task_store.cpp · task_manager.cpp"]
+    RG --> HS --> HM --> MW
+    MW --> H1 & H2 & H3 & H4 & H5 & H6 & H7
+    H1 & H2 & H3 & H5 & H6 --> TS
+    H3 -->|"startSendTask*"| TE
+    H5 -->|"stopSendTasksByTaskIds<br/>仅 sendTasks_"| TE
+    H4 -->|"updateSendTaskRateLimitByTaskId<br/>返回值被丢弃"| TE
+    H6 -.->|"缺表时回查快照"| TE
+  end
+
+  subgraph ENGINE["传输引擎（god class 10k 行）"]
+    TE["TransferEngine<br/>transfer_engine.cpp"]
+    ADM["QuicConnectionAdmission 租约<br/>transfer/connection_admission.cpp"]
+    SUP["SendRetrySupervisor"]
+    REAP["cleanup reaper (1s)"]
+    TRM["terminal reaper"]
+    EXEC["ReceiveLifecycleExecutor (4)"]
+    TE --> ADM
+    TE --> SUP
+    TE --> REAP
+    TE --> TRM
+    TE --> EXEC
+  end
+
+  subgraph TRANS["传输层抽象"]
+    REG["TransportRegistry<br/>transfer/transport_registry.cpp"]
+    QP["QuicTransportProvider<br/>quic_transport_provider.cpp"]
+    TP["TcpTransportProvider<br/>tcp_transport_provider.cpp"]
+    QS["quic_settings（profile/超时）<br/>quic_settings.cpp"]
+    RG --> REG --> QP & TP
+    QS --> QP
+    QS --> TP
+  end
+
+  subgraph SEND["发送数据面"]
+    SP["SendPipeline<br/>pipeline/send_pipeline.cpp"]
+    RD["Reader 线程<br/>local_file_block_reader / s3_block_reader"]
+    CMP["Compressor ×N<br/>codec_registry"]
+    SND["Sender ×N"]
+    WIN["byte_budget + send_window_arbiter/controller"]
+    FC["frame_codec + protocol.cpp"]
+    TE --> SP --> RD --> CMP --> SND --> FC
+    WIN --> SP
+    SP -.->|"零拷贝分支 slice 恒空 †"| FC
+  end
+
+  subgraph RECV["接收数据面"]
+    US["UnifiedServer accept/stream<br/>unified_server.cpp"]
+    FD["frame_dispatcher<br/>transfer/frame_dispatcher.cpp"]
+    RP["RecvPipeline<br/>pipeline/recv_pipeline.cpp"]
+    DEC["decompressor ×N"]
+    WR["writer ×N"]
+    SINK{"StorageBackendFactory::createSink<br/>storage_backend_factory.cpp:182"}
+    LS["LocalFileBlockSink<br/>staging → fsync → rename"]
+    S3["S3MultipartBlockSink<br/>Create/UploadPart/Complete"]
+    RES["resume manifest / checkpoint"]
+    US --> FD --> RP --> DEC --> WR --> SINK
+    SINK --> LS & S3
+    LS --> RES
+    RP -->|"durable outcome"| TE
+    FD -->|"NAK / BlockRequest"| TE
+  end
+
+  subgraph STORE["存储与完整性"]
+    URI["storage_uri（+ 号按空格解码）"]
+    INT["integrity_mode（任一 S3 → crc32c_only）"]
+    PROBE["storage_probe / write_profile / mountinfo"]
+    OBJECT["object_set / object_enumerator"]
+    URI --> SINK
+    INT --> RP
+    PROBE --> LS
+    OBJECT --> TE
+  end
+
+  subgraph OBS["可观测"]
+    DBG["/debug/stats<br/>handler_debug.cpp"]
+    OBSV["传输连接观测<br/>observeSendConnection"]
+    DBG --> TE
+    TE --> OBSV
+    DBG -.->|"zeroCopyBlocks 恒 0 †"| SP
+  end
+
+  %% 死路径
+  TE -.->|"✗ localBridge 永假<br/>requiresStandardIntegrityPipeline 恒 true"| S3DP["s3DataPlaneWork 113 行"]
+  BAT["BatchTransferCoordinator"] -.->|"✗ useLocalS3DataPlaneBatch 永假<br/>182-385 约 204 行"| BRIDGE["本地桥接 worker 池"]
+  BAT -->|"正常 child 路径"| TE
+  H3 -->|"集合源/目的"| BAT
+```
