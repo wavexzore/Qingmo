@@ -351,6 +351,37 @@ test("long lines and wide diagrams stay inside the window", async ({ page }) => 
   expect(metrics.plateRight).toBeLessThanOrEqual(metrics.viewport);
 });
 
+test("diagram card lines up with the writing column", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openApp(page, [{ path: "/docs/align-mermaid.md", text: FLOW_DOC }]);
+  await openSeededFile(page, "align-mermaid.md");
+  await expect(page.locator(".cm-md-mermaid svg").first()).toBeVisible({ timeout: 30_000 });
+
+  const metrics = await page.evaluate(() => {
+    const content = document.querySelector(".cm-content")!.getBoundingClientRect();
+    const card = document.querySelector(".cm-md-mermaid")!.getBoundingClientRect();
+    const ending = [...document.querySelectorAll(".cm-line")].find(
+      (line) => line.textContent === "结尾段落",
+    )!;
+    const range = document.createRange();
+    range.selectNodeContents(ending);
+    const text = range.getBoundingClientRect();
+    return {
+      cardLeft: card.left,
+      cardRight: card.right,
+      textLeft: text.left,
+      inset: text.left - content.left,
+      trailing: content.right - card.right,
+    };
+  });
+
+  // The card is a block widget, so it must repeat the line inset instead of
+  // bleeding into the gutter that holds the line numbers.
+  expect(Math.abs(metrics.cardLeft - metrics.textLeft)).toBeLessThan(1);
+  expect(metrics.inset).toBeCloseTo(20, 0);
+  expect(metrics.trailing).toBeCloseTo(20, 0);
+});
+
 test("oversized diagrams keep a readable width and only scroll horizontally", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openApp(page, [{ path: "/docs/oversized-mermaid.md", text: OVERSIZED_DOC }]);
