@@ -127,7 +127,8 @@ function buildMermaidBlocks(state: EditorState): MermaidBlockState {
   };
 }
 
-const MIN_MERMAID_SCALE = 0.6;
+/** Manual zoom floor: 1% keeps very large diagrams explorable as thumbnails. */
+const MIN_MERMAID_SCALE = 0.01;
 const MAX_MERMAID_SCALE = 2;
 const MERMAID_SCALE_STEP = 0.1;
 /**
@@ -279,6 +280,15 @@ class MermaidBlockWidget extends WidgetType {
     let scale = 1;
     let fitMode = false;
     let naturalWidth = 0;
+    /**
+     * Diagram point (0–1 of the SVG width) kept under the viewport centre
+     * while zooming. It survives clamped scroll offsets so an out-and-back
+     * zoom returns to the same part of the diagram.
+     */
+    let zoomAnchor: number | null = null;
+    let lastProgrammaticScroll: number | null = null;
+    let suppressScrollSync = false;
+    let revealedTopContent = false;
 
     const contentWidth = (): number => {
       if (canvas.clientWidth <= 0) {
@@ -290,7 +300,24 @@ class MermaidBlockWidget extends WidgetType {
       return Math.max(1, canvas.clientWidth - left - right);
     };
 
-    const applyScale = (): void => {
+    /**
+     * Zooming only changes the SVG width, so the canvas scroll offset has to
+     * be adjusted as well. Keeping the diagram point under the viewport
+     * centre prevents "zoom in, zoom out, zoom in" from drifting into an
+     * empty corner when the offset was clamped at a smaller scale.
+     */
+    const readZoomAnchor = (svg: SVGSVGElement): number => {
+      const viewport = canvas.getBoundingClientRect();
+      const box = svg.getBoundingClientRect();
+      if (box.width <= 0) {
+        return 0.5;
+      }
+      const offset = box.left - viewport.left + canvas.scrollLeft;
+      const center = canvas.scrollLeft + canvas.clientWidth / 2;
+      return Math.min(1, Math.max(0, (center - offset) / box.width));
+    };
+
+    const applyScale = (keepAnchor = false): void => {
       const svg = figure.querySelector("svg");
       if (!(svg instanceof SVGSVGElement)) {
         return;
@@ -302,6 +329,17 @@ class MermaidBlockWidget extends WidgetType {
       if (naturalWidth <= 0 || available <= 0) {
         return;
       }
+      if (keepAnchor) {
+        // A pending scroll event from the user may not have fired yet, so
+        // compare the current offset with the one we last wrote ourselves.
+        const drifted =
+          lastProgrammaticScroll !== null &&
+          Math.abs(canvas.scrollLeft - lastProgrammaticScroll) > 1;
+        if (zoomAnchor === null || drifted) {
+          zoomAnchor = readZoomAnchor(svg);
+        }
+      }
+      const anchor = keepAnchor ? zoomAnchor : null;
       // The fit control is only useful when the default 100% view overflows
       // because shrinking to the card would drop below the readability floor.
       const fitsReadably = available >= naturalWidth * MERMAID_MIN_FIT_SCALE;
@@ -330,15 +368,76 @@ class MermaidBlockWidget extends WidgetType {
       svg.style.maxWidth = "none";
       figure.classList.toggle("is-zoomed", displayWidth > available + 0.5);
 
+      if (anchor !== null) {
+        const viewport = canvas.getBoundingClientRect();
+        const box = svg.getBoundingClientRect();
+        const offset = box.left - viewport.left + canvas.scrollLeft;
+        const target = offset + anchor * box.width - canvas.clientWidth / 2;
+        const max = Math.max(0, canvas.scrollWidth - canvas.clientWidth);
+        const next = Math.min(max, Math.max(0, target));
+        lastProgrammaticScroll = next;
+        suppressScrollSync = true;
+        canvas.scrollLeft = next;
+        requestAnimationFrame(() => {
+          suppressScrollSync = false;
+        });
+      }
+
       const overflows = canvas.scrollWidth > canvas.clientWidth + 1;
       hint.textContent = overflows ? "可横向滚动查看" : "点击「源码」编辑";
+    };
+
+    /**
+     * Some large multi-component graphs start with a mostly empty top-left
+     * band. On first paint, scroll horizontally to the topmost real node so
+     * the card opens on diagram content instead of empty canvas.
+     */
+    const revealTopContent = (svg: SVGSVGElement): void => {
+      if (revealedTopContent || fitMode || canvas.scrollLeft > 1) {
+        return;
+      }
+      revealedTopContent = true;
+      const viewport = canvas.getBoundingClientRect();
+      const top = Math.max(viewport.top, 0);
+      const bottom = Math.min(viewport.bottom, window.innerHeight);
+      if (bottom <= top) {
+        return;
+      }
+      let target: DOMRect | null = null;
+      for (const node of Array.from(svg.querySelectorAll("g.node"))) {
+        const box = node.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0 || box.bottom < top || box.top > bottom) {
+          continue;
+        }
+        if (!target || box.top < target.top || (box.top === target.top && box.left < target.left)) {
+          target = box;
+        }
+      }
+      if (!target) {
+        return;
+      }
+      const overlap = Math.min(target.right, viewport.right) - Math.max(target.left, viewport.left);
+      if (overlap >= target.width * 0.8) {
+        return;
+      }
+      const max = Math.max(0, canvas.scrollWidth - canvas.clientWidth);
+      const next = Math.min(
+        max,
+        Math.max(
+          0,
+          canvas.scrollLeft +
+            (target.left + target.width / 2) -
+            (viewport.left + canvas.clientWidth / 2),
+        ),
+      );
+      canvas.scrollLeft = next;
     };
 
     const changeScale = (delta: number): void => {
       const next = Math.round((scale + delta) * 10) / 10;
       fitMode = false;
       scale = Math.min(MAX_MERMAID_SCALE, Math.max(MIN_MERMAID_SCALE, next));
-      applyScale();
+      applyScale(true);
     };
 
     const stop = (event: Event): void => event.stopPropagation();
@@ -350,14 +449,28 @@ class MermaidBlockWidget extends WidgetType {
     zoomReset.addEventListener("click", () => {
       fitMode = false;
       scale = 1;
-      applyScale();
+      applyScale(true);
     });
     zoomIn.addEventListener("click", () => changeScale(MERMAID_SCALE_STEP));
     fitWidth.addEventListener("click", () => {
       fitMode = true;
+      zoomAnchor = 0.5;
       applyScale();
     });
     source.addEventListener("click", openSource);
+
+    // A manual canvas scroll chooses a new zoom anchor; programmatic scrolls
+    // from applyScale must not overwrite the anchor that produced them.
+    const syncZoomAnchor = (): void => {
+      if (suppressScrollSync) {
+        return;
+      }
+      const svg = figure.querySelector("svg");
+      if (svg instanceof SVGSVGElement) {
+        zoomAnchor = readZoomAnchor(svg);
+      }
+    };
+    canvas.addEventListener("scroll", syncZoomAnchor, { passive: true });
 
     const setKindState = (failed: boolean): void => {
       head.classList.toggle("is-error", failed);
@@ -400,6 +513,7 @@ class MermaidBlockWidget extends WidgetType {
         figure.replaceChildren(imported);
         naturalWidth = readNaturalWidth(imported);
         applyScale();
+        revealTopContent(imported);
         canvas.classList.remove("is-refreshing");
         wrapper.dataset.mermaidTheme = paintTheme;
         setKindState(false);
@@ -436,6 +550,7 @@ class MermaidBlockWidget extends WidgetType {
     this.teardowns.set(wrapper, () => {
       observer.disconnect();
       resizeObserver?.disconnect();
+      canvas.removeEventListener("scroll", syncZoomAnchor);
     });
 
     void paint();
