@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Qingmo — local-first Markdown editor",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=22.12.0",

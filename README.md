@@ -1,24 +1,198 @@
-# 轻墨 Qingmo
+# Qingmo · 轻墨
 
-> 像纸一样安静，像代码编辑器一样快。
+**English** · [简体中文](README.zh-CN.md)
 
-Qingmo 是一个本地优先、源码为真、支持沙箱化插件扩展的 Markdown 编辑器。
+> As quiet as paper, as fast as a code editor.
 
-- **桌面外壳**：Tauri 2（Rust）
-- **界面**：React + Vite + TypeScript + TailwindCSS
-- **编辑内核**：CodeMirror 6 + Lezer
-- **插件运行时**：Web Worker + sandbox iframe + 能力代理（Capability Broker）
-- **数据**：Markdown 文件为唯一事实来源，SQLite 仅做索引
+[![CI](https://github.com/wavexzore/Qingmo/actions/workflows/ci.yml/badge.svg)](https://github.com/wavexzore/Qingmo/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0-orange.svg)](#project-status)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#platform-support)
 
-## 文档
+Qingmo is a **local-first, source-of-truth Markdown editor** for people who write for a living. It opens a file and gets out of the way: no account, no cloud dependency, no document lock-in. Your Markdown stays plain text on your own disk and remains readable by every other editor.
 
-- [项目蓝图](docs/BLUEPRINT.md) —— 架构、插件系统、数据模型、性能预算、路线图
-- [项目拓扑图](docs/TOPOLOGY.md) —— 系统运行拓扑、信任边界、关键数据流
-- [调研与参考](docs/RESEARCH.md) —— 开源项目分析、官方文档结论、论文与工程证据
-- [实施级 ADR](docs/adr/README.md) —— P1 边界、单一保存、IPC 契约、路径 token/CloseGuard
+The editor is built around three non-negotiable goals:
 
-## 状态
+1. **Typing stays under 16 ms p95.** The document lives in one CodeMirror 6 `EditorState`; React never owns the text.
+2. **A 10 MB Markdown file stays editable.** Large documents shed preview work instead of freezing or refusing to open.
+3. **Third-party code never runs on the main thread.** The future plugin runtime is designed around a Web Worker, a sandboxed iframe and a capability broker.
 
-当前处于 **P1 编辑器 MVP 收尾** 阶段（T-001~T-020 已完成，20/20；P1 功能、性能基线、E2E、CI 工作流与 ADR/交接已形成；最终 `VERDICT: PARTIAL` 仅因远端 CI/平台真机残余）。已建立 pnpm workspace、Vite 7 + React 19 + TypeScript 5、Tauri 2 外壳与质量工具，并完成安全基线、IPC 契约、UI 基础、Rust 文件读取/原子写、IpcPort/PlatformPort、浏览器 fake adapter、「启动即编辑未命名文档 → 原生对话框/另存为 → CM6 EditorState」打开与保存流程、Markdown/语言/Compartment 编辑组合、真实 EditorView/状态栏、SaveCoordinator 自动保存（去抖/单飞/冲突暂停/退避）、保存/关闭闭环（冲突横幅、二次确认、`file.save`、红叉/Cmd+Q 先落盘后退出）、Live Preview（视口装饰、标记级显隐、覆盖 CommonMark + GFM 全量语法：ATX/Setext 标题、强调/删除线/上下标、行内代码、链接/自动链接、图片 Widget、引用、嵌套/有序/任务列表、代码块语言标签、分隔线、表格 HTML block widget、HTML 源码降级；含 IME map、2M/超长行/8ms 预算）、大文件降级（2M UTF-16 单元以上关闭 LP、状态栏“大文档 · 预览关闭”、`view.toggleLivePreview`、10MiB 可编辑）、主题系统（light/dark/system、`qingmo.ui.theme`、根 `data-theme`、主题 Compartment、`view.toggleTheme`）、命令面板/全局快捷键（registry 驱动、`Mod+K`、`Mod+O`/`Mod+S`/`Mod+Shift+L`、过滤/焦点恢复）、可重复性能基准（确定性 10KiB/1MiB/10MiB fixtures、`pnpm bench`、真实 Rust AtomicWriter、Tauri open/save/RSS；10MiB LP 关闭）与浏览器 E2E（Playwright 4 spec/18 条、seeded FakeIpc/FakePlatform、生产 tree-shake；Rust 跨格式 round-trip/冲突集成；macOS 真实拼音“你好”与关闭守卫手动冒烟）。建立了四 job GitHub Actions（Ubuntu Web/E2E、Ubuntu 契约/生成文件/负例、macOS fmt/clippy/test/debug build、Windows compile-only）与本地 `ci:*` 门禁，本机 actionlint、`pnpm ci:local`、Ubuntu 容器与 macOS debug bundle 均通过（远端 runner 尚未首次运行）；并完成 4 个实施级 ADR（`docs/adr/0001~0004`：MVP 边界、单一保存、IPC 契约、路径 token/CloseGuard）、蓝图偏差与 P2 前置交接。下一步：首次 push 后复核 GitHub Actions 四 job、配置 `main` 分支保护，再按 `docs/todo/p0-p1-editor-mvp/03-复盘与交接.md §8` 进入 P2。
+![Qingmo editing a Markdown document with Live Preview and a rendered Mermaid diagram](docs/screenshots/editor-light.png)
 
-**P2 应用自动更新（ADR-0005）：** 已实现 macOS-only 更新链路——官方 `tauri-plugin-updater` 2.14.0 Rust API、Rust `UpdateManager` 单一状态机、9 命令/4 事件/19 错误码契约（第 4 个事件为原生菜单动作）、`UpdatePort` + Tauri/Fake、Controller/Provider、命令面板/横幅/对话框（发布说明纯文本）、安装前 `SaveCoordinator.flush("close")`、`CloseGuard` 同锁安装门闩，以及零网络 Playwright E2E、契约/权限负例与生成类型门禁。本地 universal 发布链路已通过 Developer ID 签名、App 公证、DMG 单独公证/stapling、updater minisign 与 `latest.json` 验签；GitHub Actions 发布通道已按本地优先决策停用（`release` Environment/secrets 已删除）。当前 `VERDICT: PARTIAL` 仅剩 T-014 macOS 真机安装/重启冒烟；详见 `docs/todo/app-auto-update/02-实施状态与验证.md`。
+<details>
+<summary>More screenshots</summary>
+
+**Dark theme**
+
+![Qingmo with the dark theme](docs/screenshots/editor-dark.png)
+
+**Command palette**
+
+![Qingmo command palette](docs/screenshots/command-palette.png)
+
+</details>
+
+## Features
+
+### Writing, without leaving the source
+
+- **Live Preview** renders CommonMark and GitHub Flavored Markdown in place: headings, emphasis, strikethrough, tables, task lists, code fences with language labels, images, block quotes and rules.
+- **Beyond GFM**: KaTeX math (inline and display), Mermaid diagrams, footnotes, definition lists, abbreviations, collapsible `<details>`, alert callouts, emoji shortcodes, wiki links, heading anchors, frontmatter and attribute blocks.
+- **Source when you need it.** Toggle Live Preview at any time; markers reappear around the cursor instead of hiding the syntax forever.
+- **Typography and theme**: light, dark and system themes, with a reading-oriented type scale.
+- **Simplified Chinese and English UI** out of the box.
+
+### Built for real files
+
+- Open and save through native dialogs. Markdown files are the only source of truth — no database export, no proprietary container.
+- **Debounced autosave** with single-flight writes, save-state feedback and hash-based external-change detection. A conflict pauses saving and offers reload or overwrite instead of silently losing work.
+- **Atomic writes** in Rust, so an interrupted save never leaves a truncated file.
+- **Encoding and line-ending aware**: UTF-8 and BOM-marked UTF-16, LF/CRLF preserved. MDX and mixed line endings open read-only with an explicit reason.
+- **Large-file mode** above 2M UTF-16 units: Live Preview turns off, the status bar says so, and editing continues up to the 10 MiB limit.
+- **One window per document**, native menus, `Mod+O` / `Mod+S` / `Mod+Shift+L`, and a filterable command palette on `Mod+K`.
+- **Save-then-quit**: close and quit go through a Rust `CloseGuard` that flushes pending saves before the window disappears.
+
+### Quiet, private, secure
+
+- **Local-first by default.** No account, no telemetry, no background sync; everything works offline.
+- The webview never picks paths. Rust issues path tokens, validates extensions and owns all file IO.
+- A restrictive CSP, a minimal Tauri capability allowlist, and no filesystem permission exposed to the frontend.
+- **Signed macOS updates** through the official Tauri updater: Developer ID, notarized app and DMG, minisign signatures and `requireSignedVersion`.
+- ARIA status roles, keyboard focus restoration, IME-safe save shortcuts, and an error boundary around the shell.
+
+## Project status
+
+Qingmo is **pre-1.0** and under active development. The editor MVP is usable today; the wider product is not finished.
+
+| Area | State |
+| --- | --- |
+| Editor MVP (open, edit, save, Live Preview, themes, palette, large files) | ✅ Implemented and covered by unit, Rust integration and Playwright E2E tests |
+| Save reliability (autosave, atomic write, conflict banner, close guard) | ✅ Implemented |
+| Native menu, multi-window, i18n (zh-CN / en) | ✅ Implemented |
+| macOS signed auto-update | ✅ Local release chain validated; real-device install smoke test still pending |
+| Workspace file tree, full-text search, SQLite index, crash recovery | 🚧 Planned for P2 |
+| Plugin SDK, Worker/iframe runtime, capability broker, plugin market | 🚧 Designed for P3, not shipped |
+| Windows and Linux release builds | 🚧 Compile-checked in CI; packaging and release verification pending |
+
+### Platform support
+
+macOS is the primary target and the only platform with a verified release/update path today. Windows and Linux are compile-checked in CI, but remain compile-only until their installers and release flows are validated.
+
+## Install and build
+
+### Prerequisites
+
+- Node.js `>= 22.12` (the repo pins `26.12.1` in `.nvmrc`)
+- pnpm `>= 10` (`corepack enable` is recommended)
+- Rust `1.91.1` (installed automatically from `rust-toolchain.toml`)
+- macOS: Xcode Command Line Tools
+- Linux: the [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/)
+
+### Run from source
+
+```bash
+pnpm install
+pnpm tauri dev     # desktop app with real file IO
+```
+
+`pnpm dev` starts the webview alone against in-memory adapters. Use it for UI work; use `pnpm tauri dev` whenever you need native dialogs or real files.
+
+### Build
+
+```bash
+pnpm build          # frontend production build
+pnpm tauri build    # desktop bundle
+make build-mac      # local macOS DMG (Apple Silicon by default)
+make build-mac MAC_ARCH=x86_64
+```
+
+### Quality gates
+
+```bash
+pnpm typecheck      # TypeScript, unit and E2E projects
+pnpm lint
+pnpm test           # Vitest
+pnpm test:e2e       # Playwright
+pnpm ci:rust        # rustfmt, clippy -D warnings, cargo test
+pnpm ci:local       # the full local gate: web, Rust, generated types, negative contracts, E2E
+pnpm bench          # deterministic 10 KiB / 1 MiB / 10 MiB benchmarks
+```
+
+CI runs four jobs: Ubuntu web + E2E, Ubuntu contract/generated-file/negative tests, macOS format/clippy/test/debug build, and Windows compile-only.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph WebView["Trusted webview"]
+    UI["React UI<br/>palette · menus · dialogs"]
+    ED["CodeMirror 6 EditorState<br/>single source of truth"]
+    LP["Live Preview<br/>viewport decorations"]
+    UI --> ED --> LP
+  end
+  subgraph Rust["Tauri 2 · Rust"]
+    IPC["Typed IPC contract"]
+    FS["Path tokens · atomic writes · conflict hashes"]
+    UPD["Updater · CloseGuard"]
+  end
+  ED -->|"debounced save"| IPC --> FS
+  UPD --> IPC
+
+  MD[("Markdown files")]
+  FS --> MD
+```
+
+A few invariants shape the codebase:
+
+- **The document is a CodeMirror `EditorState`**, not React state. React renders chrome only.
+- **Every cross-boundary payload is generated and validated** from a single IPC contract (Rust `ts-rs` → TypeScript, checked in CI).
+- **Saving has exactly one path**: `SaveCoordinator` → `file.save` → Rust atomic writer. Shortcuts, menu, autosave and quit all use it.
+- **Live Preview is a viewport decoration pass**, never a rich-text round trip. Parsing is limited to visible ranges; large files drop the pass entirely.
+- **Ports isolate the platform**: `IpcPort`, `PlatformPort` and `UpdatePort` have Tauri and fake implementations, so browser tests and Playwright never touch native APIs.
+
+Read the full design before contributing:
+
+- [Blueprint](docs/BLUEPRINT.md) — architecture, plugin model, data model, budgets, roadmap
+- [Topology](docs/TOPOLOGY.md) — runtime topology and trust boundaries
+- [Research](docs/RESEARCH.md) — prior art and supporting evidence
+- [ADRs](docs/adr/README.md) — implementation-level decisions and their accepted trade-offs
+
+### Repository layout
+
+```text
+apps/desktop/        React shell, editor session, commands, update UI, E2E bridge
+packages/editor-core/ CodeMirror extensions, Live Preview planners and widgets
+packages/shared/     IPC types (generated), Result/AppError contracts
+packages/ui/         Design tokens and shared primitives
+src-tauri/           Rust commands, atomic IO, close guard, updater state machine
+e2e/                 Playwright specs and fixtures
+bench/               Deterministic performance fixtures and runner
+docs/                Blueprint, topology, ADRs, task records
+```
+
+## Roadmap
+
+- **P2 — Workspace**: file tree, indexed search, recovery, external-change watching, unified settings.
+- **P3 — Plugins**: signed manifests, Worker logic host, sandboxed iframe UI, capability broker, three first-party plugins (Mermaid, math, export).
+- **Release engineering**: Windows/Linux installers, cross-platform updates, real-device update verification, changelog automation.
+
+Explicit non-goals for v1: real-time collaboration, mobile apps, built-in AI, and a first-party cloud sync service.
+
+## Contributing
+
+Issues and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first; it covers the development loop, architecture invariants, test expectations and commit format.
+
+```bash
+git clone https://github.com/wavexzore/Qingmo.git
+cd Qingmo
+pnpm install
+pnpm tauri dev
+```
+
+Before opening a PR, run `pnpm ci:local`. Changes to save, close or path handling must update the matching ADR.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). You may use, modify and distribute Qingmo, including commercially, provided you keep the copyright and license notices. The license also includes an express patent grant and a trademark policy; see [NOTICE](NOTICE) for attribution.
+
+Qingmo bundles or links against open-source dependencies including CodeMirror, React, Tauri, Mermaid, KaTeX and Tailwind CSS. Their licenses remain with their respective authors.
