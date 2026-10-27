@@ -31,7 +31,9 @@ const editorThemeSpec = {
     caretColor: "var(--qm-accent)",
   },
   ".cm-line": {
-    padding: "0 28px",
+    // Symmetric padding leaves room for the hanging line-number gutter
+    // without moving the text when the mode changes.
+    padding: "0 56px",
   },
   ".cm-placeholder": {
     color: "var(--qm-ink-faint)",
@@ -41,7 +43,7 @@ const editorThemeSpec = {
     backgroundColor: "transparent",
     color: "var(--qm-ink-faint)",
     border: "none",
-    paddingLeft: "12px",
+    paddingLeft: "0",
   },
   ".cm-activeLine": {
     backgroundColor: "var(--qm-accent-soft)",

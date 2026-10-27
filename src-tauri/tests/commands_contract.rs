@@ -42,7 +42,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 10);
+    assert_eq!(COMMANDS.len(), 11);
     assert_eq!(
         EVENTS,
         &[

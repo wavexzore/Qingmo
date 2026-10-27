@@ -1,13 +1,21 @@
 @import "tailwindcss";
 @import "@qingmo/ui/tokens.css";
 
-/* The startup untitled buffer is a writing surface, not a code gutter view. */
-[data-untitled="true"] .cm-gutters {
-  display: none;
+/*
+ * Line numbers hang in the writing column's left padding: source mode shows
+ * them without shifting the text, and Live Preview hides them entirely.
+ */
+.cm-editor .cm-gutters {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  width: 56px;
+  justify-content: flex-end;
+  padding-right: 12px;
 }
 
-[data-untitled="true"] .cm-activeLine {
-  background: transparent;
+.cm-editor[data-live-preview="true"] .cm-gutters {
+  display: none;
 }
 
 @layer base {

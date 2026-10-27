@@ -46,6 +46,7 @@ export interface E2eBridge {
   failSaveAlways(code?: AppErrorCode): void;
   clearErrors(): void;
   getCloseConfirms(): CloseConfirmRequest[];
+  getLivePreviewMenuCalls(): boolean[];
   setUpdateAvailable(update: E2eUpdateInfo | null): void;
   setUpdateError(operation: "check" | "download" | "install", code: AppErrorCode | null): void;
   holdUpdateDownload(): void;
@@ -106,6 +107,7 @@ export function createE2eServices(): {
       ipc.clearInjectedErrors();
     },
     getCloseConfirms: () => [...ipc.closeConfirmCalls],
+    getLivePreviewMenuCalls: () => [...ipc.livePreviewCalls],
     setUpdateAvailable: (update) => {
       updates.setUpdate(
         update

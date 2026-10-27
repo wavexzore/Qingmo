@@ -48,6 +48,7 @@ fn capability_contains_only_expected_permissions() {
             "allow-document-save-as",
             "allow-document-write-atomic",
             "allow-app-close-confirm",
+            "allow-app-set-live-preview",
             "allow-app-update-status",
             "allow-app-update-check",
             "allow-app-update-download",

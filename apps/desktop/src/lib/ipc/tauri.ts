@@ -44,5 +44,8 @@ export function createTauriIpc(): IpcPort {
     async appCloseConfirm(request) {
       await invokeCommand(COMMANDS.appCloseConfirm, request);
     },
+    async appSetLivePreview(request) {
+      await invokeCommand(COMMANDS.appSetLivePreview, request);
+    },
   };
 }

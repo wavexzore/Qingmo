@@ -10,6 +10,7 @@ import {
   endComposition,
   getFileSize,
   getFileText,
+  getLivePreviewMenuCalls,
   modifier,
   openApp,
   openSeededFile,
@@ -37,6 +38,58 @@ test("types directly into the untitled editor and Save As binds a real path", as
   await expect(page.getByTestId("document-session")).toBeVisible();
   await expect(page.getByTestId("status-bar")).toContainText("untitled.md");
   await expect(page.getByTestId("status-bar")).toContainText("已同步");
+});
+
+test("line numbers follow the Live Preview mode and the menu tracks it", async ({ page }) => {
+  await openApp(page);
+
+  const untitled = page.getByTestId("untitled-editor");
+  const gutter = untitled.locator(".cm-gutters");
+
+  // Live Preview renders the document and hides the code gutter.
+  await expect(gutter).toBeHidden();
+  await expect.poll(() => getLivePreviewMenuCalls(page)).toEqual([true]);
+
+  await typeInEditor(page, "\n\nthird");
+
+  const textX = () =>
+    page.evaluate(() => {
+      const line = document.querySelector('[data-testid="untitled-editor"] .cm-line:last-child');
+      const range = document.createRange();
+      range.selectNodeContents(line?.firstChild ?? line!);
+      return range.getBoundingClientRect().x;
+    });
+  const previewX = await textX();
+
+  // Source mode shows line numbers without moving the text column.
+  await emitMenuAction(page, "view.toggleLivePreview");
+  await expect(gutter).toBeVisible();
+  await expect(gutter.locator(".cm-lineNumbers")).toContainText("3");
+  await expect.poll(() => getLivePreviewMenuCalls(page)).toEqual([true, false]);
+
+  const sourceX = await textX();
+  expect(Math.abs(sourceX - previewX)).toBeLessThanOrEqual(1);
+  const gutterBox = await gutter.boundingBox();
+  expect(gutterBox!.x + gutterBox!.width).toBeLessThanOrEqual(sourceX + 1);
+
+  // Returning to Live Preview hides them again.
+  await emitMenuAction(page, "view.toggleLivePreview");
+  await expect(gutter).toBeHidden();
+  await expect.poll(() => getLivePreviewMenuCalls(page)).toEqual([true, false, true]);
+});
+
+test("saved documents keep the same writing margins as the untitled buffer", async ({ page }) => {
+  await openApp(page);
+  const untitledBox = await page.locator(".cm-editor").boundingBox();
+
+  await openSeededFile(page, "note.md");
+  const savedBox = await page.locator(".cm-editor").boundingBox();
+
+  // A 20px page gutter on both sides, identical in every window.
+  expect(untitledBox!.x).toBe(20);
+  expect(savedBox!.x).toBe(untitledBox!.x);
+  expect(savedBox!.width).toBe(untitledBox!.width);
+  expect(untitledBox!.width).toBe(page.viewportSize()!.width - 40);
 });
 
 test("cancelling Save As keeps the untitled document dirty", async ({ page }) => {
