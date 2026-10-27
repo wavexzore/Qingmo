@@ -1,8 +1,10 @@
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
-import { EditorState, type Extension } from "@codemirror/state";
+import { EditorState, type Extension, type Range } from "@codemirror/state";
 import {
+  Decoration,
   EditorView,
+  ViewPlugin,
   crosshairCursor,
   drawSelection,
   dropCursor,
@@ -11,7 +13,64 @@ import {
   keymap,
   lineNumbers,
   rectangularSelection,
+  type DecorationSet,
+  type ViewUpdate,
 } from "@codemirror/view";
+
+/**
+ * `drawSelection` paints the selection behind the text, so a solid selection
+ * colour needs a matching text colour to stay readable. This mark lets the
+ * theme invert the selected glyphs; it is a pure view decoration and never
+ * touches the document or the selection ranges themselves.
+ */
+const selectedText = Decoration.mark({ class: "cm-selectedText" });
+const selectedLine = Decoration.line({ class: "cm-selectedLine" });
+
+function selectedTextDecorations(view: EditorView): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  const lines = new Set<number>();
+  for (const selection of view.state.selection.ranges) {
+    // Marks may not span line breaks, so split each selection into one mark
+    // per line. This is what makes multi-line selections invert every line,
+    // not just the last one.
+    let position = selection.from;
+    while (position < selection.to) {
+      const line = view.state.doc.lineAt(position);
+      if (!lines.has(line.from)) {
+        lines.add(line.from);
+        // Code-block backgrounds are opaque and otherwise cover the
+        // selection layer; make selected lines transparent while selected.
+        ranges.push(selectedLine.range(line.from));
+      }
+      const end = Math.min(line.to, selection.to);
+      if (end > position) {
+        ranges.push(selectedText.range(position, end));
+      }
+      if (line.to >= selection.to) {
+        break;
+      }
+      position = line.to + 1;
+    }
+  }
+  return Decoration.set(ranges, true);
+}
+
+const selectionTextHighlight = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = selectedTextDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.selectionSet || update.docChanged) {
+        this.decorations = selectedTextDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (value) => value.decorations },
+);
 
 /**
  * The non-Markdown CM6 baseline: line numbers, history, selection behaviour
@@ -26,6 +85,7 @@ export function createBasicExtensions(): Extension[] {
     highlightActiveLine(),
     history(),
     drawSelection(),
+    selectionTextHighlight,
     dropCursor(),
     rectangularSelection(),
     crosshairCursor(),

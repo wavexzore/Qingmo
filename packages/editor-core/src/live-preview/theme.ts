@@ -946,6 +946,9 @@ export const livePreviewTheme = EditorView.theme(
       backgroundColor: "var(--qm-surface-muted)",
       fontFamily: "var(--qm-font-mono)",
     },
+    ".cm-md-code-block.cm-selectedLine": {
+      backgroundColor: "transparent",
+    },
     ".cm-md-code-fence": {
       color: "var(--qm-ink-faint)",
     },
