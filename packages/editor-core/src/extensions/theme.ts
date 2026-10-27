@@ -7,6 +7,12 @@ import { qingmoHighlightStyle } from "./markdown";
 export type EditorTheme = "light" | "dark";
 
 /**
+ * Shared by text lines and block widgets so both start on the same writing
+ * column. Line numbers hang outside of it, in the window's page gutter.
+ */
+const WRITING_INSET_PX = 20;
+
+/**
  * The single source for editor chrome and syntax-highlight colours. Every
  * value is a semantic CSS variable, so the light and dark variants differ only
  * in CodeMirror's built-in dark marker; the palette itself is never duplicated
@@ -31,9 +37,15 @@ const editorThemeSpec = {
     caretColor: "var(--qm-accent)",
   },
   ".cm-line": {
-    // Symmetric padding leaves room for the hanging line-number gutter
-    // without moving the text when the mode changes.
-    padding: "0 56px",
+    // Symmetric inset keeps the text column centred and fixed when the mode
+    // changes; the line numbers hang outside of it.
+    padding: `0 ${WRITING_INSET_PX}px`,
+  },
+  // Block widgets (Mermaid, math, tables, Front Matter…) are children of
+  // `.cm-content`, not of a line, so they miss the line padding above. Give
+  // them the same inline inset or the cards bleed into the gutter.
+  ".cm-content > :not(.cm-line)": {
+    marginInline: `${WRITING_INSET_PX}px`,
   },
   ".cm-placeholder": {
     color: "var(--qm-ink-faint)",
