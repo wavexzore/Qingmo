@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @import "@qingmo/ui/tokens.css";
 
+/* The startup untitled buffer is a writing surface, not a code gutter view. */
+[data-untitled="true"] .cm-gutters {
+  display: none;
+}
+
+[data-untitled="true"] .cm-activeLine {
+  background: transparent;
+}
+
 @layer base {
   html,
   body,

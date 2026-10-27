@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { COMMANDS } from "../../../lib/ipc/commands";
 import { FakeIpc, fakeHash } from "../../../lib/ipc/fake";
 import type { IpcPort } from "../../../lib/ipc/port";
-import { EditorSession } from "../EditorSession";
+import { EditorSession, UNTITLED_DOC_TOKEN } from "../EditorSession";
 import { SaveCoordinator, SAVE_DEBOUNCE_MS, SAVE_MAX_WAIT_MS } from "./SaveCoordinator";
 
 const PATH = "/docs/note.md";
@@ -61,6 +61,17 @@ function attachSession(session: EditorSession): {
   const view = new EditorView({ state: session.editorState, parent });
   session.attach(view);
   return { view, parent };
+}
+
+async function untitledHarness(options: { saveAsFile?: string | null } = {}): Promise<Harness> {
+  const ipc = new FakeIpc({
+    saveAsFile: options.saveAsFile !== undefined ? options.saveAsFile : "/docs/untitled.md",
+  });
+  const session = EditorSession.createUntitled("未命名", { placeholder: "开始写作…" });
+  const { view, parent } = attachSession(session);
+  const coordinator = new SaveCoordinator({ session, ipc });
+  active = { ipc, session, coordinator, view, parent };
+  return active;
 }
 
 function insert(view: EditorView, text: string): void {
@@ -140,7 +151,10 @@ describe("SaveCoordinator debounce and max wait", () => {
   });
 });
 
-interface ControlledIpc extends Pick<IpcPort, "documentWriteAtomic" | "documentReload"> {
+interface ControlledIpc extends Pick<
+  IpcPort,
+  "documentWriteAtomic" | "documentReload" | "documentSaveAs"
+> {
   writes: SaveRequest[];
   resolve(index: number, result?: SaveResult): void;
   reject(index: number, error: unknown): void;
@@ -178,6 +192,8 @@ function controlledIpc(reloadPayload: FilePayload = payload()): ControlledIpc {
       });
     },
     documentReload: () => Promise.resolve(reloadPayload),
+    documentSaveAs: (text) =>
+      Promise.resolve(payload({ docToken: "saved-token", path: "/docs/untitled.md", text })),
     resolve(index, result = { hash: "saved-hash", size: 1, mtimeMs: 2 }) {
       pending[index]?.resolve(result);
     },
@@ -489,6 +505,92 @@ describe("SaveCoordinator errors", () => {
     expect(retried).toEqual({ ok: true, state: "clean" });
     expect(write).toHaveBeenCalledTimes(2);
     expect(harness.coordinator.getSnapshot().error).toBeNull();
+  });
+});
+
+describe("SaveCoordinator untitled Save As", () => {
+  it("keeps edits dirty without auto-saving and writes on manual save", async () => {
+    vi.useFakeTimers();
+    const harness = await untitledHarness();
+    const saveAs = vi.spyOn(harness.ipc, "documentSaveAs");
+
+    insert(harness.view, "draft");
+    expect(harness.session.isUntitled).toBe(true);
+    expect(harness.session.getSnapshot().saveState).toBe("dirty");
+    expect(harness.coordinator.getSnapshot().state).toBe("dirty");
+    expect(harness.coordinator.getSnapshot().pending).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(saveAs).not.toHaveBeenCalled();
+    expect(harness.ipc.getFile("/docs/untitled.md")).toBeUndefined();
+
+    const result = await harness.coordinator.flush("manual");
+    expect(result).toEqual({ ok: true, state: "clean" });
+    expect(saveAs).toHaveBeenCalledWith("draft");
+    expect(harness.session.isUntitled).toBe(false);
+    expect(harness.session.docToken).not.toBe(UNTITLED_DOC_TOKEN);
+    expect(harness.session.getSnapshot().fileName).toBe("untitled.md");
+    expect(harness.ipc.getFile("/docs/untitled.md")?.text).toBe("draft");
+  });
+
+  it("skips Save As for a pristine buffer but saves before close once dirty", async () => {
+    const harness = await untitledHarness();
+    const saveAs = vi.spyOn(harness.ipc, "documentSaveAs");
+
+    expect(await harness.coordinator.flush("close")).toEqual({ ok: true, state: "clean" });
+    expect(saveAs).not.toHaveBeenCalled();
+
+    insert(harness.view, "close-me");
+    const result = await harness.coordinator.flush("close");
+    expect(result).toEqual({ ok: true, state: "clean" });
+    expect(saveAs).toHaveBeenCalledTimes(1);
+    expect(harness.ipc.getFile("/docs/untitled.md")?.text).toBe("close-me");
+  });
+
+  it("does not open Save As on blur or auto flushes", async () => {
+    const harness = await untitledHarness();
+    const saveAs = vi.spyOn(harness.ipc, "documentSaveAs");
+    insert(harness.view, "draft");
+
+    expect(await harness.coordinator.flush("blur")).toEqual({ ok: true, state: "dirty" });
+    expect(await harness.coordinator.flush("auto")).toEqual({ ok: true, state: "dirty" });
+    expect(saveAs).not.toHaveBeenCalled();
+  });
+
+  it("returns a pristine buffer to clean when Save As is cancelled", async () => {
+    const harness = await untitledHarness({ saveAsFile: null });
+
+    const cancelled = await harness.coordinator.flush("manual");
+    expect(cancelled.ok).toBe(false);
+    expect(cancelled.error?.code).toBe("CANCELLED");
+    expect(harness.session.getSnapshot().saveState).toBe("clean");
+    expect(harness.coordinator.getSnapshot().pending).toBe(false);
+
+    // A later close does not reopen the dialog for an untouched buffer.
+    const saveAs = vi.spyOn(harness.ipc, "documentSaveAs");
+    expect(await harness.coordinator.flush("close")).toEqual({ ok: true, state: "clean" });
+    expect(saveAs).not.toHaveBeenCalled();
+  });
+
+  it("keeps a cancelled Save As dirty and lets a later save retry", async () => {
+    const harness = await untitledHarness({ saveAsFile: null });
+    const saveAs = vi.spyOn(harness.ipc, "documentSaveAs");
+    insert(harness.view, "draft");
+
+    const cancelled = await harness.coordinator.flush("manual");
+    expect(cancelled.ok).toBe(false);
+    expect(cancelled.failure).toBe("error");
+    expect(cancelled.error?.code).toBe("CANCELLED");
+    expect(harness.session.isUntitled).toBe(true);
+    expect(harness.session.getSnapshot().saveState).toBe("dirty");
+    expect(harness.coordinator.getSnapshot().pending).toBe(true);
+
+    harness.ipc.setSaveAsFile("/docs/retry.md");
+    const saved = await harness.coordinator.flush("manual");
+    expect(saved).toEqual({ ok: true, state: "clean" });
+    expect(saveAs).toHaveBeenCalledTimes(2);
+    expect(harness.session.getSnapshot().fileName).toBe("retry.md");
+    expect(harness.ipc.getFile("/docs/retry.md")?.text).toBe("draft");
   });
 });
 

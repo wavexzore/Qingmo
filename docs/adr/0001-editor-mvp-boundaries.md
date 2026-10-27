@@ -16,7 +16,7 @@
 
 ## 决策
 
-1. **范围：P0–P1 垂直切片，只做单文件编辑器。** P1 包含打开、编辑、最小 Live Preview、手动/自动保存、冲突检测、主题、命令面板、关闭守卫。
+1. **范围：P0–P1 垂直切片，只做单文件编辑器。** P1 包含打开、启动即编辑的未命名文档、首次保存走原生另存为、最小 Live Preview、手动/自动保存、冲突检测、主题、命令面板、关闭守卫。
 2. **不做：** 工作区/文件树/最近文件、SQLite/搜索、文件 watcher、设置页、插件系统、原生菜单（macOS 自定义 Quit 项除外）、协作、移动端。
 3. **唯一文档真源：CM6 `EditorState`。** React 只持有 UI/会话元数据与派生快照；正文不进入 React state、Zustand 或 localStorage。
 4. **唯一 EditorView：** 由 `EditorHost` 创建一次；主题/只读/Live Preview 通过 CM6 `Compartment`/facet 切换，不重建 view。
@@ -54,6 +54,10 @@
 - C-109：浏览器 E2E 覆盖打开/编辑/保存/冲突/主题/面板/关闭。
 - C-112：真实 Tauri 手动验证打开、保存、IME、冲突、关闭守卫。
 - C-110：Rust 59 条测试覆盖真实临时文件读写。
+
+## 更新记录
+
+- **2026-10-27：** Live Preview 从“最小标题/强调/链接/列表”扩展为 CommonMark + GFM 全量语法，并引入内联 Widget 与 `atomicRanges`；仍坚持唯一 `EditorState`、唯一 EditorView，不使用 ViewPlugin block decoration，也不引入第二文档模型。
 
 ## 未决问题（P2 前置）
 

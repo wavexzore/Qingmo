@@ -45,6 +45,8 @@
   --qm-danger: light-dark(#a33a2b, #e08b7c);
   --qm-warning: #8a641c;
   --qm-warning: light-dark(#8a641c, #d4ac63);
+  --qm-highlight: rgba(214, 178, 94, 0.32);
+  --qm-highlight: light-dark(rgba(214, 178, 94, 0.32), rgba(212, 172, 99, 0.24));
   --qm-success: #2f6b4f;
   --qm-success: light-dark(#2f6b4f, #8fc7a8);
 

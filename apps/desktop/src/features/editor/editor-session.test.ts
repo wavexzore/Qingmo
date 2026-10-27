@@ -1,9 +1,10 @@
-import { EditorState } from "@codemirror/state";
+import { undo } from "@codemirror/commands";
+import { EditorState, type Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { FilePayload } from "@qingmo/shared";
 import { describe, expect, it, vi } from "vitest";
 
-import { EditorSession } from "./EditorSession";
+import { EditorSession, UNTITLED_DOC_TOKEN } from "./EditorSession";
 
 function payload(overrides: Partial<FilePayload> = {}): FilePayload {
   return {
@@ -116,6 +117,69 @@ describe("EditorSession", () => {
     expect(listener).toHaveBeenCalledTimes(2);
     expect(session.getSnapshot().dirty).toBe(false);
     expect(session.getSnapshot().version).toBe(3);
+  });
+
+  it("creates an editable, empty untitled session", () => {
+    const session = EditorSession.createUntitled("未命名", { placeholder: "开始写作…" });
+    const snapshot = session.getSnapshot();
+
+    expect(session.isUntitled).toBe(true);
+    expect(session.docToken).toBe(UNTITLED_DOC_TOKEN);
+    expect(snapshot.docId).toBe("untitled");
+    expect(snapshot.fileName).toBe("未命名");
+    expect(snapshot.format).toEqual({ encoding: "utf8", hasBom: false, eol: "lf" });
+    expect(snapshot.saveState).toBe("clean");
+    expect(snapshot.dirty).toBe(false);
+    expect(snapshot.readOnly).toBe(false);
+    expect(session.editorState.doc.length).toBe(0);
+    expect(session.editorState.facet(EditorState.readOnly)).toBe(false);
+    expect(session.editorState.facet(EditorView.editable)).toBe(true);
+  });
+
+  it("adopts a saved path without replacing EditorState or undo history", () => {
+    const session = EditorSession.createUntitled("未命名");
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      view.dispatch({ changes: { from: 0, insert: "draft" }, selection: { anchor: 5 } });
+      const stateBefore = view.state;
+      session.adoptSavedAs(
+        payload({
+          docToken: "token-2",
+          path: "/docs/untitled.md",
+          text: "draft",
+          hash: "hash-2",
+          size: 5,
+          textUnits: 5,
+        }),
+      );
+
+      expect(session.isUntitled).toBe(false);
+      expect(session.docToken).toBe("token-2");
+      expect(session.attachedView).toBe(view);
+      expect(view.state).toBe(stateBefore);
+      expect(session.readText()).toBe("draft");
+      expect(session.getSnapshot()).toMatchObject({
+        docId: "/docs/untitled.md",
+        fileName: "untitled.md",
+        saveState: "clean",
+        dirty: false,
+        size: 5,
+      });
+
+      undo({
+        state: view.state,
+        dispatch: (transaction: Transaction) => view.dispatch(transaction),
+      });
+      expect(session.readText()).toBe("");
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
   });
 
   it("accepts extra extensions for the T-009 composition hook", () => {

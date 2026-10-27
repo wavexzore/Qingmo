@@ -43,6 +43,45 @@ pub async fn document_open(
         })?
 }
 
+#[tauri::command]
+pub async fn document_save_as(
+    app: State<'_, AppHandle>,
+    registry: State<'_, DocumentRegistry>,
+    text: String,
+) -> Result<FilePayload, AppError> {
+    let registry = registry.inner().clone();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+
+    app.dialog()
+        .file()
+        .add_filter("Markdown", &["md", "markdown"])
+        .set_file_name("未命名.md")
+        .save_file(move |selected| {
+            let _ = sender.send(selected);
+        });
+
+    let selected = receiver
+        .await
+        .map_err(|_| AppError::new(AppErrorCode::Cancelled, "save dialog was closed"))?
+        .ok_or_else(|| AppError::new(AppErrorCode::Cancelled, "save dialog was cancelled"))?;
+
+    let path = selected.into_path().map_err(|error| {
+        AppError::new(
+            AppErrorCode::InvalidPath,
+            format!("the save dialog returned an unreadable path: {error}"),
+        )
+    })?;
+
+    tauri::async_runtime::spawn_blocking(move || registry.save_as(path, &text))
+        .await
+        .map_err(|error| {
+            AppError::new(
+                AppErrorCode::Io,
+                format!("document save-as task failed: {error}"),
+            )
+        })?
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn document_reload(
     doc_token: String,

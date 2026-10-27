@@ -1,5 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppServicesProvider } from "../../app/AppServices";
@@ -38,21 +39,24 @@ describe("DocumentSessionProvider", () => {
     const captured: { current: ContextValue | null } = { current: null };
 
     const { unmount } = render(
-      <AppServicesProvider services={{ ipc, platform: new FakePlatform() }}>
-        <DocumentSessionProvider>
-          <Probe
-            ipc={ipc}
-            onContext={(value) => {
-              captured.current = value;
-            }}
-          />
-        </DocumentSessionProvider>
-      </AppServicesProvider>,
+      <StrictMode>
+        <AppServicesProvider services={{ ipc, platform: new FakePlatform() }}>
+          <DocumentSessionProvider>
+            <Probe
+              ipc={ipc}
+              onContext={(value) => {
+                captured.current = value;
+              }}
+            />
+          </DocumentSessionProvider>
+        </AppServicesProvider>
+      </StrictMode>,
     );
 
+    expect(captured.current?.session?.isUntitled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "open" }));
     await waitFor(() => {
-      expect(captured.current?.coordinator).not.toBeNull();
+      expect(captured.current?.session?.getSnapshot().docId).toBe("/docs/note.md");
     });
     const session = captured.current?.session;
     const coordinator = captured.current?.coordinator;

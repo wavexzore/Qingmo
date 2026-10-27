@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::error::{AppError, AppErrorCode};
-use crate::ipc::dto::{FilePayload, ReadOnlyReason, TextFormat};
+use crate::ipc::dto::{FilePayload, LineEnding, ReadOnlyReason, TextEncoding, TextFormat};
+use crate::services::atomic_writer::write_formatted;
 use crate::services::file_service::{FileService, ParsedFile};
 
 /// Opaque IPC handle. It is intentionally not a document identity.
@@ -119,6 +120,68 @@ impl DocumentRegistry {
         Ok(parsed.into_payload(token.as_str(), path_to_display(&canonical_target)))
     }
 
+    /// Writes an untitled document to a path chosen by the native save dialog.
+    ///
+    /// The dialog has already confirmed overwrite intent, so this path does
+    /// not perform the base-hash conflict check used by `AtomicWriter::write`.
+    /// It still reuses the same LF/NUL/10MiB validation and atomic replacement.
+    /// Existing files keep their encoding/BOM/EOL; new files default to UTF-8
+    /// without a BOM and LF line endings.
+    pub fn save_as(&self, selected: PathBuf, text_lf: &str) -> Result<FilePayload, AppError> {
+        let selected = with_markdown_extension(selected);
+        ensure_save_extension(&selected)?;
+
+        let canonical_target = resolve_save_target(&selected)?;
+        ensure_save_extension(&canonical_target)?;
+
+        let format = match FileService::read(&canonical_target) {
+            Ok(parsed) => parsed.format,
+            Err(error) if error.code == AppErrorCode::NotFound => TextFormat {
+                encoding: TextEncoding::Utf8,
+                has_bom: false,
+                eol: LineEnding::Lf,
+            },
+            Err(error) => return Err(error),
+        };
+
+        let result = write_formatted(&canonical_target, &format, text_lf)?;
+        let text_units = text_lf.encode_utf16().count() as u64;
+        let token = DocToken::new();
+        let record = Arc::new(DocumentRecord {
+            raw_selected: selected,
+            canonical_target: canonical_target.clone(),
+            state: Mutex::new(DocState {
+                format: format.clone(),
+                read_only: None,
+                base_hash: result.hash.clone(),
+                disk_size: result.size,
+                mtime_ms: result.mtime_ms,
+            }),
+        });
+
+        let mut docs = self
+            .inner
+            .docs
+            .write()
+            .map_err(|_| AppError::new(AppErrorCode::Io, "document registry lock poisoned"))?;
+        docs.clear();
+        docs.insert(token.clone(), record);
+
+        Ok(FilePayload {
+            doc_token: token.as_str().to_string(),
+            path: path_to_display(&canonical_target),
+            text: text_lf.to_string(),
+            format,
+            mixed_eol: false,
+            hash: result.hash,
+            size: result.size,
+            text_units,
+            mtime_ms: result.mtime_ms,
+            read_only: false,
+            read_only_reason: None,
+        })
+    }
+
     pub fn reload(&self, token: &str) -> Result<FilePayload, AppError> {
         let record = self.get(token)?;
 
@@ -175,6 +238,63 @@ impl DocumentRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+fn with_markdown_extension(mut path: PathBuf) -> PathBuf {
+    let has_extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| !value.is_empty());
+    if !has_extension {
+        path.set_extension("md");
+    }
+    path
+}
+
+/// Save-as only creates plain Markdown. Opening `.mdx` remains read-only, so
+/// saving a new untitled document as MDX would immediately lock it.
+fn ensure_save_extension(path: &Path) -> Result<(), AppError> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+
+    match extension.as_deref() {
+        Some("md" | "markdown") => Ok(()),
+        _ => Err(AppError::new(
+            AppErrorCode::UnsupportedExtension,
+            format!(
+                "save-as only supports .md and .markdown: {}",
+                path.display()
+            ),
+        )),
+    }
+}
+
+fn resolve_save_target(path: &Path) -> Result<PathBuf, AppError> {
+    match std::fs::canonicalize(path) {
+        Ok(canonical) => Ok(canonical),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let parent = path.parent().ok_or_else(|| {
+                AppError::new(AppErrorCode::InvalidPath, "the save path has no parent")
+            })?;
+            let canonical_parent = std::fs::canonicalize(parent).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    AppError::new(
+                        AppErrorCode::NotFound,
+                        format!("parent directory not found: {}", parent.display()),
+                    )
+                } else {
+                    AppError::from_io(&error)
+                }
+            })?;
+            let file_name = path.file_name().ok_or_else(|| {
+                AppError::new(AppErrorCode::InvalidPath, "the save path has no file name")
+            })?;
+            Ok(canonical_parent.join(file_name))
+        }
+        Err(error) => Err(AppError::from_io(&error)),
     }
 }
 

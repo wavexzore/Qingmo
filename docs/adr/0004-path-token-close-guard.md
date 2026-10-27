@@ -16,9 +16,9 @@
 
 ### 路径与 token
 
-1. **原生 dialog 在 Rust：** `document_open` 内部调用 `tauri-plugin-dialog` 的 `pick_file`；前端没有 `dialog:allow-open` 权限，也不接收/提交 path。
-2. **不透明 token：** 打开成功后 Rust 生成 UUID `docToken`；前端只持有 token、显示用 canonical path、格式/大小/只读等元数据。
-3. **单文档：** P1 `DocumentRegistry` 只保留一个活动文档；成功 open 会先清空旧 token，旧 token 随后返回 `INVALID_PATH`。
+1. **原生 dialog 在 Rust：** `document_open` 内部调用 `tauri-plugin-dialog` 的 `pick_file`，`document_save_as` 调用 `save_file`；前端没有 `dialog:allow-open`/`dialog:allow-save` 权限，也不接收/提交 path。另存为只传 LF-only text，Rust 负责选择路径、扩展名、编码与原子写。
+2. **不透明 token：** 打开或另存为成功后 Rust 生成 UUID `docToken`；前端只持有 token、显示用 canonical path、格式/大小/只读等元数据。
+3. **单文档：** P1 `DocumentRegistry` 只保留一个活动文档；成功 open/save-as 会先清空旧 token，旧 token 随后返回 `INVALID_PATH`。
 4. **raw + canonical：** 同时记录 dialog 返回的 `raw_selected` 与实际读写的 `canonical_target`；`reload` 重新 canonicalize，若符号链接指向变化则返回 `OUTSIDE_SCOPE`，防止替换攻击。
 5. **扩展名/大小/编码校验在 Rust：** `.md/.markdown/.mdx`；`.mdx` 只读；10MiB 上限；UTF-8/UTF-16 BOM 严格解码；混合 EOL/UTF-32/无 BOM UTF-16 拒绝或只读。
 6. **保存只接受 token：** `document_write_atomic` 不接收 path/format/force；Rust 根据 token 找到 record，并在锁内完成 hash/编码/原子写。

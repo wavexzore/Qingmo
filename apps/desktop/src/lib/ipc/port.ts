@@ -13,6 +13,8 @@ export interface CloseConfirmRequest {
 export interface IpcPort {
   documentOpen(): Promise<FilePayload>;
   documentReload(docToken: string): Promise<FilePayload>;
+  /** Native Save As; the webview supplies text but never a path. */
+  documentSaveAs(text: string): Promise<FilePayload>;
   documentWriteAtomic(request: SaveRequest): Promise<SaveResult>;
   appCloseConfirm(request: CloseConfirmRequest): Promise<void>;
 }

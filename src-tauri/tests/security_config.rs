@@ -44,6 +44,7 @@ fn capability_contains_only_expected_permissions() {
         vec![
             "allow-document-open",
             "allow-document-reload",
+            "allow-document-save-as",
             "allow-document-write-atomic",
             "allow-app-close-confirm",
         ]
@@ -82,19 +83,30 @@ fn production_csp_is_strict_and_has_no_wildcards() {
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data:",
+        "img-src 'self' data: https:",
         "connect-src 'self' ipc: http://ipc.localhost",
-        "frame-src 'none'",
+        "frame-src 'self'",
         "object-src 'none'",
         "base-uri 'none'",
         "form-action 'none'",
-        "frame-ancestors 'none'",
+        "frame-ancestors 'self'",
     ] {
         assert!(
             csp.contains(directive),
             "CSP missing directive: {directive}\nactual: {csp}"
         );
     }
+
+    let img_src = csp
+        .split(';')
+        .map(str::trim)
+        .find(|directive| directive.starts_with("img-src "))
+        .expect("CSP must contain an img-src directive");
+    assert_eq!(img_src, "img-src 'self' data: https:");
+    assert!(
+        !img_src.contains("http:"),
+        "plain HTTP images must stay blocked: {img_src}"
+    );
 
     let dev_csp = security["devCsp"]
         .as_str()

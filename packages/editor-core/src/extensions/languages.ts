@@ -4,14 +4,14 @@ import { javascript } from "@codemirror/lang-javascript";
 import { LanguageDescription, LanguageSupport, StreamLanguage } from "@codemirror/language";
 
 /**
- * Only the languages promised by the P1 design are registered.
+ * Languages advertised by the Markdown syntax guide. The list is deliberately
+ * explicit instead of using the full `@codemirror/language-data` bundle.
  *
  * HTML/CSS/JavaScript are statically linked because `@codemirror/lang-markdown`
  * itself imports `@codemirror/lang-html` (which imports CSS + JavaScript); a
- * dynamic import cannot move those modules into another chunk. JSON, Rust,
- * Python and Shell remain genuine lazy chunks; TypeScript reuses the linked
- * JavaScript grammar. The full
- * `@codemirror/language-data` bundle is never imported.
+ * dynamic import cannot move those modules into another chunk. Every other
+ * grammar stays behind a lazy import so opening a plain document never pays
+ * for the language catalog.
  */
 export const codeLanguages: readonly LanguageDescription[] = Object.freeze([
   LanguageDescription.of({
@@ -64,6 +64,130 @@ export const codeLanguages: readonly LanguageDescription[] = Object.freeze([
     alias: ["css"],
     extensions: ["css"],
     load: () => Promise.resolve(css()),
+  }),
+  LanguageDescription.of({
+    name: "YAML",
+    alias: ["yaml", "yml"],
+    extensions: ["yaml", "yml"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/yaml").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.yaml)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "TOML",
+    alias: ["toml"],
+    extensions: ["toml"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/toml").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.toml)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "INI",
+    alias: ["ini", "properties"],
+    extensions: ["ini", "properties"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/properties").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.properties)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "Go",
+    alias: ["go", "golang"],
+    extensions: ["go"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/go").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.go)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "Java",
+    alias: ["java"],
+    extensions: ["java"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/clike").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.java)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "C",
+    alias: ["c", "h"],
+    extensions: ["c", "h"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/clike").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.c)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "C++",
+    alias: ["cpp", "c++", "cc", "cxx", "hpp"],
+    extensions: ["cpp", "cc", "cxx", "hpp", "hh"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/clike").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.cpp)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "C#",
+    alias: ["csharp", "c#", "cs"],
+    extensions: ["cs"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/clike").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.csharp)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "SQL",
+    alias: ["sql"],
+    extensions: ["sql"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/sql").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.standardSQL)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "SCSS",
+    alias: ["scss", "sass"],
+    extensions: ["scss", "sass"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/sass").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.sass)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "XML",
+    alias: ["xml"],
+    extensions: ["xml", "xsl", "svg"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/xml").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.xml)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "Diff",
+    alias: ["diff", "patch"],
+    extensions: ["diff", "patch"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/diff").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.diff)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "Dockerfile",
+    alias: ["dockerfile", "docker"],
+    extensions: ["dockerfile", "Dockerfile"],
+    load: () =>
+      import("@codemirror/legacy-modes/mode/dockerfile").then(
+        (module) => new LanguageSupport(StreamLanguage.define(module.dockerFile)),
+      ),
+  }),
+  LanguageDescription.of({
+    name: "Markdown",
+    alias: ["markdown", "md"],
+    extensions: ["md", "markdown"],
+    load: () =>
+      import("@codemirror/lang-markdown").then((module) => module.markdown({ codeLanguages: [] })),
   }),
 ]);
 

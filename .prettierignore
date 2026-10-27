@@ -8,4 +8,5 @@ src-tauri/target
 src-tauri/gen
 .gitnexus
 .claude
+third_party
 packages/shared/src/generated

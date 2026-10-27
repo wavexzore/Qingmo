@@ -103,12 +103,14 @@ describe("Tauri IpcPort adapter", () => {
     tauriMocks.invoke
       .mockResolvedValueOnce(payload)
       .mockResolvedValueOnce(payload)
+      .mockResolvedValueOnce(payload)
       .mockResolvedValueOnce(saveResult)
       .mockResolvedValueOnce(null);
     const ipc = createTauriIpc();
 
     await expect(ipc.documentOpen()).resolves.toEqual(payload);
     await expect(ipc.documentReload("token-1")).resolves.toEqual(payload);
+    await expect(ipc.documentSaveAs("new\n")).resolves.toEqual(payload);
     await expect(
       ipc.documentWriteAtomic({
         docToken: "token-1",
@@ -122,12 +124,15 @@ describe("Tauri IpcPort adapter", () => {
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(2, "document_reload", {
       docToken: "token-1",
     });
-    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(3, "document_write_atomic", {
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(3, "document_save_as", {
+      text: "new\n",
+    });
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(4, "document_write_atomic", {
       docToken: "token-1",
       text: "new\n",
       expectedCurrentHash: "hash-0",
     });
-    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(4, "app_close_confirm", {
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(5, "app_close_confirm", {
       allow: false,
     });
   });
@@ -195,6 +200,39 @@ describe("FakeIpc", () => {
     await expect(ipc.documentOpen()).rejects.toMatchObject({
       code: "CANCELLED",
     });
+  });
+
+  it("saves an untitled buffer through the fake Save As dialog", async () => {
+    const ipc = new FakeIpc({ saveAsFile: "/docs/untitled.md" });
+    const saved = await ipc.documentSaveAs("draft\n");
+
+    expect(saved.path).toBe("/docs/untitled.md");
+    expect(saved.text).toBe("draft\n");
+    expect(saved.hash).toBe(fakeHash("draft\n"));
+    expect(saved.format).toEqual({ encoding: "utf8", hasBom: false, eol: "lf" });
+    expect(ipc.getFile("/docs/untitled.md")?.text).toBe("draft\n");
+    await expect(
+      ipc.documentWriteAtomic({ docToken: saved.docToken, text: "next\n" }),
+    ).resolves.toMatchObject({ hash: fakeHash("next\n") });
+  });
+
+  it("appends .md and rejects unsupported Save As extensions", async () => {
+    const ipc = new FakeIpc({ saveAsFile: "/docs/no-extension" });
+    const saved = await ipc.documentSaveAs("body");
+    expect(saved.path).toBe("/docs/no-extension.md");
+
+    ipc.setSaveAsFile("/docs/note.txt");
+    await expect(ipc.documentSaveAs("body")).rejects.toMatchObject({
+      code: "UNSUPPORTED_EXTENSION",
+    });
+  });
+
+  it("returns CANCELLED when the fake Save As dialog is cancelled", async () => {
+    const ipc = new FakeIpc({ saveAsFile: null });
+    await expect(ipc.documentSaveAs("draft")).rejects.toMatchObject({
+      code: "CANCELLED",
+    });
+    expect(ipc.getFile("/docs/untitled.md")).toBeUndefined();
   });
 
   it("invalidates the previous token when another file opens", async () => {

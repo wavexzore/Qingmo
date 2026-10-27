@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -26,8 +27,15 @@ export default defineConfig({
     minify: process.env.TAURI_ENV_DEBUG ? false : "esbuild",
     sourcemap: Boolean(process.env.TAURI_ENV_DEBUG),
     rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        "mermaid-renderer": fileURLToPath(new URL("./mermaid-renderer.html", import.meta.url)),
+      },
       output: {
         manualChunks(id) {
+          if (id.includes("commonjsHelpers")) {
+            return "commonjs";
+          }
           if (!id.includes("node_modules")) {
             return undefined;
           }

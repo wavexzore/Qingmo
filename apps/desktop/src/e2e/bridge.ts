@@ -24,6 +24,7 @@ export interface E2eBridge {
   setDiskText(path: string, text: string): void;
   getFile(path: string): FakeFileSnapshot | undefined;
   setOpenFile(path: string | null): void;
+  setSaveAsFile(path: string | null): void;
   emitClose(reason?: CloseReason): void;
   emitBlur(): void;
   setComposing(composing: boolean): void;
@@ -55,6 +56,9 @@ export function createE2eServices(): { ipc: FakeIpc; platform: FakePlatform } {
     getFile: (path) => ipc.getFile(path),
     setOpenFile: (path) => {
       ipc.setOpenFile(path);
+    },
+    setSaveAsFile: (path) => {
+      ipc.setSaveAsFile(path);
     },
     emitClose: (reason = "window") => {
       platform.emitCloseRequested(reason);

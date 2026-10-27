@@ -64,10 +64,9 @@ export const common = {
 
 export const editor = {
   empty: {
-    title: "还没有打开的文档",
-    description: "从欢迎页打开一个 .md 或 .markdown 文件，正文只会存在于编辑器状态中。",
-    hint: "打开后会显示文件名、编码、换行符与保存状态。",
-    openButton: "打开文件",
+    title: "未命名",
+    placeholder: "开始写作…",
+    hint: "按 {{shortcut}} 可以打开文件。",
   },
   document: {
     title: "文档已载入",
