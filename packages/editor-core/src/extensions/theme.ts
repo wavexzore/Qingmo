@@ -46,6 +46,9 @@ const editorThemeSpec = {
   ".cm-activeLine": {
     backgroundColor: "var(--qm-accent-soft)",
   },
+  ".cm-activeLine.cm-selectedLine": {
+    backgroundColor: "transparent",
+  },
   ".cm-activeLineGutter": {
     backgroundColor: "transparent",
     color: "var(--qm-accent)",
@@ -53,8 +56,14 @@ const editorThemeSpec = {
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--qm-accent)",
   },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-    backgroundColor: "var(--qm-accent-soft)",
+  ".cm-selectionBackground": {
+    backgroundColor: "var(--qm-accent-soft) !important",
+  },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "var(--qm-accent) !important",
+  },
+  "&.cm-focused .cm-selectedText, &.cm-focused .cm-selectedText *": {
+    color: "var(--qm-surface) !important",
   },
   ".cm-selectionMatch": {
     backgroundColor: "var(--qm-accent-soft)",
