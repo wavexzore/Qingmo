@@ -18,11 +18,38 @@ pub const COMMANDS: &[&str] = &[
 pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";
 pub const EVENT_UPDATE_STATE: &str = "app://update-state";
 pub const EVENT_UPDATE_PROGRESS: &str = "app://update-progress";
+/// Native menu item activation. The payload is one of `MENU_ACTIONS`.
+pub const EVENT_MENU_ACTION: &str = "app://menu-action";
 
 pub const EVENTS: &[&str] = &[
     EVENT_CLOSE_REQUESTED,
     EVENT_UPDATE_STATE,
     EVENT_UPDATE_PROGRESS,
+    EVENT_MENU_ACTION,
+];
+
+/// Menu item ids that the native menu forwards to the webview.
+///
+/// Predefined AppKit items (undo/copy/paste/close/fullscreen) stay native and
+/// are intentionally absent: they must be handled by the first responder.
+pub const MENU_FILE_OPEN: &str = "file.open";
+pub const MENU_FILE_SAVE: &str = "file.save";
+pub const MENU_PALETTE_OPEN: &str = "palette.open";
+pub const MENU_VIEW_TOGGLE_LIVE_PREVIEW: &str = "view.toggleLivePreview";
+pub const MENU_VIEW_TOGGLE_THEME: &str = "view.toggleTheme";
+pub const MENU_THEME_LIGHT: &str = "theme.light";
+pub const MENU_THEME_DARK: &str = "theme.dark";
+pub const MENU_THEME_SYSTEM: &str = "theme.system";
+
+pub const MENU_ACTIONS: &[&str] = &[
+    MENU_FILE_OPEN,
+    MENU_FILE_SAVE,
+    MENU_PALETTE_OPEN,
+    MENU_VIEW_TOGGLE_LIVE_PREVIEW,
+    MENU_VIEW_TOGGLE_THEME,
+    MENU_THEME_LIGHT,
+    MENU_THEME_DARK,
+    MENU_THEME_SYSTEM,
 ];
 
 /// Tauri turns `document_open` into the ACL permission `allow-document-open`.

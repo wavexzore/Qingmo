@@ -138,7 +138,9 @@ test("renders inline and block math with KaTeX from the guide", async ({ page })
   await expect(page.locator(".cm-md-math-inline .katex")).toHaveCount(3);
 
   await go("渲染效果：", DOC_TEXT.indexOf("### 18.2"));
-  const block = page.locator(".cm-md-math-block");
+  // The document header was removed, so the taller viewport may expose the
+  // neighbouring math block too; assert the first block renders KaTeX.
+  const block = page.locator(".cm-md-math-block").first();
   await expect(block.locator(".katex")).toHaveCount(1);
   await expect(block).toBeVisible();
 });

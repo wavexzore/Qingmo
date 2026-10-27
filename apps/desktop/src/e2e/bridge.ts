@@ -6,7 +6,7 @@ import type {
   UpdateSnapshot,
 } from "@qingmo/shared";
 
-import { COMMANDS } from "../lib/ipc/commands";
+import { COMMANDS, type MenuAction } from "../lib/ipc/commands";
 import { AppError as AppErrorClass } from "../lib/ipc/errors";
 import { FakeIpc, type FakeFileSnapshot } from "../lib/ipc/fake";
 import type { CloseConfirmRequest } from "../lib/ipc/port";
@@ -40,6 +40,7 @@ export interface E2eBridge {
   setOpenFile(path: string | null): void;
   setSaveAsFile(path: string | null): void;
   emitClose(reason?: CloseReason): void;
+  emitMenuAction(action: MenuAction): void;
   emitBlur(): void;
   setComposing(composing: boolean): void;
   failSaveAlways(code?: AppErrorCode): void;
@@ -88,6 +89,9 @@ export function createE2eServices(): {
     },
     emitClose: (reason = "window") => {
       platform.emitCloseRequested(reason);
+    },
+    emitMenuAction: (action) => {
+      platform.emitMenuAction(action);
     },
     emitBlur: () => {
       platform.emitBlur();

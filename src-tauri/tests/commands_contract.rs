@@ -48,9 +48,17 @@ fn frontend_command_mirror_contains_every_contract_name() {
         &[
             "app://close-requested",
             "app://update-state",
-            "app://update-progress"
+            "app://update-progress",
+            "app://menu-action"
         ]
     );
+
+    for action in qingmo_lib::ipc::contract::MENU_ACTIONS {
+        assert!(
+            source.contains(&format!("\"{action}\"")),
+            "commands.ts is missing menu action {action}"
+        );
+    }
 }
 
 #[test]

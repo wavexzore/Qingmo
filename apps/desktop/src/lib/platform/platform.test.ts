@@ -47,6 +47,20 @@ describe("FakePlatform", () => {
     platform.setComposing(true);
     expect(platform.isComposing()).toBe(true);
   });
+
+  it("delivers menu actions until unsubscribed", () => {
+    const platform = new FakePlatform();
+    const received: string[] = [];
+    const stop = platform.onMenuAction((action) => received.push(action));
+
+    platform.emitMenuAction("file.open");
+    platform.emitMenuAction("theme.dark");
+    stop();
+    platform.emitMenuAction("file.save");
+
+    expect(received).toEqual(["file.open", "theme.dark"]);
+    expect(platform.listenerCounts.menu).toBe(0);
+  });
 });
 
 describe("composition tracker", () => {
@@ -106,6 +120,33 @@ describe("Tauri PlatformPort adapter", () => {
     await Promise.resolve();
 
     expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps app://menu-action, ignores unknown ids, and unsubscribes", async () => {
+    let handler: ((event: { payload: string }) => void) | undefined;
+    const unlisten = vi.fn<() => void>();
+    tauriMocks.listen.mockImplementation(async (_event: string, callback: typeof handler) => {
+      handler = callback;
+      return unlisten;
+    });
+
+    const platform = createTauriPlatform();
+    const received: string[] = [];
+    const stop = platform.onMenuAction((action) => received.push(action));
+
+    await vi.waitFor(() => {
+      expect(tauriMocks.listen).toHaveBeenCalledWith("app://menu-action", expect.any(Function));
+      expect(handler).toBeTypeOf("function");
+    });
+
+    handler?.({ payload: "theme.dark" });
+    handler?.({ payload: "unknown.action" });
+    expect(received).toEqual(["theme.dark"]);
+
+    stop();
+    expect(unlisten).toHaveBeenCalledTimes(1);
+    handler?.({ payload: "file.open" });
+    expect(received).toEqual(["theme.dark"]);
   });
 
   it("delivers window blur and reports composition state", () => {

@@ -32,11 +32,11 @@ describe("App Shell", () => {
     renderAt("/");
 
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打开 Markdown 文件" })).toBeEnabled();
     expect(screen.getByTestId("editor-host")).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toHaveAttribute("contenteditable", "true");
     expect(screen.getByRole("textbox")).toHaveAttribute("aria-placeholder", "开始写作…");
+    expect(screen.queryByRole("heading", { name: "未命名" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开 Markdown 文件" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "最近文件" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("status-bar")).not.toBeInTheDocument();
   });
@@ -45,7 +45,7 @@ describe("App Shell", () => {
     renderAt("/editor");
 
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "未命名" })).not.toBeInTheDocument();
   });
 
   it("keeps both routes on the editor surface", async () => {

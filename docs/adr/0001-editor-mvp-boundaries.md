@@ -58,6 +58,7 @@
 ## 更新记录
 
 - **2026-10-27：** Live Preview 从“最小标题/强调/链接/列表”扩展为 CommonMark + GFM 全量语法，并引入内联 Widget 与 `atomicRanges`；仍坚持唯一 `EditorState`、唯一 EditorView，不使用 ViewPlugin block decoration，也不引入第二文档模型。
+- **2026-10-27（同日后续）：** 原生菜单从“仅 macOS 自定义 Quit 项”扩展为 macOS/Windows 中文菜单（文件/编辑/显示/主题/窗口/帮助）；自定义项只复用既有命令，Quit/Close/Fullscreen 由 Rust 统一处理，不新增业务命令。
 
 ## 未决问题（P2 前置）
 

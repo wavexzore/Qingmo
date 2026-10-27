@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 
+import type { ReadOnlyReason } from "@qingmo/shared";
 import { cx } from "@qingmo/ui";
 
 import type { SaveState } from "../lib/save-state";
@@ -17,6 +18,9 @@ export interface StatusBarSnapshot {
   mode: StatusBarMode;
   /** Live Preview is off because the document exceeds the unit budget. */
   largeFile: boolean;
+  /** Read-only documents stay loadable but never accept edits. */
+  readOnly: boolean;
+  readOnlyReason: ReadOnlyReason | null;
 }
 
 export const EMPTY_STATUS_SNAPSHOT: StatusBarSnapshot = {
@@ -28,6 +32,8 @@ export const EMPTY_STATUS_SNAPSHOT: StatusBarSnapshot = {
   size: null,
   mode: "source",
   largeFile: false,
+  readOnly: false,
+  readOnlyReason: null,
 };
 
 const saveStateTone: Record<SaveState, string> = {
@@ -74,6 +80,12 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
   const fileName = snapshot.fileName ?? t("common:status.noFile");
   const saveLabel = t(`common:saveState.${snapshot.saveState}`);
   const modeLabel = t(`common:mode.${snapshot.mode}`);
+  const readOnlyLabel =
+    snapshot.readOnlyReason === "mdx"
+      ? t("editor:document.readOnlyMdx")
+      : snapshot.readOnlyReason === "mixedEol"
+        ? t("editor:document.readOnlyMixedEol")
+        : t("editor:document.readOnly");
   const cursorLabel = snapshot.cursor
     ? t("editor:status.position", {
         line: snapshot.cursor.line,
@@ -94,6 +106,14 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
           className={cx("size-1.5 shrink-0 rounded-full", saveStateTone[snapshot.saveState])}
         />
         <span className="truncate font-medium text-ink">{fileName}</span>
+        {snapshot.readOnly ? (
+          <span
+            data-testid="read-only-badge"
+            className="shrink-0 rounded-full border border-line-strong bg-surface-muted px-2 py-0.5 text-[10px] text-ink-muted"
+          >
+            {readOnlyLabel}
+          </span>
+        ) : null}
       </span>
 
       <span className="hidden h-3 w-px shrink-0 bg-line sm:block" aria-hidden="true" />

@@ -8,6 +8,7 @@ import {
   commandPermission,
   EVENTS,
   EVENT_NAMES,
+  MENU_ACTION_NAMES,
 } from "./commands";
 
 describe("IPC contract mirror", () => {
@@ -35,15 +36,31 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.documentWriteAtomic]).toBe("allow-document-write-atomic");
   });
 
-  it("keeps the three events stable", () => {
+  it("keeps the four events stable", () => {
     expect(EVENT_NAMES).toEqual([
       "app://close-requested",
       "app://update-state",
       "app://update-progress",
+      "app://menu-action",
     ]);
     expect(EVENTS.closeRequested).toBe("app://close-requested");
     expect(EVENTS.updateState).toBe("app://update-state");
     expect(EVENTS.updateProgress).toBe("app://update-progress");
+    expect(EVENTS.menuAction).toBe("app://menu-action");
+  });
+
+  it("exposes every native menu action once", () => {
+    expect(MENU_ACTION_NAMES).toEqual([
+      "file.open",
+      "file.save",
+      "palette.open",
+      "view.toggleLivePreview",
+      "view.toggleTheme",
+      "theme.light",
+      "theme.dark",
+      "theme.system",
+    ]);
+    expect(new Set(MENU_ACTION_NAMES).size).toBe(MENU_ACTION_NAMES.length);
   });
 
   it("accepts the optional expected hash on save requests", () => {

@@ -47,6 +47,7 @@ export interface E2eBridge {
   setOpenFile(path: string | null): void;
   setSaveAsFile(path: string | null): void;
   emitClose(reason?: CloseReason): void;
+  emitMenuAction(action: string): void;
   emitBlur(): void;
   setComposing(composing: boolean): void;
   failSaveAlways(code?: string): void;
