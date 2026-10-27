@@ -17,18 +17,18 @@ The editor is built around three non-negotiable goals:
 2. **A 10 MB Markdown file stays editable.** Large documents shed preview work instead of freezing or refusing to open.
 3. **Third-party code never runs on the main thread.** The future plugin runtime is designed around a Web Worker, a sandboxed iframe and a capability broker.
 
-![Qingmo editing a Markdown document with Live Preview and a rendered Mermaid diagram](docs/screenshots/editor-light.png)
+![Qingmo editing a Markdown document with Live Preview and a rendered Mermaid diagram](assets/screenshots/editor-light.png)
 
 <details>
 <summary>More screenshots</summary>
 
 **Dark theme**
 
-![Qingmo with the dark theme](docs/screenshots/editor-dark.png)
+![Qingmo with the dark theme](assets/screenshots/editor-dark.png)
 
 **Command palette**
 
-![Qingmo command palette](docs/screenshots/command-palette.png)
+![Qingmo command palette](assets/screenshots/command-palette.png)
 
 </details>
 
@@ -150,12 +150,7 @@ A few invariants shape the codebase:
 - **Live Preview is a viewport decoration pass**, never a rich-text round trip. Parsing is limited to visible ranges; large files drop the pass entirely.
 - **Ports isolate the platform**: `IpcPort`, `PlatformPort` and `UpdatePort` have Tauri and fake implementations, so browser tests and Playwright never touch native APIs.
 
-Read the full design before contributing:
-
-- [Blueprint](docs/BLUEPRINT.md) — architecture, plugin model, data model, budgets, roadmap
-- [Topology](docs/TOPOLOGY.md) — runtime topology and trust boundaries
-- [Research](docs/RESEARCH.md) — prior art and supporting evidence
-- [ADRs](docs/adr/README.md) — implementation-level decisions and their accepted trade-offs
+The full design — blueprint, runtime topology, research notes and implementation ADRs — is kept in `docs/` during development. That directory is intentionally **not versioned in Git**; the sections above summarize the parts contributors need. ADR filenames still follow `docs/adr/NNNN-*.md`.
 
 ### Repository layout
 
@@ -167,7 +162,7 @@ packages/ui/         Design tokens and shared primitives
 src-tauri/           Rust commands, atomic IO, close guard, updater state machine
 e2e/                 Playwright specs and fixtures
 bench/               Deterministic performance fixtures and runner
-docs/                Blueprint, topology, ADRs, task records
+docs/                Local design docs and task records (not versioned)
 ```
 
 ## Roadmap

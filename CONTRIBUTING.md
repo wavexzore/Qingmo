@@ -7,8 +7,8 @@ Thanks for taking the time to improve Qingmo. This guide keeps changes small, te
 Read these first — they explain constraints that are easy to break accidentally:
 
 - [Architecture invariants](README.md#architecture)
-- [Implementation ADRs](docs/adr/README.md)
-- [Blueprint](docs/BLUEPRINT.md)
+- Implementation ADRs: `docs/adr/` (kept locally, not versioned)
+- Blueprint: `docs/BLUEPRINT.md` (kept locally, not versioned)
 
 If an issue touches saving, window closing, path handling, IPC or the update chain, open a design discussion before writing code. Those paths have exactly one supported design and are guarded by tests.
 
@@ -44,11 +44,11 @@ Adding or changing a command, event, permission or DTO requires:
 1. Update the contract source and regenerate TypeScript types.
 2. Update the capability allowlist and negative tests.
 3. Cover the new shape in contract tests.
-4. Update [ADR-0003](docs/adr/0003-ipc-contract.md) and the command table in the task design doc.
+4. Update `docs/adr/0003-ipc-contract.md` and the command table in the task design doc.
 
 ### Changes to saving or closing
 
-`SaveCoordinator` is the only save path. Do not add a second one. Any change must keep debounce, single-flight, conflict detection and close flushing intact, and must update [ADR-0002](docs/adr/0002-single-save-path.md) or [ADR-0004](docs/adr/0004-path-token-close-guard.md) when behavior changes.
+`SaveCoordinator` is the only save path. Do not add a second one. Any change must keep debounce, single-flight, conflict detection and close flushing intact, and must update `docs/adr/0002-single-save-path.md` or `docs/adr/0004-path-token-close-guard.md` when behavior changes.
 
 ## Style
 
