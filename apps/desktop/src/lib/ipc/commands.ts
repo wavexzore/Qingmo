@@ -43,6 +43,7 @@ export const EVENTS = {
   closeRequested: "app://close-requested",
   updateState: "app://update-state",
   updateProgress: "app://update-progress",
+  menuAction: "app://menu-action",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -51,7 +52,38 @@ export const EVENT_NAMES = [
   EVENTS.closeRequested,
   EVENTS.updateState,
   EVENTS.updateProgress,
+  EVENTS.menuAction,
 ] as const satisfies readonly EventName[];
+
+/**
+ * Native menu item ids forwarded by `app://menu-action`.
+ *
+ * Predefined AppKit items (undo/copy/paste/close/fullscreen) never appear
+ * here: they are handled by the first responder inside the webview.
+ */
+export const MENU_ACTIONS = {
+  fileOpen: "file.open",
+  fileSave: "file.save",
+  paletteOpen: "palette.open",
+  toggleLivePreview: "view.toggleLivePreview",
+  toggleTheme: "view.toggleTheme",
+  themeLight: "theme.light",
+  themeDark: "theme.dark",
+  themeSystem: "theme.system",
+} as const;
+
+export type MenuAction = (typeof MENU_ACTIONS)[keyof typeof MENU_ACTIONS];
+
+export const MENU_ACTION_NAMES = [
+  MENU_ACTIONS.fileOpen,
+  MENU_ACTIONS.fileSave,
+  MENU_ACTIONS.paletteOpen,
+  MENU_ACTIONS.toggleLivePreview,
+  MENU_ACTIONS.toggleTheme,
+  MENU_ACTIONS.themeLight,
+  MENU_ACTIONS.themeDark,
+  MENU_ACTIONS.themeSystem,
+] as const satisfies readonly MenuAction[];
 
 export interface CommandRequestMap {
   [COMMANDS.documentOpen]: Record<string, never>;

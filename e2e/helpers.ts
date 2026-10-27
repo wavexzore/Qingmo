@@ -35,13 +35,30 @@ export async function openApp(page: Page, files: SeedFile[] = BASE_FILES): Promi
   }, files);
   await page.goto("/");
   await page.waitForFunction(() => Boolean(window.__QINGMO_E2E__));
-  await expect(page.getByRole("button", { name: "打开 Markdown 文件" })).toBeVisible();
+  await expect(page.getByTestId("untitled-editor")).toBeVisible();
 }
 
 export async function openSeededFile(page: Page, fileName: string): Promise<void> {
-  await page.getByRole("button", { name: "打开 Markdown 文件" }).click();
+  await emitMenuAction(page, "file.open");
   await expect(page.getByTestId("document-session")).toBeVisible();
-  await expect(page.getByRole("heading", { name: fileName })).toBeVisible();
+  await expect(page.getByTestId("status-bar")).toContainText(fileName);
+}
+
+export async function emitMenuAction(
+  page: Page,
+  action:
+    | "file.open"
+    | "file.save"
+    | "palette.open"
+    | "view.toggleLivePreview"
+    | "view.toggleTheme"
+    | "theme.light"
+    | "theme.dark"
+    | "theme.system",
+): Promise<void> {
+  await page.evaluate((next) => {
+    window.__QINGMO_E2E__?.emitMenuAction(next);
+  }, action);
 }
 
 export async function typeInEditor(page: Page, text: string): Promise<void> {

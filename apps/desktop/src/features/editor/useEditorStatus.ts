@@ -36,5 +36,7 @@ export function useEditorStatus(session: EditorSession): StatusBarSnapshot {
     size: snapshot.size,
     mode: snapshot.livePreview ? "livePreview" : "source",
     largeFile: snapshot.largeFile,
+    readOnly: snapshot.readOnly,
+    readOnlyReason: snapshot.readOnlyReason,
   };
 }

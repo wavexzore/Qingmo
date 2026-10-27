@@ -1,5 +1,6 @@
 import type { CloseReason } from "@qingmo/shared";
 
+import type { MenuAction } from "../ipc/commands";
 import type { PlatformPort } from "./port";
 
 /**
@@ -8,6 +9,7 @@ import type { PlatformPort } from "./port";
  */
 export class FakePlatform implements PlatformPort {
   private readonly closeListeners = new Set<(reason: CloseReason) => void>();
+  private readonly menuListeners = new Set<(action: MenuAction) => void>();
   private readonly blurListeners = new Set<() => void>();
   private composing = false;
 
@@ -15,6 +17,13 @@ export class FakePlatform implements PlatformPort {
     this.closeListeners.add(callback);
     return () => {
       this.closeListeners.delete(callback);
+    };
+  }
+
+  onMenuAction(callback: (action: MenuAction) => void): () => void {
+    this.menuListeners.add(callback);
+    return () => {
+      this.menuListeners.delete(callback);
     };
   }
 
@@ -45,7 +54,17 @@ export class FakePlatform implements PlatformPort {
     }
   }
 
-  get listenerCounts(): { close: number; blur: number } {
-    return { close: this.closeListeners.size, blur: this.blurListeners.size };
+  emitMenuAction(action: MenuAction): void {
+    for (const listener of [...this.menuListeners]) {
+      listener(action);
+    }
+  }
+
+  get listenerCounts(): { close: number; menu: number; blur: number } {
+    return {
+      close: this.closeListeners.size,
+      menu: this.menuListeners.size,
+      blur: this.blurListeners.size,
+    };
   }
 }

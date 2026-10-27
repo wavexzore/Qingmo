@@ -6,6 +6,7 @@ import {
   READONLY_TEXT,
   SAVE_AS_PATH,
   emitBlur,
+  emitMenuAction,
   endComposition,
   getFileSize,
   getFileText,
@@ -34,7 +35,7 @@ test("types directly into the untitled editor and Save As binds a real path", as
 
   await expect.poll(() => getFileText(page, SAVE_AS_PATH)).toBe("# Fresh\n\nhello");
   await expect(page.getByTestId("document-session")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "untitled.md" })).toBeVisible();
+  await expect(page.getByTestId("status-bar")).toContainText("untitled.md");
   await expect(page.getByTestId("status-bar")).toContainText("已同步");
 });
 
@@ -82,9 +83,8 @@ test("opens a seeded file, edits it and auto-saves to clean", async ({ page }) =
 test("cancelling the fake dialog leaves the blank editor intact", async ({ page }) => {
   await openApp(page);
   await setOpenFile(page, null);
-  await page.getByRole("button", { name: "打开 Markdown 文件" }).click();
+  await emitMenuAction(page, "file.open");
 
-  await expect(page.getByRole("button", { name: "打开 Markdown 文件" })).toBeEnabled();
   await expect(page.getByTestId("untitled-editor")).toBeVisible();
   await expect(page.getByTestId("document-session")).toHaveCount(0);
 });

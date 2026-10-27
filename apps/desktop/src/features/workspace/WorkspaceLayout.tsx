@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Outlet, useNavigate, useOutletContext } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 
 import type { AppError } from "@qingmo/shared";
 
@@ -9,7 +9,9 @@ import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
 import { useCloseGuard } from "../../app/useCloseGuard";
 import { useThemeService } from "../../app/useThemeService";
 import { useToast } from "../../components/ToastHost";
+import { MENU_ACTIONS } from "../../lib/ipc/commands";
 import { AppError as AppErrorClass } from "../../lib/ipc/errors";
+import { uiStore } from "../../stores/uiStore";
 import { CommandPalette } from "../commands/CommandPalette";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { useCommandKeybindings } from "../commands/keybindings";
@@ -20,15 +22,11 @@ import { UpdateHost } from "../update/UpdateHost";
 import { useUpdateController, useUpdateSnapshot } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
 
-export interface WorkspaceActions {
-  openDocument(): Promise<void>;
-  opening: boolean;
-}
-
 /**
  * App-level workspace layout. It owns the single `file.open` registration and
- * the opening state, so the command remains available on both the blank editor
- * and an open document (T-015's palette) without duplicate registrations.
+ * the native menu dispatch, so commands remain available on both the blank
+ * editor and an open document (T-015's palette) without duplicate
+ * registrations.
  */
 export function WorkspaceLayout() {
   const { t } = useTranslation(["errors", "editor"]);
@@ -39,7 +37,6 @@ export function WorkspaceLayout() {
   const closeGuard = useCloseGuard({ ipc, platform, coordinator });
   const updateController = useUpdateController();
   const updateSnapshot = useUpdateSnapshot();
-  const [opening, setOpening] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const openingRef = useRef(false);
@@ -94,7 +91,6 @@ export function WorkspaceLayout() {
       return;
     }
     openingRef.current = true;
-    setOpening(true);
     try {
       if (coordinatorRef.current) {
         const flushed = await coordinatorRef.current.flush("switch");
@@ -115,9 +111,61 @@ export function WorkspaceLayout() {
       navigate("/editor");
     } finally {
       openingRef.current = false;
-      setOpening(false);
     }
   }, [ipc, navigate, setSession, t, toast]);
+
+  const runMenuCommand = useCallback(
+    async (id: string) => {
+      if (!commandRegistry.list().some((command) => command.id === id)) {
+        return;
+      }
+      const result = await commandRegistry.execute(id);
+      if (!result.ok) {
+        handleCommandError(result.error);
+      }
+    },
+    [handleCommandError],
+  );
+
+  // Native menu items are mirrored by the same availability gate as
+  // keyboard shortcuts: no menu-driven open/save while a modal or install is
+  // in progress.
+  const menuEnabled =
+    !paletteOpen && !updateBlocked && !updateDialogOpen && updateSnapshot?.phase !== "installing";
+
+  useEffect(() => {
+    if (!menuEnabled) {
+      return;
+    }
+    return platform.onMenuAction((action) => {
+      switch (action) {
+        case MENU_ACTIONS.fileOpen:
+          void openDocument();
+          break;
+        case MENU_ACTIONS.fileSave:
+          void runMenuCommand("file.save");
+          break;
+        case MENU_ACTIONS.paletteOpen:
+          openPalette();
+          break;
+        case MENU_ACTIONS.toggleLivePreview:
+          void runMenuCommand("view.toggleLivePreview");
+          break;
+        case MENU_ACTIONS.toggleTheme:
+          void runMenuCommand("view.toggleTheme");
+          break;
+        case MENU_ACTIONS.themeLight:
+          uiStore.setTheme("light");
+          break;
+        case MENU_ACTIONS.themeDark:
+          uiStore.setTheme("dark");
+          break;
+        case MENU_ACTIONS.themeSystem:
+          uiStore.setTheme("system");
+          break;
+      }
+    });
+  }, [menuEnabled, openDocument, openPalette, platform, runMenuCommand]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({
@@ -169,7 +217,7 @@ export function WorkspaceLayout() {
 
   return (
     <>
-      <Outlet context={{ openDocument, opening } satisfies WorkspaceActions} />
+      <Outlet />
       <CommandPalette open={paletteOpen} onClose={closePalette} onError={handleCommandError} />
       <CloseConfirmDialog
         prompt={closeGuard.prompt}
@@ -183,8 +231,4 @@ export function WorkspaceLayout() {
       />
     </>
   );
-}
-
-export function useWorkspaceActions(): WorkspaceActions {
-  return useOutletContext<WorkspaceActions>();
 }

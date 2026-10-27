@@ -76,7 +76,7 @@
 
 ## 实施状态（2026-10-27）
 
-- **已完成：** T-001~T-010、T-012、T-013 已实现并通过本地验证；T-011 的静态 workflow/`check-latest-json`/`make-latest-json`/`build-local.sh` 与本地 universal 发布链路已完成；T-014 的本地全量、universal 构建、Developer ID 签名、App+DMG 公证、`latest.json` 验签已完成。插件 2.14.0 注册、9 命令/3 事件/19 错误码/9 权限契约、`UpdateManager` 状态机、4 条 Rust 命令与超时/进度/错误分类、`CloseGuard` 安装门闩、`UpdatePort` + Tauri/Fake、Controller/Provider、命令面板/横幅/对话框/i18n、零网络 E2E、契约/权限负例均通过。
+- **已完成：** T-001~T-010、T-012、T-013 已实现并通过本地验证；T-011 的静态 workflow/`check-latest-json`/`make-latest-json`/`build-local.sh` 与本地 universal 发布链路已完成；T-014 的本地全量、universal 构建、Developer ID 签名、App+DMG 公证、`latest.json` 验签已完成。插件 2.14.0 注册、9 命令/4 事件/19 错误码/9 权限契约（第 4 个事件为原生菜单动作）、`UpdateManager` 状态机、4 条 Rust 命令与超时/进度/错误分类、`CloseGuard` 安装门闩、`UpdatePort` + Tauri/Fake、Controller/Provider、命令面板/横幅/对话框/i18n、零网络 E2E、契约/权限负例均通过。
 - **验证证据：** `02 C-014~C-026`；Rust 全 target、前端 298 tests、E2E 52 tests、`pnpm ci:negative`、`cargo fmt/clippy`、`depcruise`、版本门禁、9+9 发布脚本正负例、真实 16 MB universal 产物签名/公证/清单验签均通过。
 - **未完成：** T-014 的 macOS Apple Silicon/Intel 真机安装/重启冒烟；T-011 的 GitHub Actions 发布通道已按本地优先决策停用（`release` Environment/secrets 已删除），本地 universal 发布链路已完成并通过 C-026。
 - **偏差：** 命令 `app.checkForUpdates` 在 `installing` 外可用；`checking/downloading` 执行时提示忙（`04 §5.7`），而非在 `when` 中全部隐藏。更新对话框/横幅均只读 Rust 快照；开发模式（`import.meta.env.DEV`）默认关闭启动静默检查。

@@ -18,13 +18,12 @@ import { UpdateProvider } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
 
 function renderApp(ipc: IpcPort) {
+  const platform = new FakePlatform();
   const router = createMemoryRouter(routes, { initialEntries: ["/"] });
   render(
     <AppErrorBoundary>
       <ToastProvider>
-        <AppServicesProvider
-          services={{ ipc, platform: new FakePlatform(), updates: new FakeUpdatePort() }}
-        >
+        <AppServicesProvider services={{ ipc, platform, updates: new FakeUpdatePort() }}>
           <DocumentSessionProvider>
             <UpdateProvider autoCheck={false}>
               <RouterProvider router={router} />
@@ -34,7 +33,7 @@ function renderApp(ipc: IpcPort) {
       </ToastProvider>
     </AppErrorBoundary>,
   );
-  return router;
+  return { router, platform };
 }
 
 function fileIpc(
@@ -121,12 +120,11 @@ describe("openFile", () => {
 describe("blank editor -> editor open flow", () => {
   it("opens a file, creates the session, and renders the editor host", async () => {
     const ipc = fileIpc("# Hello\n\nsecret body\n");
-    const router = renderApp(ipc);
+    const { router, platform } = renderApp(ipc);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
+    platform.emitMenuAction("file.open");
 
-    expect(await screen.findByRole("heading", { name: "note.md" })).toBeInTheDocument();
-    expect(screen.getByTestId("document-session")).toHaveTextContent("/docs/note.md");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
     const statusBar = screen.getByTestId("status-bar");
     await waitFor(() => expect(statusBar).toHaveTextContent("note.md"));
     // The body lives in CM6's DOM, never in the React metadata snapshot
@@ -166,10 +164,10 @@ describe("blank editor -> editor open flow", () => {
 
   it("opens the registry-backed palette with Mod+K and runs a command from the keyboard", async () => {
     const ipc = fileIpc("# Palette\n");
-    renderApp(ipc);
+    const { platform } = renderApp(ipc);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
-    expect(await screen.findByRole("heading", { name: "note.md" })).toBeInTheDocument();
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
 
@@ -201,13 +199,13 @@ describe("blank editor -> editor open flow", () => {
       path: "/docs/component.mdx",
       readOnlyReason: "mdx",
     });
-    renderApp(ipc);
+    const { platform } = renderApp(ipc);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
+    platform.emitMenuAction("file.open");
 
     expect(await screen.findByTestId("read-only-badge")).toHaveTextContent("MDX 暂为只读");
     expect(screen.getByTestId("status-bar")).toHaveTextContent("只读");
-    expect(screen.getByRole("heading", { name: "component.mdx" })).toBeInTheDocument();
+    expect(screen.getByTestId("status-bar")).toHaveTextContent("component.mdx");
 
     const saved = await commandRegistry.execute("file.save");
     expect(saved.ok).toBe(false);
@@ -218,11 +216,12 @@ describe("blank editor -> editor open flow", () => {
 
   it("shows the large-document hint and disables preview above the unit budget", async () => {
     const ipc = fileIpc(`# Big\n\n${"a".repeat(2_000_000)}`);
-    renderApp(ipc);
+    const { platform } = renderApp(ipc);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
+    platform.emitMenuAction("file.open");
 
-    expect(await screen.findByRole("heading", { name: "note.md" })).toBeInTheDocument();
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md"));
     expect(screen.getByTestId("large-file-hint")).toHaveTextContent("大文档 · 预览关闭");
     expect(screen.getByTestId("status-bar")).toHaveTextContent("源码");
 
@@ -238,13 +237,12 @@ describe("blank editor -> editor open flow", () => {
       files: [{ path: "/docs/note.md", text: "x" }],
       openFile: "/docs/missing.md",
     });
-    renderApp(ipc);
+    const { platform } = renderApp(ipc);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
+    platform.emitMenuAction("file.open");
 
     expect(await screen.findByText("文件不存在或已被移动。")).toBeInTheDocument();
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
     expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
   });
 
@@ -253,15 +251,13 @@ describe("blank editor -> editor open flow", () => {
       files: [{ path: "/docs/note.md", text: "x" }],
       openFile: null,
     });
-    renderApp(ipc);
-    const button = screen.getByRole("button", { name: "打开 Markdown 文件" });
+    const { platform } = renderApp(ipc);
 
-    fireEvent.click(button);
-    await waitFor(() => expect(button).toBeEnabled());
+    platform.emitMenuAction("file.open");
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
 
     expect(screen.queryByText("操作已取消。")).not.toBeInTheDocument();
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
     expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
   });
 
