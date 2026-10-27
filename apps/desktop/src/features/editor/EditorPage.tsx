@@ -141,7 +141,7 @@ function DocumentEditor() {
         ) : null}
       </div>
 
-      <div className={untitled ? "mx-auto h-full min-h-0 w-full max-w-[820px]" : "min-h-0"}>
+      <div className={untitled ? "mx-auto h-full min-h-0 w-full max-w-[820px]" : "min-h-0 min-w-0"}>
         <EditorHost session={session} autoFocus={untitled} />
       </div>
 

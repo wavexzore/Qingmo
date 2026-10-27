@@ -1,3 +1,12 @@
+import {
+  diagramKind,
+  mermaidPaletteKey,
+  resolveMermaidPalette,
+  type MermaidDiagramKind,
+  type MermaidPalette,
+  type MermaidTheme,
+} from "./mermaid-theme";
+
 const REQUEST_TYPE = "qingmo:mermaid:render";
 const RESULT_TYPE = "qingmo:mermaid:result";
 const READY_TYPE = "qingmo:mermaid:ready";
@@ -8,7 +17,7 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const READY_TIMEOUT_MS = 15_000;
 const MAX_CACHE_ENTRIES = 50;
 
-export type MermaidTheme = "default" | "dark";
+export type { MermaidTheme };
 
 export function currentMermaidTheme(root: HTMLElement = document.documentElement): MermaidTheme {
   return root.dataset.theme === "dark" ? "dark" : "default";
@@ -17,6 +26,8 @@ export function currentMermaidTheme(root: HTMLElement = document.documentElement
 interface QueueItem {
   code: string;
   theme: MermaidTheme;
+  kind: MermaidDiagramKind;
+  palette: MermaidPalette;
   resolve: (svg: string) => void;
   reject: (error: Error) => void;
 }
@@ -27,8 +38,8 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
-function cacheKey(code: string, theme: MermaidTheme): string {
-  return `${theme}\u0000${code}`;
+function cacheKey(code: string, theme: MermaidTheme, kind: MermaidDiagramKind): string {
+  return `${mermaidPaletteKey(theme)}\u0000${kind}\u0000${code}`;
 }
 
 /**
@@ -55,7 +66,8 @@ class MermaidRenderer {
   private cache = new Map<string, string>();
 
   render(code: string, theme: MermaidTheme): Promise<string> {
-    const key = cacheKey(code, theme);
+    const kind = diagramKind(code);
+    const key = cacheKey(code, theme, kind);
     const cached = this.cache.get(key);
     if (cached !== undefined) {
       return Promise.resolve(cached);
@@ -65,7 +77,14 @@ class MermaidRenderer {
     }
 
     return new Promise<string>((resolve, reject) => {
-      this.queue.push({ code, theme, resolve, reject });
+      this.queue.push({
+        code,
+        theme,
+        kind,
+        palette: resolveMermaidPalette(theme),
+        resolve,
+        reject,
+      });
       this.ensureFrame();
       this.pump();
     });
@@ -158,7 +177,7 @@ class MermaidRenderer {
       return;
     }
 
-    const key = cacheKey(item.code, item.theme);
+    const key = cacheKey(item.code, item.theme, item.kind);
     const cached = this.cache.get(key);
     if (cached !== undefined) {
       item.resolve(cached);
@@ -184,6 +203,8 @@ class MermaidRenderer {
         requestId,
         code: item.code,
         theme: item.theme,
+        kind: item.kind,
+        palette: item.palette,
       },
       "*",
     );
