@@ -29,7 +29,7 @@
         "enable": false,
         "scope": []
       },
-      "capabilities": ["default"]
+      "capabilities": ["default", "about"]
     }
   },
   "bundle": {

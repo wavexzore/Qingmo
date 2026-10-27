@@ -1,3 +1,4 @@
+pub mod about;
 pub mod close;
 pub mod document;
 pub mod update;
@@ -14,6 +15,9 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         document::document_write_atomic,
         close::app_close_confirm,
         view::app_set_live_preview,
+        about::app_about_info,
+        about::app_about_close,
+        about::app_about_open_link,
         update::app_update_status,
         update::app_update_check,
         update::app_update_download,

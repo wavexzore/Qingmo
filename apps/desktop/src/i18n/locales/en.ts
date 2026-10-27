@@ -174,6 +174,54 @@ export const update = {
   },
 } as const;
 
+export const about = {
+  windowLabel: "Qingmo / Colophon",
+  kicker: "A local-first Markdown writing tool",
+  promise: "Keep the words on your device. Keep your attention on writing.",
+  manifesto:
+    "One sheet of paper, one old pen. No account, no cloud nudging you — only you and the sentence you are writing.",
+  edition: "Edition",
+  meta: {
+    version: "Version",
+    build: "Build",
+    platform: "Platform",
+    license: "License",
+  },
+  status: {
+    upToDate: "You are up to date",
+    checking: "Checking for updates…",
+    available: "Version {{version}} is available",
+    downloading: "Downloading {{version}}…",
+    ready: "{{version}} is ready to install",
+    installing: "Installing the update…",
+    error: "Check failed. Try again.",
+  },
+  actions: {
+    checkUpdates: "Check for updates",
+    viewUpdate: "View update",
+    copyVersion: "Copy version info",
+    close: "Close",
+  },
+  toast: {
+    copied: "Version info copied",
+    copyFailed: "Copy failed. Try again.",
+    openFailed: "Could not open the link. Try again.",
+  },
+  links: {
+    docs: "Docs",
+    github: "GitHub",
+    changelog: "Changelog",
+    license: "License",
+  },
+  aria: {
+    window: "About Qingmo",
+    icon: "Qingmo app icon",
+    links: "Related links",
+    versionInfo: "Version information",
+  },
+  copyValue: "Qingmo {{version}} ({{build}}) · {{platform}}",
+} as const;
+
 export const commandLabels = {
   file: {
     open: "Open file",
@@ -199,4 +247,4 @@ export const commandLabels = {
   },
 } as const;
 
-export const en = { common, editor, errors, update, commands: commandLabels };
+export const en = { common, editor, errors, update, commands: commandLabels, about };

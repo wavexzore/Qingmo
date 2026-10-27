@@ -63,10 +63,23 @@ export interface E2eBridge {
   getUpdateSnapshot(): E2eUpdateSnapshot;
 }
 
+export type E2eAboutLink = "docs" | "github" | "changelog" | "license";
+
+export interface E2eAboutBridge {
+  about: {
+    openedLinks: E2eAboutLink[];
+    closed: boolean;
+  };
+  updates: {
+    setUpdate(update: E2eUpdateInfo | null): void;
+  };
+}
+
 declare global {
   interface Window {
     __QINGMO_E2E_SEED__?: SeedFile[];
     __QINGMO_E2E__?: E2eBridge;
+    __QINGMO_ABOUT_E2E__?: E2eAboutBridge;
   }
 }
 

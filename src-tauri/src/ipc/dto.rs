@@ -108,6 +108,30 @@ pub struct MenuActionPayload {
     pub target: String,
 }
 
+/// Build metadata displayed by the About window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AboutInfo {
+    pub version: String,
+    /// Version plus the architecture of this build, e.g. `0.1.0 · arm64`.
+    pub build: String,
+    pub platform: String,
+    pub license: String,
+    pub copyright: String,
+}
+
+/// External destinations linked from the About window.
+///
+/// The webview sends an enum, never a URL: Rust owns the allowlist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum AboutLink {
+    Docs,
+    Github,
+    Changelog,
+    License,
+}
+
 /// Lifecycle phase owned by the Rust `UpdateManager`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

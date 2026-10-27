@@ -1,7 +1,8 @@
 use qingmo_lib::error::AppError;
 use qingmo_lib::ipc::dto::{
-    CloseRequestedPayload, ConflictDetails, FilePayload, MenuActionPayload, SaveRequest,
-    SaveResult, UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
+    AboutInfo, AboutLink, CloseRequestedPayload, ConflictDetails, FilePayload, MenuActionPayload,
+    SaveRequest, SaveResult, UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload,
+    UpdateSnapshot,
 };
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
@@ -21,6 +22,8 @@ fn export_bindings() {
     SaveResult::export_all(&config).expect("SaveResult bindings must export");
     ConflictDetails::export_all(&config).expect("ConflictDetails bindings must export");
     AppError::export_all(&config).expect("AppError bindings must export");
+    AboutInfo::export_all(&config).expect("AboutInfo bindings must export");
+    AboutLink::export_all(&config).expect("AboutLink bindings must export");
     CloseRequestedPayload::export_all(&config).expect("CloseRequestedPayload bindings must export");
     MenuActionPayload::export_all(&config).expect("MenuActionPayload bindings must export");
     UpdatePhase::export_all(&config).expect("UpdatePhase bindings must export");

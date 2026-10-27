@@ -1,4 +1,6 @@
 import type {
+  AboutInfo,
+  AboutLink,
   AppError,
   CloseRequestedPayload,
   FilePayload,
@@ -21,6 +23,9 @@ export const COMMANDS = {
   documentWriteAtomic: "document_write_atomic",
   appCloseConfirm: "app_close_confirm",
   appSetLivePreview: "app_set_live_preview",
+  appAboutInfo: "app_about_info",
+  appAboutClose: "app_about_close",
+  appAboutOpenLink: "app_about_open_link",
   appUpdateStatus: "app_update_status",
   appUpdateCheck: "app_update_check",
   appUpdateDownload: "app_update_download",
@@ -37,6 +42,9 @@ export const COMMAND_NAMES = [
   COMMANDS.documentWriteAtomic,
   COMMANDS.appCloseConfirm,
   COMMANDS.appSetLivePreview,
+  COMMANDS.appAboutInfo,
+  COMMANDS.appAboutClose,
+  COMMANDS.appAboutOpenLink,
   COMMANDS.appUpdateStatus,
   COMMANDS.appUpdateCheck,
   COMMANDS.appUpdateDownload,
@@ -97,6 +105,9 @@ export interface CommandRequestMap {
   [COMMANDS.documentWriteAtomic]: SaveRequest;
   [COMMANDS.appCloseConfirm]: { allow: boolean };
   [COMMANDS.appSetLivePreview]: { livePreview: boolean };
+  [COMMANDS.appAboutInfo]: Record<string, never>;
+  [COMMANDS.appAboutClose]: Record<string, never>;
+  [COMMANDS.appAboutOpenLink]: { link: AboutLink };
   [COMMANDS.appUpdateStatus]: Record<string, never>;
   [COMMANDS.appUpdateCheck]: Record<string, never>;
   [COMMANDS.appUpdateDownload]: Record<string, never>;
@@ -111,6 +122,9 @@ export interface CommandResponseMap {
   [COMMANDS.documentWriteAtomic]: SaveResult;
   [COMMANDS.appCloseConfirm]: null;
   [COMMANDS.appSetLivePreview]: null;
+  [COMMANDS.appAboutInfo]: AboutInfo;
+  [COMMANDS.appAboutClose]: null;
+  [COMMANDS.appAboutOpenLink]: null;
   [COMMANDS.appUpdateStatus]: UpdateSnapshot;
   [COMMANDS.appUpdateCheck]: UpdateSnapshot;
   [COMMANDS.appUpdateDownload]: UpdateSnapshot;
@@ -135,6 +149,9 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.documentWriteAtomic]: commandPermission(COMMANDS.documentWriteAtomic),
   [COMMANDS.appCloseConfirm]: commandPermission(COMMANDS.appCloseConfirm),
   [COMMANDS.appSetLivePreview]: commandPermission(COMMANDS.appSetLivePreview),
+  [COMMANDS.appAboutInfo]: commandPermission(COMMANDS.appAboutInfo),
+  [COMMANDS.appAboutClose]: commandPermission(COMMANDS.appAboutClose),
+  [COMMANDS.appAboutOpenLink]: commandPermission(COMMANDS.appAboutOpenLink),
   [COMMANDS.appUpdateStatus]: commandPermission(COMMANDS.appUpdateStatus),
   [COMMANDS.appUpdateCheck]: commandPermission(COMMANDS.appUpdateCheck),
   [COMMANDS.appUpdateDownload]: commandPermission(COMMANDS.appUpdateDownload),
