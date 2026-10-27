@@ -13,7 +13,7 @@ function flattenKeys(tree: ResourceTree, prefix = ""): string[] {
 
 describe("i18n resources", () => {
   it("keeps zh-CN and en key sets aligned in every namespace", () => {
-    for (const namespace of ["common", "editor", "errors", "commands"] as const) {
+    for (const namespace of ["common", "editor", "errors", "commands", "update"] as const) {
       const zh = flattenKeys(resources["zh-CN"][namespace]).sort();
       const en = flattenKeys(resources.en[namespace]).sort();
       expect(en, `namespace ${namespace}`).toEqual(zh);
@@ -22,7 +22,7 @@ describe("i18n resources", () => {
 
   it("covers every AppError code", () => {
     const codes = Object.keys(resources["zh-CN"].errors);
-    expect(codes).toHaveLength(13);
+    expect(codes).toHaveLength(19);
     expect(codes).toEqual(Object.keys(resources.en.errors));
 
     for (const code of codes) {

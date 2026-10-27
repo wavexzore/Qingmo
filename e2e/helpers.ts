@@ -119,3 +119,76 @@ export async function clearErrors(page: Page): Promise<void> {
     window.__QINGMO_E2E__?.clearErrors();
   });
 }
+
+export async function setUpdateAvailable(
+  page: Page,
+  update: { version: string; date?: string | null; body?: string | null } | null,
+): Promise<void> {
+  await page.evaluate((next) => {
+    window.__QINGMO_E2E__?.setUpdateAvailable(next);
+  }, update);
+}
+
+export async function setUpdateError(
+  page: Page,
+  operation: "check" | "download" | "install",
+  code: string | null,
+): Promise<void> {
+  await page.evaluate(
+    ({ nextOperation, nextCode }) => {
+      window.__QINGMO_E2E__?.setUpdateError(nextOperation, nextCode);
+    },
+    { nextOperation: operation, nextCode: code },
+  );
+}
+
+export async function holdUpdateDownload(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.__QINGMO_E2E__?.holdUpdateDownload();
+  });
+}
+
+export async function releaseUpdateDownload(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.__QINGMO_E2E__?.releaseUpdateDownload();
+  });
+}
+
+export async function emitUpdateProgress(
+  page: Page,
+  downloaded: number,
+  total: number | null = null,
+): Promise<void> {
+  await page.evaluate(
+    ({ nextDownloaded, nextTotal }) => {
+      window.__QINGMO_E2E__?.emitUpdateProgress(nextDownloaded, nextTotal);
+    },
+    { nextDownloaded: downloaded, nextTotal: total },
+  );
+}
+
+export async function getUpdateCalls(page: Page) {
+  return page.evaluate(
+    () =>
+      window.__QINGMO_E2E__?.getUpdateCalls() ?? {
+        status: 0,
+        check: 0,
+        download: 0,
+        install: 0,
+      },
+  );
+}
+
+export async function getUpdateSnapshot(page: Page) {
+  return page.evaluate(() => window.__QINGMO_E2E__?.getUpdateSnapshot() ?? null);
+}
+
+/** Run the registry-backed `app.checkForUpdates` command from the palette. */
+export async function runUpdateCheck(page: Page): Promise<void> {
+  await page.keyboard.press(`${modifier()}+k`);
+  const palette = page.getByRole("dialog", { name: "命令面板" });
+  await expect(palette).toBeVisible();
+  await palette.getByRole("combobox").fill("检查更新");
+  await palette.getByRole("combobox").press("Enter");
+  await expect(palette).toBeHidden();
+}

@@ -5,6 +5,7 @@ import { AppServicesProvider } from "./AppServices";
 import { AppErrorBoundary } from "../components/AppErrorBoundary";
 import { ToastProvider } from "../components/ToastHost";
 import { DocumentSessionProvider } from "../features/editor/DocumentSessionContext";
+import { UpdateProvider } from "../features/update/UpdateProvider";
 import { createAppRouter } from "./routes";
 
 const router = createAppRouter();
@@ -14,9 +15,11 @@ export function AppShell() {
     <AppErrorBoundary>
       <ToastProvider>
         <AppServicesProvider>
-          <DocumentSessionProvider>
-            <RouterProvider router={router} />
-          </DocumentSessionProvider>
+          <UpdateProvider>
+            <DocumentSessionProvider>
+              <RouterProvider router={router} />
+            </DocumentSessionProvider>
+          </UpdateProvider>
         </AppServicesProvider>
       </ToastProvider>
     </AppErrorBoundary>

@@ -54,6 +54,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .menu(build_menu)
         .on_menu_event(|app, event| {
             if event.id() == "quit" {
@@ -64,6 +65,9 @@ pub fn run() {
         .manage(state::CloseGuard::new())
         .setup(|app| {
             app.manage(app.handle().clone());
+            app.manage(state::UpdateManager::new(
+                app.package_info().version.to_string(),
+            ));
             Ok(())
         })
         .invoke_handler(commands::handler())

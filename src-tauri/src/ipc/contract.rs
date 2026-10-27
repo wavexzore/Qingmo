@@ -9,9 +9,21 @@ pub const COMMANDS: &[&str] = &[
     "document_save_as",
     "document_write_atomic",
     "app_close_confirm",
+    "app_update_status",
+    "app_update_check",
+    "app_update_download",
+    "app_update_install",
 ];
 
-pub const EVENTS: &[&str] = &["app://close-requested"];
+pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";
+pub const EVENT_UPDATE_STATE: &str = "app://update-state";
+pub const EVENT_UPDATE_PROGRESS: &str = "app://update-progress";
+
+pub const EVENTS: &[&str] = &[
+    EVENT_CLOSE_REQUESTED,
+    EVENT_UPDATE_STATE,
+    EVENT_UPDATE_PROGRESS,
+];
 
 /// Tauri turns `document_open` into the ACL permission `allow-document-open`.
 pub fn command_permission(command: &str) -> String {

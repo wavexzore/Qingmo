@@ -13,6 +13,8 @@ export interface ClosePrompt {
 
 export interface CloseGuardState {
   prompt: ClosePrompt | null;
+  /** True while a native close request is flushing; updates must not overlap it. */
+  closing: boolean;
   allowClose(): Promise<void>;
   cancelClose(): Promise<void>;
 }
@@ -37,6 +39,7 @@ export function useCloseGuard({
   coordinator,
 }: UseCloseGuardOptions): CloseGuardState {
   const [prompt, setPrompt] = useState<ClosePrompt | null>(null);
+  const [closing, setClosing] = useState(false);
   const coordinatorRef = useRef<SaveCoordinator | null>(coordinator);
   const closingRef = useRef(false);
   coordinatorRef.current = coordinator;
@@ -55,6 +58,7 @@ export function useCloseGuard({
         return;
       }
       closingRef.current = true;
+      setClosing(true);
       try {
         const coordinator = coordinatorRef.current;
         const result = coordinator
@@ -71,6 +75,7 @@ export function useCloseGuard({
         setPrompt({ reason, failure: "error" });
       } finally {
         closingRef.current = false;
+        setClosing(false);
       }
     },
     [confirmClose],
@@ -125,5 +130,5 @@ export function useCloseGuard({
     }
   }, [confirmClose]);
 
-  return { prompt, allowClose, cancelClose };
+  return { prompt, closing, allowClose, cancelClose };
 }

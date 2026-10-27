@@ -21,6 +21,12 @@ pub enum AppErrorCode {
     Busy,
     Io,
     Cancelled,
+    UpdateCheckFailed,
+    UpdateDownloadFailed,
+    UpdateSignatureInvalid,
+    UpdateInstallFailed,
+    UpdateUnsupported,
+    UpdateNotReady,
 }
 
 /// The only error shape returned by the four P1 commands.

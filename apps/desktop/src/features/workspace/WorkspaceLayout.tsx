@@ -9,12 +9,15 @@ import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
 import { useCloseGuard } from "../../app/useCloseGuard";
 import { useThemeService } from "../../app/useThemeService";
 import { useToast } from "../../components/ToastHost";
+import { AppError as AppErrorClass } from "../../lib/ipc/errors";
 import { CommandPalette } from "../commands/CommandPalette";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { EditorSession } from "../editor/EditorSession";
+import { UpdateHost } from "../update/UpdateHost";
+import { useUpdateController, useUpdateSnapshot } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
 
 export interface WorkspaceActions {
@@ -34,14 +37,18 @@ export function WorkspaceLayout() {
   const { ipc, platform } = useAppServices();
   const { session, coordinator, setSession } = useDocumentSession();
   const closeGuard = useCloseGuard({ ipc, platform, coordinator });
+  const updateController = useUpdateController();
+  const updateSnapshot = useUpdateSnapshot();
   const [opening, setOpening] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const openingRef = useRef(false);
   const sessionRef = useRef(session);
   const coordinatorRef = useRef(coordinator);
   sessionRef.current = session;
   coordinatorRef.current = coordinator;
   const hasSession = session !== null;
+  const updateBlocked = closeGuard.closing || closeGuard.prompt !== null;
 
   useThemeCommand();
   useThemeService(session);
@@ -58,10 +65,29 @@ export function WorkspaceLayout() {
     [t, toast],
   );
   useCommandKeybindings({
-    enabled: !paletteOpen && closeGuard.prompt === null,
+    enabled:
+      !paletteOpen && !updateBlocked && !updateDialogOpen && updateSnapshot?.phase !== "installing",
     onOpenPalette: openPalette,
     onError: handleCommandError,
   });
+
+  useEffect(() => {
+    return updateController.registerPrepareInstall(async () => {
+      const coordinator = coordinatorRef.current;
+      if (coordinator) {
+        return coordinator.flush("close");
+      }
+      if (sessionRef.current === null) {
+        return { ok: true, state: "clean" } as const;
+      }
+      return {
+        ok: false,
+        state: "error",
+        failure: "error",
+        error: new AppErrorClass("IO", "document save coordinator is unavailable"),
+      } as const;
+    });
+  }, [updateController]);
 
   const openDocument = useCallback(async () => {
     if (openingRef.current) {
@@ -149,6 +175,11 @@ export function WorkspaceLayout() {
         prompt={closeGuard.prompt}
         onAllow={closeGuard.allowClose}
         onCancel={closeGuard.cancelClose}
+      />
+      <UpdateHost
+        blocked={updateBlocked}
+        dialogOpen={updateDialogOpen}
+        onDialogOpenChange={setUpdateDialogOpen}
       />
     </>
   );

@@ -1,5 +1,8 @@
 use qingmo_lib::error::{AppError, AppErrorCode};
-use qingmo_lib::ipc::dto::{CloseReason, FilePayload, SaveRequest, TextEncoding, TextFormat};
+use qingmo_lib::ipc::dto::{
+    CloseReason, FilePayload, SaveRequest, TextEncoding, TextFormat, UpdateInfo, UpdatePhase,
+    UpdateSnapshot,
+};
 use qingmo_lib::ipc::{command_permissions, COMMANDS, EVENTS};
 use qingmo_lib::state::CloseGuard;
 use serde_json::{json, Value};
@@ -39,8 +42,15 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 5);
-    assert_eq!(EVENTS, &["app://close-requested"]);
+    assert_eq!(COMMANDS.len(), 9);
+    assert_eq!(
+        EVENTS,
+        &[
+            "app://close-requested",
+            "app://update-state",
+            "app://update-progress"
+        ]
+    );
 }
 
 #[test]
@@ -59,6 +69,13 @@ fn capability_covers_exactly_the_application_commands() {
         .filter(|permission| permission.starts_with("allow-"))
         .collect::<Vec<_>>();
     assert_eq!(app_permissions, command_permissions());
+
+    for permission in &permissions {
+        assert!(
+            !permission.starts_with("updater:"),
+            "updater:* must never be granted to the webview: {permission}"
+        );
+    }
 
     assert_eq!(capability["windows"], json!(["main"]));
 }
@@ -114,6 +131,33 @@ fn dto_wire_names_are_camel_case_and_stable() {
     assert_eq!(value["mtimeMs"], 1_700_000_000_000i64);
     assert_eq!(value["readOnly"], false);
     assert!(value["readOnlyReason"].is_null());
+
+    let snapshot = UpdateSnapshot {
+        phase: UpdatePhase::Available,
+        generation: 2,
+        current_version: "0.1.0".to_string(),
+        update: Some(UpdateInfo {
+            version: "0.2.0".to_string(),
+            date: Some("2026-10-27T12:00:00Z".to_string()),
+            body: Some("Notes".to_string()),
+        }),
+        progress: None,
+    };
+    let value = serde_json::to_value(&snapshot).expect("UpdateSnapshot must serialize");
+    assert_eq!(
+        value,
+        json!({
+            "phase": "available",
+            "generation": 2,
+            "currentVersion": "0.1.0",
+            "update": {
+                "version": "0.2.0",
+                "date": "2026-10-27T12:00:00Z",
+                "body": "Notes"
+            },
+            "progress": null
+        })
+    );
 }
 
 #[test]
@@ -124,6 +168,22 @@ fn error_wire_shape_is_stable() {
     assert_eq!(value["code"], "CONFLICT");
     assert_eq!(value["message"], "file changed");
     assert_eq!(value["details"]["currentHash"], "abc");
+
+    for (code, wire) in [
+        (AppErrorCode::UpdateCheckFailed, "UPDATE_CHECK_FAILED"),
+        (AppErrorCode::UpdateDownloadFailed, "UPDATE_DOWNLOAD_FAILED"),
+        (
+            AppErrorCode::UpdateSignatureInvalid,
+            "UPDATE_SIGNATURE_INVALID",
+        ),
+        (AppErrorCode::UpdateInstallFailed, "UPDATE_INSTALL_FAILED"),
+        (AppErrorCode::UpdateUnsupported, "UPDATE_UNSUPPORTED"),
+        (AppErrorCode::UpdateNotReady, "UPDATE_NOT_READY"),
+    ] {
+        let value = serde_json::to_value(AppError::new(code, "update error"))
+            .expect("AppError must serialize");
+        assert_eq!(value["code"], wire);
+    }
 }
 
 fn invoke(
@@ -151,6 +211,7 @@ fn invoke_handler_registers_every_contract_command() {
     let app = tauri::test::mock_builder()
         .manage(qingmo_lib::state::DocumentRegistry::new())
         .manage(CloseGuard::new())
+        .manage(qingmo_lib::state::UpdateManager::new("0.1.0"))
         .invoke_handler(qingmo_lib::commands::handler())
         .build(tauri::generate_context!())
         .expect("mock app must build");
@@ -166,6 +227,10 @@ fn invoke_handler_registers_every_contract_command() {
     assert!(handler_source.contains("document::document_save_as"));
     assert!(handler_source.contains("document::document_write_atomic"));
     assert!(handler_source.contains("close::app_close_confirm"));
+    assert!(handler_source.contains("update::app_update_status"));
+    assert!(handler_source.contains("update::app_update_check"));
+    assert!(handler_source.contains("update::app_update_download"));
+    assert!(handler_source.contains("update::app_update_install"));
 
     let error = invoke(&webview, "document_reload", json!({"docToken": "fake"}))
         .expect_err("reload with a fake token must fail");
@@ -193,4 +258,19 @@ fn invoke_handler_registers_every_contract_command() {
     assert_eq!(response, Value::Null);
     assert_eq!(guard.pending(), None);
     assert!(guard.begin(CloseReason::Exit));
+    guard.cancel();
+
+    let status = invoke(&webview, "app_update_status", json!({}))
+        .expect("status must be available without the plugin");
+    assert_eq!(status["phase"], "idle");
+    assert_eq!(status["currentVersion"], "0.1.0");
+
+    for command in ["app_update_download", "app_update_install"] {
+        let error = invoke(&webview, command, json!({}))
+            .expect_err("commands outside their phase must fail closed");
+        assert_eq!(
+            error["code"], "UPDATE_NOT_READY",
+            "{command} must return UPDATE_NOT_READY: {error}"
+        );
+    }
 }

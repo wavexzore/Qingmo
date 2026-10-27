@@ -20,6 +20,27 @@ export interface E2eFileSnapshot {
   size: number;
 }
 
+export interface E2eUpdateInfo {
+  version: string;
+  date?: string | null;
+  body?: string | null;
+}
+
+export interface E2eUpdateCalls {
+  status: number;
+  check: number;
+  download: number;
+  install: number;
+}
+
+export interface E2eUpdateSnapshot {
+  phase: "idle" | "checking" | "available" | "downloading" | "ready" | "installing";
+  generation: number;
+  currentVersion: string;
+  update: E2eUpdateInfo | null;
+  progress: { downloaded: number; total: number | null } | null;
+}
+
 export interface E2eBridge {
   setDiskText(path: string, text: string): void;
   getFile(path: string): E2eFileSnapshot | undefined;
@@ -31,6 +52,13 @@ export interface E2eBridge {
   failSaveAlways(code?: string): void;
   clearErrors(): void;
   getCloseConfirms(): Array<{ allow: boolean }>;
+  setUpdateAvailable(update: E2eUpdateInfo | null): void;
+  setUpdateError(operation: "check" | "download" | "install", code: string | null): void;
+  holdUpdateDownload(): void;
+  releaseUpdateDownload(): void;
+  emitUpdateProgress(downloaded: number, total?: number | null): void;
+  getUpdateCalls(): E2eUpdateCalls;
+  getUpdateSnapshot(): E2eUpdateSnapshot;
 }
 
 declare global {

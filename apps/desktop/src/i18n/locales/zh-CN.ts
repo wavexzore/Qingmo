@@ -120,7 +120,54 @@ export const errors = {
   BUSY: "上一个操作尚未完成，请稍后再试。",
   IO: "读写文件时发生错误。",
   CANCELLED: "操作已取消。",
+  UPDATE_CHECK_FAILED: "检查更新失败，请稍后重试。",
+  UPDATE_DOWNLOAD_FAILED: "下载更新失败，请稍后重试。",
+  UPDATE_SIGNATURE_INVALID: "更新包签名校验失败，已拒绝安装。",
+  UPDATE_INSTALL_FAILED: "安装更新失败，当前版本仍然可用。",
+  UPDATE_UNSUPPORTED: "当前系统或架构不支持自动更新。",
+  UPDATE_NOT_READY: "更新尚未准备好安装。",
 } as const satisfies Record<AppErrorCode, string>;
+
+export const update = {
+  banner: {
+    kicker: "应用更新",
+    available: "新版本 {{version}} 可用",
+    downloading: "正在下载更新…",
+    ready: "更新已下载，可以安装",
+    installing: "正在安装更新…",
+    view: "查看",
+    later: "稍后",
+    install: "安装并重启",
+    progress: "已下载 {{percent}}%",
+    keepOpen: "请保持青墨打开",
+  },
+  dialog: {
+    kicker: "应用更新",
+    title: "更新青墨",
+    phase: {
+      idle: "当前已是最新版本。",
+      checking: "正在检查更新…",
+      available: "新版本已就绪，下载后即可安装。",
+      downloading: "正在下载更新，请保持网络连接。",
+      ready: "更新已下载。安装前会先保存当前文档，然后青墨会重新启动。",
+      installing: "正在安装更新，请不要关闭青墨。",
+    },
+    currentVersion: "当前版本",
+    latestVersion: "最新版本",
+    released: "发布日期",
+    notes: "发布说明",
+    noNotes: "此版本没有发布说明。",
+    downloading: "正在下载…",
+    progress: "正在下载… {{percent}}%",
+    download: "下载更新",
+    install: "安装并重启",
+    later: "稍后",
+  },
+  toast: {
+    upToDate: "已是最新版本。",
+    busy: "更新操作正在进行，请稍后再试。",
+  },
+} as const;
 
 export const commandLabels = {
   file: {
@@ -131,9 +178,13 @@ export const commandLabels = {
     toggleLivePreview: "切换实时预览",
     toggleTheme: "切换主题",
   },
+  update: {
+    checkForUpdates: "检查更新",
+  },
   category: {
     file: "文件",
     view: "视图",
+    app: "应用",
   },
   palette: {
     title: "命令面板",
@@ -143,4 +194,4 @@ export const commandLabels = {
   },
 } as const;
 
-export const zhCN = { common, editor, errors, commands: commandLabels };
+export const zhCN = { common, editor, errors, update, commands: commandLabels };

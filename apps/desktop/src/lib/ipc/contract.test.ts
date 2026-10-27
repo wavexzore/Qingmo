@@ -11,15 +11,19 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the five command names stable", () => {
+  it("keeps the nine command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
       "document_reload",
       "document_save_as",
       "document_write_atomic",
       "app_close_confirm",
+      "app_update_status",
+      "app_update_check",
+      "app_update_download",
+      "app_update_install",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(5);
+    expect(new Set(COMMAND_NAMES).size).toBe(9);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
@@ -31,9 +35,15 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.documentWriteAtomic]).toBe("allow-document-write-atomic");
   });
 
-  it("keeps the single close event stable", () => {
-    expect(EVENT_NAMES).toEqual(["app://close-requested"]);
+  it("keeps the three events stable", () => {
+    expect(EVENT_NAMES).toEqual([
+      "app://close-requested",
+      "app://update-state",
+      "app://update-progress",
+    ]);
     expect(EVENTS.closeRequested).toBe("app://close-requested");
+    expect(EVENTS.updateState).toBe("app://update-state");
+    expect(EVENTS.updateProgress).toBe("app://update-progress");
   });
 
   it("accepts the optional expected hash on save requests", () => {

@@ -14,6 +14,8 @@ export type {
   CommandResponseMap,
   EventName,
   IpcInvoker,
+  UpdateProgressEvent,
+  UpdateStateEvent,
 } from "./commands";
 export { APP_ERROR_CODES, AppError, isAppError, isAppErrorCode, normalizeError } from "./errors";
 export type { CloseConfirmRequest, IpcPort } from "./port";

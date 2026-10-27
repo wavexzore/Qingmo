@@ -6,6 +6,7 @@ import { AppErrorBoundary } from "../components/AppErrorBoundary";
 import { ToastProvider } from "../components/ToastHost";
 import { AppServicesProvider } from "./AppServices";
 import { DocumentSessionProvider } from "../features/editor/DocumentSessionContext";
+import { UpdateProvider } from "../features/update/UpdateProvider";
 import { routes } from "./routes";
 
 function renderAt(path: string) {
@@ -14,9 +15,11 @@ function renderAt(path: string) {
     <AppErrorBoundary>
       <ToastProvider>
         <AppServicesProvider>
-          <DocumentSessionProvider>
-            <RouterProvider router={router} />
-          </DocumentSessionProvider>
+          <UpdateProvider autoCheck={false}>
+            <DocumentSessionProvider>
+              <RouterProvider router={router} />
+            </DocumentSessionProvider>
+          </UpdateProvider>
         </AppServicesProvider>
       </ToastProvider>
     </AppErrorBoundary>,

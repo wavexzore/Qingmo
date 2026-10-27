@@ -4,6 +4,8 @@ import type {
   FilePayload,
   SaveRequest,
   SaveResult,
+  UpdateProgressPayload,
+  UpdateSnapshot,
 } from "@qingmo/shared";
 
 /**
@@ -17,6 +19,10 @@ export const COMMANDS = {
   documentSaveAs: "document_save_as",
   documentWriteAtomic: "document_write_atomic",
   appCloseConfirm: "app_close_confirm",
+  appUpdateStatus: "app_update_status",
+  appUpdateCheck: "app_update_check",
+  appUpdateDownload: "app_update_download",
+  appUpdateInstall: "app_update_install",
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -27,15 +33,25 @@ export const COMMAND_NAMES = [
   COMMANDS.documentSaveAs,
   COMMANDS.documentWriteAtomic,
   COMMANDS.appCloseConfirm,
+  COMMANDS.appUpdateStatus,
+  COMMANDS.appUpdateCheck,
+  COMMANDS.appUpdateDownload,
+  COMMANDS.appUpdateInstall,
 ] as const satisfies readonly CommandName[];
 
 export const EVENTS = {
   closeRequested: "app://close-requested",
+  updateState: "app://update-state",
+  updateProgress: "app://update-progress",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
 
-export const EVENT_NAMES = [EVENTS.closeRequested] as const satisfies readonly EventName[];
+export const EVENT_NAMES = [
+  EVENTS.closeRequested,
+  EVENTS.updateState,
+  EVENTS.updateProgress,
+] as const satisfies readonly EventName[];
 
 export interface CommandRequestMap {
   [COMMANDS.documentOpen]: Record<string, never>;
@@ -43,6 +59,10 @@ export interface CommandRequestMap {
   [COMMANDS.documentSaveAs]: { text: string };
   [COMMANDS.documentWriteAtomic]: SaveRequest;
   [COMMANDS.appCloseConfirm]: { allow: boolean };
+  [COMMANDS.appUpdateStatus]: Record<string, never>;
+  [COMMANDS.appUpdateCheck]: Record<string, never>;
+  [COMMANDS.appUpdateDownload]: Record<string, never>;
+  [COMMANDS.appUpdateInstall]: Record<string, never>;
 }
 
 export interface CommandResponseMap {
@@ -51,10 +71,16 @@ export interface CommandResponseMap {
   [COMMANDS.documentSaveAs]: FilePayload;
   [COMMANDS.documentWriteAtomic]: SaveResult;
   [COMMANDS.appCloseConfirm]: null;
+  [COMMANDS.appUpdateStatus]: UpdateSnapshot;
+  [COMMANDS.appUpdateCheck]: UpdateSnapshot;
+  [COMMANDS.appUpdateDownload]: UpdateSnapshot;
+  [COMMANDS.appUpdateInstall]: null;
 }
 
 export type CommandError = AppError;
 export type CloseRequestedEvent = CloseRequestedPayload;
+export type UpdateStateEvent = UpdateSnapshot;
+export type UpdateProgressEvent = UpdateProgressPayload;
 
 /** Mirrors Tauri's `allow-document-open` naming rule. */
 export function commandPermission(command: CommandName): string {
@@ -67,6 +93,10 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.documentSaveAs]: commandPermission(COMMANDS.documentSaveAs),
   [COMMANDS.documentWriteAtomic]: commandPermission(COMMANDS.documentWriteAtomic),
   [COMMANDS.appCloseConfirm]: commandPermission(COMMANDS.appCloseConfirm),
+  [COMMANDS.appUpdateStatus]: commandPermission(COMMANDS.appUpdateStatus),
+  [COMMANDS.appUpdateCheck]: commandPermission(COMMANDS.appUpdateCheck),
+  [COMMANDS.appUpdateDownload]: commandPermission(COMMANDS.appUpdateDownload),
+  [COMMANDS.appUpdateInstall]: commandPermission(COMMANDS.appUpdateInstall),
 } as const satisfies Record<CommandName, string>;
 
 export type IpcInvoker = <K extends CommandName>(
