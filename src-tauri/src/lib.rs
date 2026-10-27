@@ -1,4 +1,7 @@
-use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{
+    AboutMetadata, CheckMenuItem, IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem,
+    Submenu,
+};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, WindowEvent};
 use tracing_subscriber::EnvFilter;
 
@@ -85,6 +88,12 @@ enum MenuEntry {
         id: &'static str,
         label: &'static str,
         accelerator: Option<&'static str>,
+    },
+    /// A toggle that shows a checkmark while the mode is active.
+    Checked {
+        id: &'static str,
+        label: &'static str,
+        checked: bool,
     },
 }
 
@@ -175,7 +184,11 @@ fn menu_layout(platform: MenuPlatform) -> Vec<MenuSpec> {
     menus.push(MenuSpec {
         title: "显示",
         items: vec![
-            action(MENU_VIEW_TOGGLE_LIVE_PREVIEW, "实时预览", None),
+            MenuEntry::Checked {
+                id: MENU_VIEW_TOGGLE_LIVE_PREVIEW,
+                label: "实时预览",
+                checked: true,
+            },
             action(MENU_PALETTE_OPEN, "命令面板", Some("CmdOrCtrl+K")),
             action(
                 MENU_VIEW_TOGGLE_THEME,
@@ -253,6 +266,14 @@ fn build_submenu<R: Runtime>(app: &AppHandle<R>, spec: &MenuSpec) -> tauri::Resu
                 label,
                 accelerator,
             } => menu.append(&MenuItem::with_id(app, *id, *label, true, *accelerator)?)?,
+            MenuEntry::Checked { id, label, checked } => menu.append(&CheckMenuItem::with_id(
+                app,
+                *id,
+                *label,
+                true,
+                *checked,
+                None::<&str>,
+            )?)?,
         }
     }
     Ok(menu)
@@ -275,6 +296,40 @@ fn build_menu_for<R: Runtime>(
         .map(|menu| menu as &dyn IsMenuItem<R>)
         .collect();
     Menu::with_items(app, &items)
+}
+
+/// Mirrors a window's Live Preview mode in the shared native menu.
+///
+/// The menu bar is app-wide, so each mode change (menu, palette, or a new
+/// document window) must update the same check item.
+pub(crate) fn set_live_preview_checked<R: Runtime>(
+    app: &AppHandle<R>,
+    checked: bool,
+) -> tauri::Result<()> {
+    let Some(menu) = app.menu() else {
+        return Ok(());
+    };
+    // The toggle lives inside the "显示" submenu, so a top-level lookup alone
+    // would never find it.
+    for item in menu.items()? {
+        let target = match &item {
+            MenuItemKind::Check(target)
+                if target.id().as_ref() == MENU_VIEW_TOGGLE_LIVE_PREVIEW =>
+            {
+                Some(target.clone())
+            }
+            MenuItemKind::Submenu(submenu) => match submenu.get(MENU_VIEW_TOGGLE_LIVE_PREVIEW) {
+                Some(MenuItemKind::Check(target)) => Some(target),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(target) = target {
+            target.set_checked(checked)?;
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// The window that owns the menu action.
@@ -366,6 +421,7 @@ pub fn run() {
         .manage(state::WindowSessions::new())
         .manage(state::CloseGuard::new())
         .manage(state::FocusTracker::new())
+        .manage(state::PreviewModes::new())
         .setup(|app| {
             app.manage(app.handle().clone());
             app.manage(state::UpdateManager::new(
@@ -384,6 +440,14 @@ pub fn run() {
             ..
         } => {
             app_handle.state::<state::FocusTracker>().set(&label);
+            // The menu is shared: show the newly focused window's mode.
+            let checked = app_handle
+                .state::<state::PreviewModes>()
+                .get(&label)
+                .unwrap_or(true);
+            if let Err(error) = set_live_preview_checked(app_handle, checked) {
+                tracing::warn!(%error, "failed to sync the live preview menu state");
+            }
         }
         RunEvent::WindowEvent {
             label,
@@ -391,6 +455,7 @@ pub fn run() {
             ..
         } => {
             app_handle.state::<state::FocusTracker>().clear(&label);
+            app_handle.state::<state::PreviewModes>().clear(&label);
         }
         RunEvent::WindowEvent {
             label,
@@ -433,7 +498,7 @@ mod menu_tests {
         menu.items
             .iter()
             .filter_map(|item| match item {
-                MenuEntry::Action { id, .. } => Some(*id),
+                MenuEntry::Action { id, .. } | MenuEntry::Checked { id, .. } => Some(*id),
                 _ => None,
             })
             .collect()
@@ -503,6 +568,11 @@ mod menu_tests {
             action_accelerator(action(view_menu, MENU_TOGGLE_FULLSCREEN)),
             Some("Ctrl+Cmd+F")
         );
+        assert!(view_menu.items.contains(&MenuEntry::Checked {
+            id: MENU_VIEW_TOGGLE_LIVE_PREVIEW,
+            label: "实时预览",
+            checked: true,
+        }));
 
         assert_every_action_has_a_handler(&layout);
     }

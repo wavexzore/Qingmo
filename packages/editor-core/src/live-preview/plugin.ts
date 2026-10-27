@@ -201,6 +201,9 @@ const livePreviewAtomicRanges = EditorView.atomicRanges.of((view) => {
  */
 export function livePreview(): Extension {
   return [
+    // Lets the shell style the editor by mode: Live Preview renders the
+    // document and owns no code gutter, while source mode keeps line numbers.
+    EditorView.editorAttributes.of({ "data-live-preview": "true" }),
     livePreviewPlugin,
     livePreviewAtomicRanges,
     frontMatterPreview,

@@ -137,6 +137,7 @@ describe("openFile", () => {
       documentSaveAs: vi.fn(),
       documentWriteAtomic: vi.fn(),
       appCloseConfirm: vi.fn(),
+      appSetLivePreview: vi.fn(),
     };
     const brokenResult = await openFile(broken);
     expect(brokenResult.ok).toBe(false);

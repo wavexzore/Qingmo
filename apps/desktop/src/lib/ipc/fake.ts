@@ -10,7 +10,7 @@ import type {
 
 import { COMMANDS, type CommandName } from "./commands";
 import { AppError } from "./errors";
-import type { CloseConfirmRequest, IpcPort } from "./port";
+import type { CloseConfirmRequest, IpcPort, LivePreviewRequest } from "./port";
 
 export const FAKE_MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -117,6 +117,7 @@ export class FakeIpc implements IpcPort {
   private defaultDelayMs: number;
 
   readonly closeConfirmCalls: CloseConfirmRequest[] = [];
+  readonly livePreviewCalls: boolean[] = [];
 
   constructor(options: FakeIpcOptions = {}) {
     for (const file of options.files ?? []) {
@@ -357,6 +358,12 @@ export class FakeIpc implements IpcPort {
     await this.wait(COMMANDS.appCloseConfirm);
     this.maybeThrow(COMMANDS.appCloseConfirm);
     this.closeConfirmCalls.push({ allow: request.allow });
+  }
+
+  async appSetLivePreview(request: LivePreviewRequest): Promise<void> {
+    await this.wait(COMMANDS.appSetLivePreview);
+    this.maybeThrow(COMMANDS.appSetLivePreview);
+    this.livePreviewCalls.push(request.livePreview);
   }
 
   private requireActive(docToken: string, command: CommandName): FakeRecord {

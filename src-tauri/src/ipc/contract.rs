@@ -10,6 +10,7 @@ pub const COMMANDS: &[&str] = &[
     "document_save_as",
     "document_write_atomic",
     "app_close_confirm",
+    "app_set_live_preview",
     "app_update_status",
     "app_update_check",
     "app_update_download",

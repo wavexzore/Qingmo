@@ -44,7 +44,6 @@ function DocumentEditor() {
   return (
     <main
       data-testid={untitled ? "untitled-editor" : "document-session"}
-      data-untitled={untitled ? "true" : undefined}
       className="flex h-dvh flex-col bg-paper text-ink"
     >
       {showConflict && conflict ? (
@@ -74,11 +73,7 @@ function DocumentEditor() {
         </div>
       ) : null}
 
-      <div
-        className={
-          untitled ? "mx-auto min-h-0 w-full max-w-[820px] flex-1" : "min-h-0 w-full flex-1"
-        }
-      >
+      <div className="mx-auto min-h-0 w-full px-5 flex-1">
         <EditorHost session={session} autoFocus={untitled} />
       </div>
 

@@ -18,6 +18,7 @@ import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { EditorSession } from "../editor/EditorSession";
+import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
 import { UpdateHost } from "../update/UpdateHost";
 import { useUpdateController, useUpdateSnapshot } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
@@ -49,6 +50,7 @@ export function WorkspaceLayout() {
 
   useThemeCommand();
   useThemeService(session);
+  useLivePreviewMenu(ipc, session);
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);

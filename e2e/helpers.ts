@@ -125,6 +125,11 @@ export async function getCloseConfirms(page: Page): Promise<Array<{ allow: boole
   return page.evaluate(() => window.__QINGMO_E2E__?.getCloseConfirms() ?? []);
 }
 
+/** Live Preview modes reported to the native menu, in call order. */
+export async function getLivePreviewMenuCalls(page: Page): Promise<boolean[]> {
+  return page.evaluate(() => window.__QINGMO_E2E__?.getLivePreviewMenuCalls() ?? []);
+}
+
 export async function failSaveAlways(page: Page, code = "IO"): Promise<void> {
   await page.evaluate((next) => {
     window.__QINGMO_E2E__?.failSaveAlways(next);

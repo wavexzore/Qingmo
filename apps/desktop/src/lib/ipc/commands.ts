@@ -20,6 +20,7 @@ export const COMMANDS = {
   documentSaveAs: "document_save_as",
   documentWriteAtomic: "document_write_atomic",
   appCloseConfirm: "app_close_confirm",
+  appSetLivePreview: "app_set_live_preview",
   appUpdateStatus: "app_update_status",
   appUpdateCheck: "app_update_check",
   appUpdateDownload: "app_update_download",
@@ -35,6 +36,7 @@ export const COMMAND_NAMES = [
   COMMANDS.documentSaveAs,
   COMMANDS.documentWriteAtomic,
   COMMANDS.appCloseConfirm,
+  COMMANDS.appSetLivePreview,
   COMMANDS.appUpdateStatus,
   COMMANDS.appUpdateCheck,
   COMMANDS.appUpdateDownload,
@@ -94,6 +96,7 @@ export interface CommandRequestMap {
   [COMMANDS.documentSaveAs]: { text: string };
   [COMMANDS.documentWriteAtomic]: SaveRequest;
   [COMMANDS.appCloseConfirm]: { allow: boolean };
+  [COMMANDS.appSetLivePreview]: { livePreview: boolean };
   [COMMANDS.appUpdateStatus]: Record<string, never>;
   [COMMANDS.appUpdateCheck]: Record<string, never>;
   [COMMANDS.appUpdateDownload]: Record<string, never>;
@@ -107,6 +110,7 @@ export interface CommandResponseMap {
   [COMMANDS.documentSaveAs]: FilePayload;
   [COMMANDS.documentWriteAtomic]: SaveResult;
   [COMMANDS.appCloseConfirm]: null;
+  [COMMANDS.appSetLivePreview]: null;
   [COMMANDS.appUpdateStatus]: UpdateSnapshot;
   [COMMANDS.appUpdateCheck]: UpdateSnapshot;
   [COMMANDS.appUpdateDownload]: UpdateSnapshot;
@@ -130,6 +134,7 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.documentSaveAs]: commandPermission(COMMANDS.documentSaveAs),
   [COMMANDS.documentWriteAtomic]: commandPermission(COMMANDS.documentWriteAtomic),
   [COMMANDS.appCloseConfirm]: commandPermission(COMMANDS.appCloseConfirm),
+  [COMMANDS.appSetLivePreview]: commandPermission(COMMANDS.appSetLivePreview),
   [COMMANDS.appUpdateStatus]: commandPermission(COMMANDS.appUpdateStatus),
   [COMMANDS.appUpdateCheck]: commandPermission(COMMANDS.appUpdateCheck),
   [COMMANDS.appUpdateDownload]: commandPermission(COMMANDS.appUpdateDownload),

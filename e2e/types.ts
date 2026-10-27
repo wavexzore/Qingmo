@@ -53,6 +53,7 @@ export interface E2eBridge {
   failSaveAlways(code?: string): void;
   clearErrors(): void;
   getCloseConfirms(): Array<{ allow: boolean }>;
+  getLivePreviewMenuCalls(): boolean[];
   setUpdateAvailable(update: E2eUpdateInfo | null): void;
   setUpdateError(operation: "check" | "download" | "install", code: string | null): void;
   holdUpdateDownload(): void;

@@ -4,6 +4,10 @@ export interface CloseConfirmRequest {
   allow: boolean;
 }
 
+export interface LivePreviewRequest {
+  livePreview: boolean;
+}
+
 /**
  * The only document/file channel available to the UI.
  *
@@ -26,4 +30,6 @@ export interface IpcPort {
   documentSaveAs(text: string): Promise<FilePayload>;
   documentWriteAtomic(request: SaveRequest): Promise<SaveResult>;
   appCloseConfirm(request: CloseConfirmRequest): Promise<void>;
+  /** Mirrors this window's Live Preview mode in the native menu bar. */
+  appSetLivePreview(request: LivePreviewRequest): Promise<void>;
 }
