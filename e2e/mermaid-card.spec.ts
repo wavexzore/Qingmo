@@ -116,6 +116,13 @@ test("card chrome exposes the kind, hover tools and working zoom", async ({ page
   const reset = await card.locator("svg").evaluate((svg) => svg.getBoundingClientRect().width);
   expect(reset).toBeCloseTo(before, 0);
 
+  const zoomOut = card.getByRole("button", { name: "缩小图表" });
+  for (let index = 0; index < 10; index += 1) {
+    await zoomOut.click();
+  }
+  await expect(zoomReset).toHaveText("1%");
+  await expect(zoomOut).toBeDisabled();
+
   await card.getByRole("button", { name: "编辑 Mermaid 源码" }).click();
   await expect(card).toHaveCount(0);
   await expect(page.locator(".cm-line").filter({ hasText: "flowchart TB" }).first()).toBeVisible();
@@ -256,6 +263,53 @@ test("clicking or scrolling the plate keeps it rendered until 源码 is used", a
   await card.getByRole("button", { name: "编辑 Mermaid 源码" }).click();
   await expect(card).toHaveCount(0);
   await expect(page.locator(".cm-line").filter({ hasText: "flowchart LR" }).first()).toBeVisible();
+});
+
+test("zooming keeps the horizontally scrolled diagram anchored", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openApp(page, [{ path: "/docs/oversized-mermaid.md", text: OVERSIZED_DOC }]);
+  await openSeededFile(page, "oversized-mermaid.md");
+
+  const card = page.locator(".cm-md-mermaid").first();
+  const canvas = card.locator(".cm-md-mermaid-canvas");
+  const zoomLabel = card.locator(".cm-md-mermaid-tool").nth(1);
+  await expect(card.locator("svg")).toBeVisible({ timeout: 30_000 });
+
+  await card.hover();
+  const zoomIn = card.getByRole("button", { name: "放大图表" });
+  const zoomOut = card.getByRole("button", { name: "缩小图表" });
+  for (let step = 0; step < 10; step += 1) {
+    await zoomIn.click();
+  }
+  await expect(zoomLabel).toHaveText("200%");
+
+  await canvas.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  const before = await canvas.evaluate((element) => ({
+    left: element.scrollLeft,
+    max: element.scrollWidth - element.clientWidth,
+  }));
+  expect(before.left).toBeGreaterThan(0);
+
+  // Shrinking below the readable floor clamps the canvas offset; growing
+  // again must return to the right edge instead of leaving the view stuck
+  // near the left, blank part of the diagram.
+  for (let step = 0; step < 10; step += 1) {
+    await zoomOut.click();
+  }
+  await expect(zoomLabel).toHaveText("100%");
+  for (let step = 0; step < 10; step += 1) {
+    await zoomIn.click();
+  }
+  await expect(zoomLabel).toHaveText("200%");
+
+  const after = await canvas.evaluate((element) => ({
+    left: element.scrollLeft,
+    max: element.scrollWidth - element.clientWidth,
+  }));
+  expect(after.max).toBeCloseTo(before.max, 0);
+  expect(after.left).toBeGreaterThan(before.left * 0.9);
 });
 
 test("render failure keeps the plate and returns to source", async ({ page }) => {
