@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { FilePayload } from "@qingmo/shared";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -70,12 +71,30 @@ describe("openFile", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.value).not.toBeNull();
+    }
+    if (result.ok && result.value) {
       expect(result.value.path).toBe("/docs/note.md");
       expect(result.value.text).toBe("# Hi\n");
       expect(result.value.docToken).toBeTruthy();
     }
     expect(spy).toHaveBeenCalledWith();
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null when Tauri opened the document in a new window", async () => {
+    const ipc = fileIpc();
+    // The Tauri adapter resolves null after creating a native window; the
+    // fake's narrowed type still returns a payload, so force the production
+    // shape here.
+    vi.spyOn(ipc, "documentOpen").mockResolvedValue(null as unknown as FilePayload);
+
+    const result = await openFile(ipc);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBeNull();
+    }
   });
 
   it("treats a cancelled dialog as a normal CANCELLED result", async () => {
@@ -103,6 +122,7 @@ describe("openFile", () => {
 
     const broken: IpcPort = {
       documentOpen: vi.fn().mockRejectedValue("bridge unavailable"),
+      documentTakePending: vi.fn(),
       documentReload: vi.fn(),
       documentSaveAs: vi.fn(),
       documentWriteAtomic: vi.fn(),
@@ -160,6 +180,19 @@ describe("blank editor -> editor open flow", () => {
     await waitFor(() =>
       expect(document.querySelector(".cm-editor")?.className).not.toBe(editorBefore),
     );
+  });
+
+  it("keeps the current document when the port opens another window", async () => {
+    const ipc = fileIpc("# Current\n");
+    const spy = vi.spyOn(ipc, "documentOpen").mockResolvedValue(null as unknown as FilePayload);
+    const { router, platform } = renderApp(ipc);
+
+    platform.emitMenuAction("file.open");
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+    expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/");
   });
 
   it("opens the registry-backed palette with Mod+K and runs a command from the keyboard", async () => {

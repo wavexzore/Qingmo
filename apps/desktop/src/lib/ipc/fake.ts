@@ -109,6 +109,7 @@ export class FakeIpc implements IpcPort {
   private readonly persistentErrors = new Map<CommandName, AppError>();
   private readonly commandDelays = new Map<CommandName, number>();
   private active: { token: string; path: string } | null = null;
+  private pending: FilePayload | null = null;
   private openFile: string | null;
   private saveAsFile: string | null;
   private nextToken = 1;
@@ -225,6 +226,10 @@ export class FakeIpc implements IpcPort {
     this.persistentErrors.clear();
   }
 
+  /**
+   * Browser harness fallback: the fake cannot create a native window, so it
+   * returns the payload and the UI adopts it in place.
+   */
   async documentOpen(): Promise<FilePayload> {
     await this.wait(COMMANDS.documentOpen);
     this.maybeThrow(COMMANDS.documentOpen);
@@ -238,13 +243,28 @@ export class FakeIpc implements IpcPort {
       throw new AppError("NOT_FOUND", `fake file not found: ${path}`);
     }
 
-    // Opening establishes a new base version and invalidates the old token,
-    // matching the single-document Rust registry.
+    // The browser harness adopts in place, so opening establishes a new base
+    // version and replaces the fake's single active token.
     record.baseHash = record.diskHash;
     const token = `fake-doc-${this.nextToken}`;
     this.nextToken += 1;
     this.active = { token, path };
     return this.toPayload(record, token);
+  }
+
+  /** Seeds a payload for a simulated document window boot. */
+  stagePending(payload: FilePayload): void {
+    this.pending = payload;
+  }
+
+  async documentTakePending(): Promise<FilePayload | null> {
+    const payload = this.pending;
+    this.pending = null;
+    if (!payload) {
+      return null;
+    }
+    this.active = { token: payload.docToken, path: payload.path };
+    return payload;
   }
 
   async documentSaveAs(text: string): Promise<FilePayload> {

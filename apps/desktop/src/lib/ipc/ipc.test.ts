@@ -412,6 +412,9 @@ describe("FakeIpc", () => {
       message: "busy once",
     });
     const opened = await ipc.documentOpen();
+    if (!opened) {
+      throw new Error("fake open must return a payload");
+    }
 
     ipc.failAlways(COMMANDS.documentReload, "IO", "persistent");
     await expect(ipc.documentReload(opened.docToken)).rejects.toMatchObject({

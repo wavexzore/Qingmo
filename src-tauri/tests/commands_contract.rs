@@ -42,7 +42,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 9);
+    assert_eq!(COMMANDS.len(), 10);
     assert_eq!(
         EVENTS,
         &[
@@ -85,7 +85,7 @@ fn capability_covers_exactly_the_application_commands() {
         );
     }
 
-    assert_eq!(capability["windows"], json!(["main"]));
+    assert_eq!(capability["windows"], json!(["main", "doc-*"]));
 }
 
 #[test]
@@ -218,6 +218,7 @@ fn invoke(
 fn invoke_handler_registers_every_contract_command() {
     let app = tauri::test::mock_builder()
         .manage(qingmo_lib::state::DocumentRegistry::new())
+        .manage(qingmo_lib::state::WindowSessions::new())
         .manage(CloseGuard::new())
         .manage(qingmo_lib::state::UpdateManager::new("0.1.0"))
         .invoke_handler(qingmo_lib::commands::handler())
@@ -231,6 +232,7 @@ fn invoke_handler_registers_every_contract_command() {
     // native dialog. Registration is asserted from the single handler source.
     let handler_source = read_text("src/commands/mod.rs");
     assert!(handler_source.contains("document::document_open"));
+    assert!(handler_source.contains("document::document_take_pending"));
     assert!(handler_source.contains("document::document_reload"));
     assert!(handler_source.contains("document::document_save_as"));
     assert!(handler_source.contains("document::document_write_atomic"));
@@ -260,12 +262,12 @@ fn invoke_handler_registers_every_contract_command() {
     );
 
     let guard = app.state::<CloseGuard>();
-    assert!(guard.begin(CloseReason::Window));
+    assert!(guard.begin(CloseReason::Window, ["main".to_string()]));
     let response = invoke(&webview, "app_close_confirm", json!({"allow": false}))
         .expect("cancelling a pending close request must succeed");
     assert_eq!(response, Value::Null);
     assert_eq!(guard.pending(), None);
-    assert!(guard.begin(CloseReason::Exit));
+    assert!(guard.begin(CloseReason::Exit, ["main".to_string()]));
     guard.cancel();
 
     let status = invoke(&webview, "app_update_status", json!({}))

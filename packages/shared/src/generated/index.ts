@@ -5,6 +5,7 @@ export type { CloseRequestedPayload } from "./CloseRequestedPayload";
 export type { ConflictDetails } from "./ConflictDetails";
 export type { FilePayload } from "./FilePayload";
 export type { LineEnding } from "./LineEnding";
+export type { MenuActionPayload } from "./MenuActionPayload";
 export type { ReadOnlyReason } from "./ReadOnlyReason";
 export type { SaveRequest } from "./SaveRequest";
 export type { SaveResult } from "./SaveResult";

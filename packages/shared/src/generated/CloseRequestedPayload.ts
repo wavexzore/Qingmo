@@ -3,5 +3,8 @@ import type { CloseReason } from "./CloseReason";
 
 /**
  * Payload of the single P1 application event `app://close-requested`.
+ *
+ * `target` lets a window ignore events that were delivered by a global
+ * listener but belong to another window.
  */
-export type CloseRequestedPayload = { reason: CloseReason, };
+export type CloseRequestedPayload = { reason: CloseReason, target: string, };

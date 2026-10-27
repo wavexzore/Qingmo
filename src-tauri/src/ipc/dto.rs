@@ -90,10 +90,22 @@ pub enum CloseReason {
 }
 
 /// Payload of the single P1 application event `app://close-requested`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+///
+/// `target` lets a window ignore events that were delivered by a global
+/// listener but belong to another window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CloseRequestedPayload {
     pub reason: CloseReason,
+    pub target: String,
+}
+
+/// Payload of `app://menu-action`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuActionPayload {
+    pub action: String,
+    pub target: String,
 }
 
 /// Lifecycle phase owned by the Rust `UpdateManager`.

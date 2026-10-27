@@ -15,6 +15,7 @@ import type {
  */
 export const COMMANDS = {
   documentOpen: "document_open",
+  documentTakePending: "document_take_pending",
   documentReload: "document_reload",
   documentSaveAs: "document_save_as",
   documentWriteAtomic: "document_write_atomic",
@@ -29,6 +30,7 @@ export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
 
 export const COMMAND_NAMES = [
   COMMANDS.documentOpen,
+  COMMANDS.documentTakePending,
   COMMANDS.documentReload,
   COMMANDS.documentSaveAs,
   COMMANDS.documentWriteAtomic,
@@ -87,6 +89,7 @@ export const MENU_ACTION_NAMES = [
 
 export interface CommandRequestMap {
   [COMMANDS.documentOpen]: Record<string, never>;
+  [COMMANDS.documentTakePending]: Record<string, never>;
   [COMMANDS.documentReload]: { docToken: string };
   [COMMANDS.documentSaveAs]: { text: string };
   [COMMANDS.documentWriteAtomic]: SaveRequest;
@@ -98,7 +101,8 @@ export interface CommandRequestMap {
 }
 
 export interface CommandResponseMap {
-  [COMMANDS.documentOpen]: FilePayload;
+  [COMMANDS.documentOpen]: null;
+  [COMMANDS.documentTakePending]: FilePayload | null;
   [COMMANDS.documentReload]: FilePayload;
   [COMMANDS.documentSaveAs]: FilePayload;
   [COMMANDS.documentWriteAtomic]: SaveResult;
@@ -121,6 +125,7 @@ export function commandPermission(command: CommandName): string {
 
 export const COMMAND_PERMISSIONS = {
   [COMMANDS.documentOpen]: commandPermission(COMMANDS.documentOpen),
+  [COMMANDS.documentTakePending]: commandPermission(COMMANDS.documentTakePending),
   [COMMANDS.documentReload]: commandPermission(COMMANDS.documentReload),
   [COMMANDS.documentSaveAs]: commandPermission(COMMANDS.documentSaveAs),
   [COMMANDS.documentWriteAtomic]: commandPermission(COMMANDS.documentWriteAtomic),

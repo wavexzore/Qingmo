@@ -1,5 +1,5 @@
 use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, WindowEvent};
 use tracing_subscriber::EnvFilter;
 
 pub mod commands;
@@ -13,6 +13,7 @@ use ipc::contract::{
     MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW,
     MENU_VIEW_TOGGLE_THEME,
 };
+use ipc::dto::MenuActionPayload;
 
 /// Menu ids handled in Rust instead of being forwarded to the webview.
 const MENU_QUIT: &str = "app.quit";
@@ -276,10 +277,27 @@ fn build_menu_for<R: Runtime>(
     Menu::with_items(app, &items)
 }
 
-fn toggle_fullscreen<R: Runtime>(app: &AppHandle<R>) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
+/// The window that owns the menu action.
+///
+/// A menu action is delivered while the native menu bar owns focus, so
+/// `is_focused()` can be false for every window. The last focus event is the
+/// stable source of truth; live focus and `main` are fallbacks for the first
+/// event after startup.
+fn focused_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
+    app.state::<state::FocusTracker>()
+        .get()
+        .and_then(|label| app.get_webview_window(&label))
+        .or_else(|| {
+            app.webview_windows()
+                .values()
+                .find(|window| window.is_focused().unwrap_or(false))
+                .cloned()
+        })
+        .or_else(|| app.get_webview_window("main"))
+        .or_else(|| app.webview_windows().values().next().cloned())
+}
+
+fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
     match window.is_fullscreen() {
         Ok(fullscreen) => {
             if let Err(error) = window.set_fullscreen(!fullscreen) {
@@ -300,27 +318,54 @@ pub fn run() {
         .menu(build_menu)
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
+            let target = focused_window(app);
+            let target_label = target.as_ref().map(|window| window.label().to_string());
+
             if id == MENU_QUIT {
-                commands::close::request_close(app, ipc::dto::CloseReason::Exit);
+                commands::close::request_close(
+                    app,
+                    ipc::dto::CloseReason::Exit,
+                    target_label.as_deref(),
+                );
                 return;
             }
             if id == MENU_CLOSE_WINDOW {
-                commands::close::request_close(app, ipc::dto::CloseReason::Window);
+                if let Some(label) = target_label.as_deref() {
+                    commands::close::request_close(app, ipc::dto::CloseReason::Window, Some(label));
+                }
                 return;
             }
             if id == MENU_TOGGLE_FULLSCREEN {
-                toggle_fullscreen(app);
+                if let Some(window) = target.as_ref() {
+                    toggle_fullscreen(window);
+                }
                 return;
             }
 
             if MENU_ACTIONS.contains(&id) {
-                if let Err(error) = app.emit(EVENT_MENU_ACTION, id) {
-                    tracing::error!(menu_action = id, %error, "failed to emit menu action");
+                match target {
+                    Some(window) => {
+                        // `Emitter::emit` is global; target only the focused
+                        // window or every window would run the same command.
+                        if let Err(error) = window.emit_to(
+                            window.label(),
+                            EVENT_MENU_ACTION,
+                            MenuActionPayload {
+                                action: id.to_string(),
+                                target: window.label().to_string(),
+                            },
+                        ) {
+                            tracing::error!(menu_action = id, %error, "failed to emit menu action");
+                        }
+                    }
+                    None => tracing::warn!(menu_action = id, "no window to receive menu action"),
                 }
             }
         })
         .manage(state::DocumentRegistry::new())
+        .manage(state::WindowSessions::new())
         .manage(state::CloseGuard::new())
+        .manage(state::FocusTracker::new())
         .setup(|app| {
             app.manage(app.handle().clone());
             app.manage(state::UpdateManager::new(
@@ -335,17 +380,35 @@ pub fn run() {
     app.run(|app_handle, event| match event {
         RunEvent::WindowEvent {
             label,
+            event: WindowEvent::Focused(true),
+            ..
+        } => {
+            app_handle.state::<state::FocusTracker>().set(&label);
+        }
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::Destroyed,
+            ..
+        } => {
+            app_handle.state::<state::FocusTracker>().clear(&label);
+        }
+        RunEvent::WindowEvent {
+            label,
             event: WindowEvent::CloseRequested { api, .. },
             ..
-        } if label == "main" => {
+        } => {
             api.prevent_close();
-            commands::close::request_close(app_handle, ipc::dto::CloseReason::Window);
+            commands::close::request_close(
+                app_handle,
+                ipc::dto::CloseReason::Window,
+                Some(label.as_str()),
+            );
         }
         RunEvent::ExitRequested {
             code: None, api, ..
         } => {
             api.prevent_exit();
-            commands::close::request_close(app_handle, ipc::dto::CloseReason::Exit);
+            commands::close::request_close(app_handle, ipc::dto::CloseReason::Exit, None);
         }
         _ => {}
     });

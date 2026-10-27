@@ -92,6 +92,8 @@ export function WorkspaceLayout() {
     }
     openingRef.current = true;
     try {
+      // Flush first: browser harnesses adopt the file in place, and in Tauri a
+      // pending conflict must be resolved before opening another document.
       if (coordinatorRef.current) {
         const flushed = await coordinatorRef.current.flush("switch");
         if (!flushed.ok) {
@@ -107,6 +109,12 @@ export function WorkspaceLayout() {
         }
         return;
       }
+      if (result.value === null) {
+        // Tauri created a new window for this document; the current session
+        // stays exactly as it was.
+        return;
+      }
+      // Browser harness fallback: no native window exists, adopt in place.
       setSession(EditorSession.create(result.value));
       navigate("/editor");
     } finally {
@@ -187,8 +195,8 @@ export function WorkspaceLayout() {
       titleKey: "commands:file.save",
       category: "commands:category.file",
       keybinding: "Mod+S",
-      // Read the live session at execution time: opening another document
-      // replaces the session/coordinator without leaving a stale command.
+      // Read the live session at execution time so a replaced session never
+      // leaves a stale coordinator bound to the command.
       when: () => !sessionRef.current?.getSnapshot().readOnly,
       run: async () => {
         await coordinatorRef.current?.flush("manual");

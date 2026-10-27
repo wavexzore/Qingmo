@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{FilePayload, SaveResult};
 use crate::services::AtomicWriter;
-use crate::state::DocumentRegistry;
+use crate::state::{DocumentRegistry, FocusTracker, WindowSessions};
 
 /// Native window title for an open document.
 ///
@@ -19,20 +19,21 @@ pub(crate) fn window_title_for(path: &Path) -> String {
     }
 }
 
-fn set_document_title<R: tauri::Runtime>(app: &AppHandle<R>, path: &Path) {
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(error) = window.set_title(&window_title_for(path)) {
-            tracing::warn!(%error, "failed to update the window title");
-        }
-    }
-}
-
+/// Opens the selected file in a new document window.
+///
+/// The current window is deliberately left untouched; the payload is staged
+/// for the new window, which consumes it on boot through
+/// `document_take_pending`. The command returns `null` because the caller has
+/// nothing to adopt.
 #[tauri::command]
 pub async fn document_open(
     app: State<'_, AppHandle>,
     registry: State<'_, DocumentRegistry>,
-) -> Result<FilePayload, AppError> {
+    sessions: State<'_, WindowSessions>,
+) -> Result<(), AppError> {
+    let app = app.inner().clone();
     let registry = registry.inner().clone();
+    let sessions = sessions.inner().clone();
     let (sender, receiver) = tokio::sync::oneshot::channel();
 
     app.dialog()
@@ -54,7 +55,8 @@ pub async fn document_open(
         )
     })?;
 
-    let payload = tauri::async_runtime::spawn_blocking(move || registry.open_path(path))
+    let open_registry = registry.clone();
+    let payload = tauri::async_runtime::spawn_blocking(move || open_registry.open_path(path))
         .await
         .map_err(|error| {
             AppError::new(
@@ -63,20 +65,64 @@ pub async fn document_open(
             )
         })??;
 
-    set_document_title(app.inner(), Path::new(&payload.path));
-    Ok(payload)
+    let title = window_title_for(Path::new(&payload.path));
+    let doc_token = payload.doc_token.clone();
+    let label = format!("doc-{}", uuid::Uuid::new_v4());
+    sessions.stage(&label, payload);
+
+    let built = WebviewWindowBuilder::new(
+        &app,
+        &label,
+        WebviewUrl::App("index.html?window=document".into()),
+    )
+    .title(title)
+    .inner_size(1200.0, 800.0)
+    .min_inner_size(800.0, 600.0)
+    .focused(true)
+    .build();
+
+    match built {
+        Ok(window) => {
+            app.state::<FocusTracker>().set(&label);
+            if let Err(error) = window.set_focus() {
+                tracing::warn!(%error, "failed to focus the document window");
+            }
+        }
+        Err(error) => {
+            sessions.discard_pending(&label);
+            registry.release(&doc_token);
+            return Err(AppError::new(
+                AppErrorCode::Io,
+                format!("failed to create the document window: {error}"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Hands the staged document to the window that was created for it.
+#[tauri::command]
+pub fn document_take_pending<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
+    sessions: State<'_, WindowSessions>,
+) -> Result<Option<FilePayload>, AppError> {
+    Ok(sessions.take_pending(window.label()))
 }
 
 #[tauri::command]
-pub async fn document_save_as(
-    app: State<'_, AppHandle>,
+pub async fn document_save_as<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
     registry: State<'_, DocumentRegistry>,
+    sessions: State<'_, WindowSessions>,
     text: String,
 ) -> Result<FilePayload, AppError> {
     let registry = registry.inner().clone();
+    let sessions = sessions.inner().clone();
     let (sender, receiver) = tokio::sync::oneshot::channel();
 
-    app.dialog()
+    window
+        .dialog()
         .file()
         .add_filter("Markdown", &["md", "markdown"])
         .set_file_name("未命名.md")
@@ -105,7 +151,10 @@ pub async fn document_save_as(
             )
         })??;
 
-    set_document_title(app.inner(), Path::new(&payload.path));
+    if let Err(error) = window.set_title(&window_title_for(Path::new(&payload.path))) {
+        tracing::warn!(%error, "failed to update the window title");
+    }
+    sessions.set_token(window.label(), payload.doc_token.clone());
     Ok(payload)
 }
 
