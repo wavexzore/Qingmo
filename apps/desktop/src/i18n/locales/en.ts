@@ -51,10 +51,13 @@ export const common = {
   },
   closeGuard: {
     title: "Unsaved changes",
+    unsaved: "Before closing",
     conflict: "The file has a conflict",
     error: "The save did not finish",
     description:
       "The document could not be saved. Close Qingmo anyway? Unsaved changes will be lost.",
+    unsavedDescription: "Continuing closes this window and discards unsaved changes.",
+    confirm: "Confirm",
     allow: "Close anyway",
     cancel: "Cancel",
   },
@@ -104,9 +107,6 @@ export const editor = {
     reloading: "Reloading…",
     overwriting: "Saving…",
     failed: "The action did not finish. Try again.",
-  },
-  save: {
-    resolveBeforeSwitch: "Resolve the conflict or save error before opening another file.",
   },
 } as const;
 

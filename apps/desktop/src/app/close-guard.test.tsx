@@ -47,9 +47,7 @@ function Probe({
   );
 }
 
-async function openHarness(text = "hello\n"): Promise<Harness> {
-  const ipc = new FakeIpc({ files: [{ path: PATH, text }] });
-  const session = EditorSession.create(await ipc.documentOpen());
+function mountHarness(ipc: FakeIpc, session: EditorSession): Harness {
   const parent = document.createElement("div");
   document.body.append(parent);
   const view = new EditorView({ state: session.editorState, parent });
@@ -71,6 +69,16 @@ async function openHarness(text = "hello\n"): Promise<Harness> {
 
   active = { ipc, platform, session, coordinator, view, parent, state, unmount };
   return active;
+}
+
+async function openHarness(text = "hello\n"): Promise<Harness> {
+  const ipc = new FakeIpc({ files: [{ path: PATH, text }] });
+  return mountHarness(ipc, EditorSession.create(await ipc.documentOpen()));
+}
+
+function openUntitledHarness(): Harness {
+  const ipc = new FakeIpc();
+  return mountHarness(ipc, EditorSession.createUntitled("未命名", { placeholder: "开始写作…" }));
 }
 
 function insert(view: EditorView, text: string): void {
@@ -121,6 +129,50 @@ describe("useCloseGuard", () => {
     });
     expect(harness.ipc.getFile(PATH)?.text).toBe("hello\n!");
     expect(harness.session.getSnapshot().saveState).toBe("clean");
+  });
+
+  it("asks before opening Save As for a dirty untitled document", async () => {
+    const harness = openUntitledHarness();
+    const saveAs = vi.spyOn(harness.ipc, "documentSaveAs");
+    insert(harness.view, "draft");
+
+    await act(async () => {
+      harness.platform.emitCloseRequested("exit");
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("有未保存的修改");
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "取消",
+      "确认",
+    ]);
+    expect(saveAs).not.toHaveBeenCalled();
+    expect(harness.ipc.closeConfirmCalls).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId("close-cancel"));
+    await waitFor(() => {
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: false }]);
+    });
+    expect(saveAs).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("confirms an untitled exit without opening Save As", async () => {
+    const harness = openUntitledHarness();
+    const saveAs = vi.spyOn(harness.ipc, "documentSaveAs");
+    insert(harness.view, "draft");
+
+    await act(async () => {
+      harness.platform.emitCloseRequested("exit");
+      await Promise.resolve();
+    });
+
+    fireEvent.click(await screen.findByTestId("close-confirm"));
+
+    await waitFor(() => {
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true }]);
+    });
+    expect(saveAs).not.toHaveBeenCalled();
   });
 
   it("asks before closing a conflicted document and can close anyway", async () => {
