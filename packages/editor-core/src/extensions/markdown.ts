@@ -6,6 +6,7 @@ import { tags } from "@lezer/highlight";
 import { highlightExtension } from "./highlight";
 import { codeLanguages } from "./languages";
 import { mathExtension } from "./math";
+import { typoraSetextExtension } from "./setext";
 
 /**
  * Markdown highlighting uses the app's semantic CSS variables instead of
@@ -43,6 +44,6 @@ export const markdownExtensions: readonly Extension[] = Object.freeze([
   markdown({
     base: markdownLanguage,
     codeLanguages: [...codeLanguages],
-    extensions: [highlightExtension, mathExtension],
+    extensions: [highlightExtension, mathExtension, typoraSetextExtension],
   }),
 ]);

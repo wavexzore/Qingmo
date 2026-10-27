@@ -78,6 +78,18 @@ test("line numbers follow the Live Preview mode and the menu tracks it", async (
   await expect.poll(() => getLivePreviewMenuCalls(page)).toEqual([true, false, true]);
 });
 
+test("a lone dash leaves the paragraph above in plain text", async ({ page }) => {
+  await openApp(page);
+  await typeInEditor(page, "ascii path\n-");
+
+  const paragraphLine = page.locator('[data-testid="untitled-editor"] .cm-line').first();
+  await expect(paragraphLine).not.toHaveClass(/cm-md-h2/);
+
+  // Typora needs a two-character underline before it promotes the paragraph.
+  await typeInEditor(page, "-");
+  await expect(paragraphLine).toHaveClass(/cm-md-h2/);
+});
+
 test("saved documents keep the same writing margins as the untitled buffer", async ({ page }) => {
   await openApp(page);
   const untitledBox = await page.locator(".cm-editor").boundingBox();
