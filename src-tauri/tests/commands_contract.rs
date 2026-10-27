@@ -1,7 +1,7 @@
 use qingmo_lib::error::{AppError, AppErrorCode};
 use qingmo_lib::ipc::dto::{
-    CloseReason, FilePayload, SaveRequest, TextEncoding, TextFormat, UpdateInfo, UpdatePhase,
-    UpdateSnapshot,
+    AboutLink, CloseReason, FilePayload, SaveRequest, TextEncoding, TextFormat, UpdateInfo,
+    UpdatePhase, UpdateSnapshot,
 };
 use qingmo_lib::ipc::{command_permissions, COMMANDS, EVENTS};
 use qingmo_lib::state::CloseGuard;
@@ -25,6 +25,16 @@ fn read_json(relative: &str) -> Value {
         .unwrap_or_else(|error| panic!("failed to parse {relative}: {error}"))
 }
 
+fn capability_permissions(relative: &str) -> Vec<String> {
+    read_json(relative)["permissions"]
+        .as_array()
+        .expect("permissions must be an array")
+        .iter()
+        .map(|value| value.as_str().expect("permission must be a string"))
+        .map(str::to_string)
+        .collect()
+}
+
 #[test]
 fn frontend_command_mirror_contains_every_contract_name() {
     let source = read_text("../apps/desktop/src/lib/ipc/commands.ts");
@@ -42,7 +52,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 11);
+    assert_eq!(COMMANDS.len(), 14);
     assert_eq!(
         EVENTS,
         &[
@@ -62,30 +72,38 @@ fn frontend_command_mirror_contains_every_contract_name() {
 }
 
 #[test]
-fn capability_covers_exactly_the_application_commands() {
-    let capability = read_json("capabilities/default.json");
-    let permissions = capability["permissions"]
-        .as_array()
-        .expect("permissions must be an array")
-        .iter()
-        .map(|value| value.as_str().expect("permission must be a string"))
-        .collect::<Vec<_>>();
+fn capabilities_cover_exactly_the_application_commands() {
+    let mut app_permissions = Vec::new();
+    for capability in ["capabilities/default.json", "capabilities/about.json"] {
+        app_permissions.extend(
+            capability_permissions(capability)
+                .into_iter()
+                .filter(|permission| permission.starts_with("allow-")),
+        );
+    }
+    app_permissions.sort();
+    app_permissions.dedup();
 
-    let app_permissions = permissions
-        .iter()
-        .copied()
-        .filter(|permission| permission.starts_with("allow-"))
-        .collect::<Vec<_>>();
-    assert_eq!(app_permissions, command_permissions());
+    let mut expected = command_permissions();
+    expected.sort();
+    assert_eq!(app_permissions, expected);
 
-    for permission in &permissions {
+    let about_permissions = capability_permissions("capabilities/about.json");
+    for permission in &about_permissions {
         assert!(
             !permission.starts_with("updater:"),
             "updater:* must never be granted to the webview: {permission}"
         );
     }
 
-    assert_eq!(capability["windows"], json!(["main", "doc-*"]));
+    assert_eq!(
+        read_json("capabilities/default.json")["windows"],
+        json!(["main", "doc-*"])
+    );
+    assert_eq!(
+        read_json("capabilities/about.json")["windows"],
+        json!(["about"])
+    );
 }
 
 #[test]
@@ -166,6 +184,18 @@ fn dto_wire_names_are_camel_case_and_stable() {
             "progress": null
         })
     );
+
+    let about = qingmo_lib::ipc::dto::AboutInfo {
+        version: "0.1.0".to_string(),
+        build: "0.1.0 · arm64".to_string(),
+        platform: "macOS".to_string(),
+        license: "Apache-2.0".to_string(),
+        copyright: "© 2026 Qingmo Contributors".to_string(),
+    };
+    let value = serde_json::to_value(&about).expect("AboutInfo must serialize");
+    assert_eq!(value["build"], "0.1.0 · arm64");
+    assert_eq!(value["copyright"], "© 2026 Qingmo Contributors");
+    assert_eq!(serde_json::to_value(AboutLink::Github).unwrap(), "github");
 }
 
 #[test]
@@ -237,6 +267,9 @@ fn invoke_handler_registers_every_contract_command() {
     assert!(handler_source.contains("document::document_save_as"));
     assert!(handler_source.contains("document::document_write_atomic"));
     assert!(handler_source.contains("close::app_close_confirm"));
+    assert!(handler_source.contains("about::app_about_info"));
+    assert!(handler_source.contains("about::app_about_close"));
+    assert!(handler_source.contains("about::app_about_open_link"));
     assert!(handler_source.contains("update::app_update_status"));
     assert!(handler_source.contains("update::app_update_check"));
     assert!(handler_source.contains("update::app_update_download"));
@@ -253,6 +286,44 @@ fn invoke_handler_registers_every_contract_command() {
     )
     .expect_err("write with a fake token must fail");
     assert_eq!(error["code"], "INVALID_PATH", "unexpected error: {error}");
+
+    for command in ["app_about_info", "app_about_close"] {
+        let error = invoke(&webview, command, json!({}))
+            .expect_err("About commands must reject other windows");
+        let denied = error.get("code").and_then(Value::as_str) == Some("PERMISSION_DENIED")
+            || error
+                .as_str()
+                .is_some_and(|message| message.contains("not allowed"));
+        assert!(
+            denied,
+            "{command} must be scoped to the About window: {error}"
+        );
+    }
+    let error = invoke(&webview, "app_about_open_link", json!({"link": "github"}))
+        .expect_err("About link opening must be scoped to the About window");
+    let denied = error.get("code").and_then(Value::as_str) == Some("PERMISSION_DENIED")
+        || error
+            .as_str()
+            .is_some_and(|message| message.contains("not allowed"));
+    assert!(
+        denied,
+        "app_about_open_link must be scoped to the About window: {error}"
+    );
+
+    let about = tauri::WebviewWindowBuilder::new(&app, "about", Default::default())
+        .build()
+        .expect("mock About webview must build");
+    let info = invoke(&about, "app_about_info", json!({}))
+        .expect("the About window must read build metadata");
+    assert_eq!(info["version"], "0.1.0");
+    assert_eq!(info["license"], "Apache-2.0");
+    assert!(
+        info["build"]
+            .as_str()
+            .expect("build must be a string")
+            .starts_with("0.1.0 · "),
+        "unexpected build metadata: {info}"
+    );
 
     let error = invoke(&webview, "app_close_confirm", json!({"allow": false}))
         .expect_err("a confirmation without a pending close request must fail");

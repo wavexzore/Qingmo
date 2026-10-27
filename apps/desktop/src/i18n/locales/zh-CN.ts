@@ -169,6 +169,53 @@ export const update = {
   },
 } as const;
 
+export const about = {
+  windowLabel: "Qingmo / Colophon",
+  kicker: "本地优先的 Markdown 写作工具",
+  promise: "把文字留在本地，把注意力留给写作。",
+  manifesto: "一页素纸，一支旧笔。没有账号，没有云端催促，只有你和正在写下的这一句。",
+  edition: "Edition",
+  meta: {
+    version: "版本",
+    build: "构建",
+    platform: "平台",
+    license: "许可",
+  },
+  status: {
+    upToDate: "已是最新版本",
+    checking: "正在检查更新…",
+    available: "发现新版本 {{version}}",
+    downloading: "正在下载 {{version}}…",
+    ready: "{{version}} 已准备好安装",
+    installing: "正在安装更新…",
+    error: "检查失败，可重试",
+  },
+  actions: {
+    checkUpdates: "检查更新",
+    viewUpdate: "查看更新",
+    copyVersion: "复制版本信息",
+    close: "关闭",
+  },
+  toast: {
+    copied: "版本信息已复制",
+    copyFailed: "复制失败，请稍后重试",
+    openFailed: "无法打开链接，请稍后重试",
+  },
+  links: {
+    docs: "文档",
+    github: "GitHub",
+    changelog: "更新日志",
+    license: "许可协议",
+  },
+  aria: {
+    window: "关于青墨",
+    icon: "青墨应用图标",
+    links: "相关链接",
+    versionInfo: "版本信息",
+  },
+  copyValue: "青墨 {{version}} ({{build}}) · {{platform}}",
+} as const;
+
 export const commandLabels = {
   file: {
     open: "打开文件",
@@ -194,4 +241,4 @@ export const commandLabels = {
   },
 } as const;
 
-export const zhCN = { common, editor, errors, update, commands: commandLabels };
+export const zhCN = { common, editor, errors, update, commands: commandLabels, about };

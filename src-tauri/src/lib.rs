@@ -1,6 +1,5 @@
 use tauri::menu::{
-    AboutMetadata, CheckMenuItem, IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem,
-    Submenu,
+    CheckMenuItem, IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu,
 };
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, WindowEvent};
 use tracing_subscriber::EnvFilter;
@@ -11,6 +10,7 @@ pub mod ipc;
 pub mod services;
 pub mod state;
 
+use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use ipc::contract::{
     EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_OPEN, MENU_FILE_SAVE, MENU_PALETTE_OPEN,
     MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW,
@@ -19,6 +19,7 @@ use ipc::contract::{
 use ipc::dto::MenuActionPayload;
 
 /// Menu ids handled in Rust instead of being forwarded to the webview.
+const MENU_ABOUT: &str = "app.about";
 const MENU_QUIT: &str = "app.quit";
 const MENU_CLOSE_WINDOW: &str = "window.close";
 const MENU_TOGGLE_FULLSCREEN: &str = "window.toggleFullscreen";
@@ -32,14 +33,6 @@ fn init_tracing() {
 }
 
 const ABOUT_LABEL: &str = "关于青墨";
-
-fn about_metadata<R: Runtime>(app: &AppHandle<R>) -> AboutMetadata<'static> {
-    AboutMetadata {
-        name: Some("青墨".to_string()),
-        version: Some(app.package_info().version.to_string()),
-        ..Default::default()
-    }
-}
 
 /// Which platform menu layout to build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,7 +63,6 @@ struct MenuSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MenuEntry {
     Separator,
-    About,
     Services(&'static str),
     Hide(&'static str),
     HideOthers(&'static str),
@@ -153,7 +145,7 @@ fn menu_layout(platform: MenuPlatform) -> Vec<MenuSpec> {
         menus.push(MenuSpec {
             title: "青墨",
             items: vec![
-                MenuEntry::About,
+                action(MENU_ABOUT, ABOUT_LABEL, None),
                 MenuEntry::Separator,
                 MenuEntry::Services("服务"),
                 MenuEntry::Separator,
@@ -214,7 +206,7 @@ fn menu_layout(platform: MenuPlatform) -> Vec<MenuSpec> {
     if !macos {
         menus.push(MenuSpec {
             title: "帮助",
-            items: vec![MenuEntry::About],
+            items: vec![action(MENU_ABOUT, ABOUT_LABEL, None)],
         });
     }
 
@@ -227,11 +219,6 @@ fn build_submenu<R: Runtime>(app: &AppHandle<R>, spec: &MenuSpec) -> tauri::Resu
     for entry in &spec.items {
         match entry {
             MenuEntry::Separator => menu.append(&PredefinedMenuItem::separator(app)?)?,
-            MenuEntry::About => menu.append(&PredefinedMenuItem::about(
-                app,
-                Some(ABOUT_LABEL),
-                Some(about_metadata(app)),
-            )?)?,
             MenuEntry::Services(label) => {
                 menu.append(&PredefinedMenuItem::services(app, Some(label))?)?
             }
@@ -352,6 +339,23 @@ fn focused_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
         .or_else(|| app.webview_windows().values().next().cloned())
 }
 
+/// The window that should receive a document-level menu command.
+///
+/// The About window owns focus while it is open, but File/Edit/theme actions
+/// must keep operating on the last editable window.
+fn command_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
+    app.state::<state::FocusTracker>()
+        .get_command_target()
+        .and_then(|label| app.get_webview_window(&label))
+        .or_else(|| app.get_webview_window("main"))
+        .or_else(|| {
+            app.webview_windows()
+                .values()
+                .find(|window| window.label() != ABOUT_WINDOW_LABEL)
+                .cloned()
+        })
+}
+
 fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
     match window.is_fullscreen() {
         Ok(fullscreen) => {
@@ -369,6 +373,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .menu(build_menu)
         .on_menu_event(|app, event| {
@@ -376,6 +381,12 @@ pub fn run() {
             let target = focused_window(app);
             let target_label = target.as_ref().map(|window| window.label().to_string());
 
+            if id == MENU_ABOUT {
+                if let Err(error) = open_about(app) {
+                    tracing::error!(%error, "failed to open the About window");
+                }
+                return;
+            }
             if id == MENU_QUIT {
                 commands::close::request_close(
                     app,
@@ -385,22 +396,36 @@ pub fn run() {
                 return;
             }
             if id == MENU_CLOSE_WINDOW {
-                if let Some(label) = target_label.as_deref() {
-                    commands::close::request_close(app, ipc::dto::CloseReason::Window, Some(label));
+                if let Some(window) = target.as_ref() {
+                    if window.label() == ABOUT_WINDOW_LABEL {
+                        // The About window has no unsaved state; destroying it
+                        // directly keeps Cmd+W and the red dot symmetrical.
+                        if let Err(error) = window.destroy() {
+                            tracing::warn!(%error, "failed to close the About window");
+                        }
+                    } else {
+                        commands::close::request_close(
+                            app,
+                            ipc::dto::CloseReason::Window,
+                            Some(window.label()),
+                        );
+                    }
                 }
                 return;
             }
             if id == MENU_TOGGLE_FULLSCREEN {
                 if let Some(window) = target.as_ref() {
-                    toggle_fullscreen(window);
+                    if window.label() != ABOUT_WINDOW_LABEL {
+                        toggle_fullscreen(window);
+                    }
                 }
                 return;
             }
 
             if MENU_ACTIONS.contains(&id) {
-                match target {
+                match command_window(app) {
                     Some(window) => {
-                        // `Emitter::emit` is global; target only the focused
+                        // `Emitter::emit` is global; target only the editable
                         // window or every window would run the same command.
                         if let Err(error) = window.emit_to(
                             window.label(),
@@ -439,14 +464,20 @@ pub fn run() {
             event: WindowEvent::Focused(true),
             ..
         } => {
-            app_handle.state::<state::FocusTracker>().set(&label);
-            // The menu is shared: show the newly focused window's mode.
-            let checked = app_handle
-                .state::<state::PreviewModes>()
-                .get(&label)
-                .unwrap_or(true);
-            if let Err(error) = set_live_preview_checked(app_handle, checked) {
-                tracing::warn!(%error, "failed to sync the live preview menu state");
+            let tracker = app_handle.state::<state::FocusTracker>();
+            if label == ABOUT_WINDOW_LABEL {
+                // Keep the last document as the menu command target.
+                tracker.set_auxiliary(&label);
+            } else {
+                tracker.set(&label);
+                // The menu is shared: show the newly focused window's mode.
+                let checked = app_handle
+                    .state::<state::PreviewModes>()
+                    .get(&label)
+                    .unwrap_or(true);
+                if let Err(error) = set_live_preview_checked(app_handle, checked) {
+                    tracing::warn!(%error, "failed to sync the live preview menu state");
+                }
             }
         }
         RunEvent::WindowEvent {
@@ -462,6 +493,10 @@ pub fn run() {
             event: WindowEvent::CloseRequested { api, .. },
             ..
         } => {
+            if label == ABOUT_WINDOW_LABEL {
+                // No document state to flush; let the native close proceed.
+                return;
+            }
             api.prevent_close();
             commands::close::request_close(
                 app_handle,
@@ -528,7 +563,12 @@ mod menu_tests {
     /// Every id used by a custom menu item must have a handler: either the
     /// webview dispatcher or one of the Rust-side window/quit actions.
     fn assert_every_action_has_a_handler(layout: &[MenuSpec]) {
-        let rust_handled = [MENU_QUIT, MENU_CLOSE_WINDOW, MENU_TOGGLE_FULLSCREEN];
+        let rust_handled = [
+            MENU_ABOUT,
+            MENU_QUIT,
+            MENU_CLOSE_WINDOW,
+            MENU_TOGGLE_FULLSCREEN,
+        ];
         for id in layout.iter().flat_map(action_ids) {
             assert!(
                 MENU_ACTIONS.contains(&id) || rust_handled.contains(&id),
@@ -547,7 +587,9 @@ mod menu_tests {
         );
 
         let app_menu = menu(&layout, "青墨");
+        assert!(action_ids(app_menu).contains(&MENU_ABOUT));
         assert!(action_ids(app_menu).contains(&MENU_QUIT));
+        assert_eq!(action_label(action(app_menu, MENU_ABOUT)), "关于青墨");
 
         let file_menu = menu(&layout, "文件");
         let file_ids = action_ids(file_menu);
@@ -595,7 +637,8 @@ mod menu_tests {
         assert_eq!(action_label(action(file_menu, MENU_QUIT)), "退出青墨");
 
         let help_menu = menu(&layout, "帮助");
-        assert_eq!(help_menu.items, [MenuEntry::About]);
+        assert_eq!(action_ids(help_menu), [MENU_ABOUT]);
+        assert_eq!(action_label(action(help_menu, MENU_ABOUT)), "关于青墨");
 
         assert_eq!(
             menu(&layout, "窗口").items,

@@ -128,6 +128,20 @@ describe("uiStore theme", () => {
     expect(root.attributes.get("data-theme")).toBe("light");
   });
 
+  it("adopts a preference persisted by another window without writing it back", () => {
+    const storage = memoryStorage("light");
+    const root = fakeRoot();
+    const store = createStore({ storage, root });
+
+    store.initialize();
+    storage.values.set(THEME_STORAGE_KEY, "dark");
+    store.syncFromStorage();
+
+    expect(store.getSnapshot()).toEqual({ theme: "dark", resolvedTheme: "dark" });
+    expect(root.attributes.get("data-theme")).toBe("dark");
+    expect(storage.writes).toEqual([]);
+  });
+
   it("follows the OS preference in system mode and stops listening otherwise", () => {
     const media = fakeMedia(false);
     const root = fakeRoot();

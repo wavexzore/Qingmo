@@ -136,6 +136,19 @@ export class UiStore {
     return next;
   }
 
+  /**
+   * Adopts a preference persisted by another window without writing it back.
+   * The About window is a separate webview and uses this on `storage` events.
+   */
+  syncFromStorage(): void {
+    const theme = readStoredTheme(this.storage);
+    this.replaceSnapshot({
+      theme,
+      resolvedTheme: resolveTheme(theme, this.media?.matches ?? false),
+    });
+    this.syncMediaListener();
+  }
+
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {

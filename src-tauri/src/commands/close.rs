@@ -1,9 +1,36 @@
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+use crate::commands::about::ABOUT_WINDOW_LABEL;
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::contract::EVENT_CLOSE_REQUESTED;
 use crate::ipc::dto::{CloseReason, CloseRequestedPayload};
 use crate::state::{CloseGuard, CloseOutcome, DocumentRegistry, WindowSessions};
+
+/// Resolves the windows that must confirm a close.
+///
+/// The About window holds no document state and is deliberately excluded from
+/// app exit: `app.exit` closes it with every other window, and waiting for a
+/// close confirmation it cannot send would deadlock quitting.
+fn close_targets(reason: CloseReason, target: Option<&str>, open: Vec<String>) -> Vec<String> {
+    match reason {
+        CloseReason::Window => target.map(str::to_string).into_iter().collect(),
+        CloseReason::Exit => open
+            .into_iter()
+            .filter(|label| label != ABOUT_WINDOW_LABEL)
+            .collect(),
+    }
+}
+
+/// Counts windows that can keep the app alive after one editable window closes.
+///
+/// The About window is auxiliary: closing the last document while About is
+/// open must still follow the app's "last window exits" gesture instead of
+/// leaving an About window that can no longer open files.
+fn remaining_editable_windows(open: Vec<String>, closing: &str) -> usize {
+    open.into_iter()
+        .filter(|label| label != closing && label != ABOUT_WINDOW_LABEL)
+        .count()
+}
 
 /// Emits the CloseGuard event after arming the pending request.
 ///
@@ -12,10 +39,11 @@ use crate::state::{CloseGuard, CloseOutcome, DocumentRegistry, WindowSessions};
 /// callback, so a failed emit must not leave the app permanently unclosable.
 pub fn request_close(app: &AppHandle, reason: CloseReason, target: Option<&str>) {
     let guard = app.state::<CloseGuard>();
-    let targets: Vec<String> = match reason {
-        CloseReason::Window => target.map(str::to_string).into_iter().collect(),
-        CloseReason::Exit => app.webview_windows().keys().cloned().collect(),
-    };
+    let targets = close_targets(
+        reason,
+        target,
+        app.webview_windows().keys().cloned().collect(),
+    );
 
     if targets.is_empty() {
         if reason == CloseReason::Exit {
@@ -123,11 +151,8 @@ pub fn app_close_confirm<R: tauri::Runtime>(
                 return Ok(());
             }
 
-            let remaining = app
-                .webview_windows()
-                .keys()
-                .filter(|candidate| *candidate != &label)
-                .count();
+            let remaining =
+                remaining_editable_windows(app.webview_windows().keys().cloned().collect(), &label);
             if remaining == 0 {
                 // Closing the last window is the app's exit gesture on both
                 // platforms, matching the pre-multi-window behavior.
@@ -142,5 +167,59 @@ pub fn app_close_confirm<R: tauri::Runtime>(
                 )
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn exit_ignores_the_about_window() {
+        let targets = close_targets(
+            CloseReason::Exit,
+            None,
+            labels(&["main", "doc-1", ABOUT_WINDOW_LABEL]),
+        );
+
+        assert_eq!(targets, labels(&["main", "doc-1"]));
+    }
+
+    #[test]
+    fn an_about_only_exit_resolves_to_no_pending_targets() {
+        let targets = close_targets(CloseReason::Exit, None, labels(&[ABOUT_WINDOW_LABEL]));
+
+        assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn window_close_keeps_its_explicit_target() {
+        let targets = close_targets(
+            CloseReason::Window,
+            Some("doc-1"),
+            labels(&["main", "doc-1", ABOUT_WINDOW_LABEL]),
+        );
+
+        assert_eq!(targets, labels(&["doc-1"]));
+    }
+
+    #[test]
+    fn the_about_window_never_keeps_the_app_alive() {
+        assert_eq!(
+            remaining_editable_windows(labels(&["doc-1", ABOUT_WINDOW_LABEL]), "doc-1"),
+            0
+        );
+        assert_eq!(
+            remaining_editable_windows(labels(&["main", "about"]), "main"),
+            0
+        );
+        assert_eq!(
+            remaining_editable_windows(labels(&["main", "doc-1", ABOUT_WINDOW_LABEL]), "doc-1"),
+            1
+        );
     }
 }

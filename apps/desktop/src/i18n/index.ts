@@ -19,7 +19,7 @@ void i18n.use(initReactI18next).init({
   fallbackLng: "en",
   supportedLngs: Object.keys(resources),
   defaultNS: "common",
-  ns: ["common", "editor", "errors", "commands", "update"],
+  ns: ["common", "editor", "errors", "commands", "update", "about"],
   interpolation: { escapeValue: false },
   returnNull: false,
   initAsync: false,

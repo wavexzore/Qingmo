@@ -1,5 +1,7 @@
 export type { AppError } from "./AppError";
 export type { AppErrorCode } from "./AppErrorCode";
+export type { AboutInfo } from "./AboutInfo";
+export type { AboutLink } from "./AboutLink";
 export type { CloseReason } from "./CloseReason";
 export type { CloseRequestedPayload } from "./CloseRequestedPayload";
 export type { ConflictDetails } from "./ConflictDetails";

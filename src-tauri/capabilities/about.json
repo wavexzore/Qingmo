@@ -1,0 +1,16 @@
+{
+  "identifier": "about",
+  "description": "Least-privilege surface for the About window: window dragging, build metadata, external links and a read-only update check.",
+  "windows": ["about"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "allow-app-about-info",
+    "allow-app-about-close",
+    "allow-app-about-open-link",
+    "allow-app-update-status",
+    "allow-app-update-check"
+  ]
+}
