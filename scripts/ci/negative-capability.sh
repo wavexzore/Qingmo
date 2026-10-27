@@ -10,6 +10,14 @@ cd "$root"
 target="src-tauri/capabilities/default.json"
 backup="$(mktemp)"
 log="$(mktemp)"
+checksum() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+before="$(checksum "$target")"
 cp "$target" "$backup"
 
 restore() {
@@ -47,9 +55,9 @@ fi
 restore
 trap - EXIT
 
-if ! git diff --quiet -- "$target"; then
+after="$(checksum "$target")"
+if [[ "$before" != "$after" ]]; then
   echo "capability probe did not restore $target" >&2
-  git diff -- "$target" >&2
   exit 1
 fi
 

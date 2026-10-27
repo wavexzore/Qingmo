@@ -24,7 +24,7 @@ export interface WorkspaceActions {
 
 /**
  * App-level workspace layout. It owns the single `file.open` registration and
- * the opening state, so the command remains available on both the welcome page
+ * the opening state, so the command remains available on both the blank editor
  * and an open document (T-015's palette) without duplicate registrations.
  */
 export function WorkspaceLayout() {
@@ -37,6 +37,11 @@ export function WorkspaceLayout() {
   const [opening, setOpening] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openingRef = useRef(false);
+  const sessionRef = useRef(session);
+  const coordinatorRef = useRef(coordinator);
+  sessionRef.current = session;
+  coordinatorRef.current = coordinator;
+  const hasSession = session !== null;
 
   useThemeCommand();
   useThemeService(session);
@@ -65,8 +70,8 @@ export function WorkspaceLayout() {
     openingRef.current = true;
     setOpening(true);
     try {
-      if (coordinator) {
-        const flushed = await coordinator.flush("switch");
+      if (coordinatorRef.current) {
+        const flushed = await coordinatorRef.current.flush("switch");
         if (!flushed.ok) {
           toast.push(t("editor:save.resolveBeforeSwitch"));
           return;
@@ -86,7 +91,7 @@ export function WorkspaceLayout() {
       openingRef.current = false;
       setOpening(false);
     }
-  }, [coordinator, ipc, navigate, setSession, t, toast]);
+  }, [ipc, navigate, setSession, t, toast]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({
@@ -100,7 +105,7 @@ export function WorkspaceLayout() {
   }, [openDocument]);
 
   useEffect(() => {
-    if (!coordinator || !session) {
+    if (!hasSession) {
       return;
     }
     const disposable = commandRegistry.register({
@@ -108,16 +113,18 @@ export function WorkspaceLayout() {
       titleKey: "commands:file.save",
       category: "commands:category.file",
       keybinding: "Mod+S",
-      when: () => !session.getSnapshot().readOnly,
+      // Read the live session at execution time: opening another document
+      // replaces the session/coordinator without leaving a stale command.
+      when: () => !sessionRef.current?.getSnapshot().readOnly,
       run: async () => {
-        await coordinator.flush("manual");
+        await coordinatorRef.current?.flush("manual");
       },
     });
     return () => disposable.dispose();
-  }, [coordinator, session]);
+  }, [hasSession]);
 
   useEffect(() => {
-    if (!session) {
+    if (!hasSession) {
       return;
     }
     const disposable = commandRegistry.register({
@@ -126,13 +133,13 @@ export function WorkspaceLayout() {
       category: "commands:category.view",
       // Large files stay in source mode until they shrink below the budget;
       // re-enabling preview there would only run the plugin's own no-op guard.
-      when: () => !session.getSnapshot().largeFile,
+      when: () => !sessionRef.current?.getSnapshot().largeFile,
       run: () => {
-        session.toggleLivePreview();
+        sessionRef.current?.toggleLivePreview();
       },
     });
     return () => disposable.dispose();
-  }, [session]);
+  }, [hasSession]);
 
   return (
     <>

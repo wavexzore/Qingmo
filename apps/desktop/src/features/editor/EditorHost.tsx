@@ -11,8 +11,17 @@ import type { EditorSession } from "./EditorSession";
  * mount -> cleanup -> mount sequence therefore ends with exactly one live
  * view, not a skipped second mount.
  */
-export function EditorHost({ session }: { session: EditorSession }) {
+export function EditorHost({
+  session,
+  autoFocus = false,
+}: {
+  session: EditorSession;
+  /** Focus the startup untitled editor so the caret is ready like Typora. */
+  autoFocus?: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const autoFocusRef = useRef(autoFocus);
+  autoFocusRef.current = autoFocus;
 
   useEffect(() => {
     const parent = hostRef.current;
@@ -25,6 +34,9 @@ export function EditorHost({ session }: { session: EditorSession }) {
       parent,
     });
     const detach = session.attach(view);
+    if (autoFocusRef.current) {
+      view.focus();
+    }
 
     return () => {
       detach();

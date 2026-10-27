@@ -1,5 +1,5 @@
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, placeholder as cmPlaceholder } from "@codemirror/view";
 
 import { basicExtensions } from "./extensions/basic";
 import { markdownExtensions } from "./extensions/markdown";
@@ -25,6 +25,8 @@ export interface CreateEditorStateOptions {
   readOnly?: boolean;
   /** CommandRegistry keymap and feature extensions (T-015/T-013). */
   extraExtensions?: readonly Extension[];
+  /** Shown only while the document is empty (untitled startup editor). */
+  placeholder?: string;
 }
 
 /** Normalizes line endings without touching any other character. */
@@ -57,6 +59,7 @@ export function createEditorState({
   doc,
   readOnly = false,
   extraExtensions = [],
+  placeholder,
 }: CreateEditorStateOptions): EditorState {
   const normalized = normalizeLineEndings(doc);
   // Large documents start in source mode; the plugin also refuses to decorate
@@ -71,6 +74,7 @@ export function createEditorState({
       themeCompartment.of(qingmoEditorTheme),
       readOnlyCompartment.of(readOnlyExtensions(readOnly)),
       modeCompartment.of(previewEnabled ? livePreview() : []),
+      ...(placeholder ? [cmPlaceholder(placeholder)] : []),
       ...extraExtensions,
     ],
   });

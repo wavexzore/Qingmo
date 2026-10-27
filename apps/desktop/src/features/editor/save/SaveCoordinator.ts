@@ -41,7 +41,7 @@ export interface SaveTimerApi {
 
 export interface SaveCoordinatorOptions {
   session: EditorSession;
-  ipc: Pick<IpcPort, "documentWriteAtomic" | "documentReload">;
+  ipc: Pick<IpcPort, "documentWriteAtomic" | "documentReload" | "documentSaveAs">;
   /** Overridable for tests; production uses 800ms. */
   debounceMs?: number;
   /** Overridable for tests; production uses 5s. */
@@ -101,7 +101,7 @@ function conflictDetailsOf(details: AppError["details"]): ConflictDetails | null
  */
 export class SaveCoordinator {
   private readonly session: EditorSession;
-  private readonly ipc: Pick<IpcPort, "documentWriteAtomic" | "documentReload">;
+  private readonly ipc: Pick<IpcPort, "documentWriteAtomic" | "documentReload" | "documentSaveAs">;
   private readonly timers: SaveTimerApi;
   private readonly debounceMs: number;
   private readonly maxWaitMs: number;
@@ -174,6 +174,22 @@ export class SaveCoordinator {
     }
 
     this.pending = true;
+
+    if (this.session.isUntitled) {
+      // There is no path to autosave to. Keep the document dirty until an
+      // explicit save/close/switch opens the native Save As dialog.
+      if (this.inFlight || this.state === "saving") {
+        this.publish();
+        return;
+      }
+      if (this.state === "error" || this.state === "conflict") {
+        this.publish();
+        return;
+      }
+      this.setState("dirty");
+      this.publish();
+      return;
+    }
 
     if (this.inFlight) {
       this.publish();
@@ -320,6 +336,40 @@ export class SaveCoordinator {
     this.cancelScheduledTimers();
 
     try {
+      if (this.session.isUntitled) {
+        if (reason === "auto" || reason === "blur") {
+          return { ok: true, state: this.state };
+        }
+
+        // Manual save, switching files and closing all need a real path.
+        // A pristine untitled buffer closes/switches without a dialog; an
+        // explicit Mod+S always opens Save As.
+        const needsSaveAs = reason === "manual" || this.pending || this.session.getSnapshot().dirty;
+        if (!needsSaveAs) {
+          this.pending = false;
+          this.setState("clean");
+          return { ok: true, state: "clean" };
+        }
+
+        while (!this.disposed && this.session.isUntitled) {
+          if (this.inFlight) {
+            await this.inFlight;
+            continue;
+          }
+
+          const outcome = await this.saveAsOnce();
+          if (outcome.kind !== "success") {
+            return this.failure("error");
+          }
+          if (!this.pending) {
+            return { ok: true, state: this.state };
+          }
+        }
+        if (this.disposed) {
+          return this.failure("error");
+        }
+      }
+
       while (!this.disposed) {
         if (this.session.getSnapshot().readOnly || this.state === "readonly") {
           this.setState("readonly");
@@ -422,6 +472,55 @@ export class SaveCoordinator {
         isRetryableSaveError(normalized) && this.retryAttempts < this.retryDelaysMs.length;
       this.setState("error");
       return { kind: "error", error: normalized, retryable: this.retryable };
+    } finally {
+      this.inFlight = null;
+      this.publish();
+    }
+  }
+
+  private async saveAsOnce(): Promise<SaveOutcome> {
+    this.pending = false;
+    this.setState("saving");
+
+    const text = this.session.readText();
+    const write = this.ipc.documentSaveAs(text);
+    this.inFlight = write.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    try {
+      const payload = await write;
+      this.session.adoptSavedAs(payload);
+      this.conflict = null;
+      this.forcedHash = undefined;
+      this.retryAttempts = 0;
+      this.retryable = false;
+      this.lastError = null;
+      this.setState(payload.readOnly ? "readonly" : this.pending ? "dirty" : "clean");
+      return {
+        kind: "success",
+        result: {
+          hash: payload.hash,
+          size: payload.size,
+          mtimeMs: payload.mtimeMs,
+        },
+      };
+    } catch (error) {
+      const normalized = normalizeError(error);
+      this.lastError = normalized;
+      this.retryable = false;
+      if (normalized.code === "CANCELLED") {
+        // Cancelling a pristine buffer is not an unsaved change; cancelling
+        // after typing keeps it dirty so a later save/close can try again.
+        const pristine = text.length === 0;
+        this.pending = !pristine;
+        this.setState(pristine ? "clean" : "dirty");
+      } else {
+        this.pending = true;
+        this.setState("error");
+      }
+      return { kind: "error", error: normalized, retryable: false };
     } finally {
       this.inFlight = null;
       this.publish();

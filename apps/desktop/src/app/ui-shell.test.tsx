@@ -25,28 +25,33 @@ function renderAt(path: string) {
 }
 
 describe("App Shell", () => {
-  it("renders the welcome page and its primary action", () => {
+  it("renders an editable untitled document at the root route", () => {
     renderAt("/");
 
-    expect(screen.getByRole("heading", { name: "青墨" })).toBeInTheDocument();
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开 Markdown 文件" })).toBeEnabled();
-    expect(screen.getByRole("heading", { name: "最近文件" })).toBeInTheDocument();
+    expect(screen.getByTestId("editor-host")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveAttribute("contenteditable", "true");
+    expect(screen.getByRole("textbox")).toHaveAttribute("aria-placeholder", "开始写作…");
+    expect(screen.queryByRole("heading", { name: "最近文件" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("status-bar")).not.toBeInTheDocument();
   });
 
-  it("shows the editor empty state and static status bar", () => {
+  it("renders the same editable untitled document at /editor", () => {
     renderAt("/editor");
 
-    expect(screen.getByRole("heading", { name: "还没有打开的文档" })).toBeInTheDocument();
-    expect(screen.getByTestId("status-bar")).toHaveTextContent("未打开文档");
-    expect(screen.getByRole("link", { name: "返回欢迎页" })).toBeInTheDocument();
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
   });
 
-  it("navigates between the welcome and editor routes", async () => {
+  it("keeps both routes on the editor surface", async () => {
     const router = renderAt("/");
-    await router.navigate("/editor");
 
-    expect(await screen.findByRole("heading", { name: "还没有打开的文档" })).toBeInTheDocument();
+    await router.navigate("/editor");
+    expect(await screen.findByTestId("untitled-editor")).toBeInTheDocument();
+
     await router.navigate("/");
-    expect(await screen.findByRole("heading", { name: "最近文件" })).toBeInTheDocument();
+    expect(await screen.findByTestId("untitled-editor")).toBeInTheDocument();
   });
 });

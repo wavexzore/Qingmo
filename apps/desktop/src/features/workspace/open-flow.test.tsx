@@ -99,6 +99,7 @@ describe("openFile", () => {
     const broken: IpcPort = {
       documentOpen: vi.fn().mockRejectedValue("bridge unavailable"),
       documentReload: vi.fn(),
+      documentSaveAs: vi.fn(),
       documentWriteAtomic: vi.fn(),
       appCloseConfirm: vi.fn(),
     };
@@ -111,7 +112,7 @@ describe("openFile", () => {
   });
 });
 
-describe("welcome -> editor open flow", () => {
+describe("blank editor -> editor open flow", () => {
   it("opens a file, creates the session, and renders the editor host", async () => {
     const ipc = fileIpc("# Hello\n\nsecret body\n");
     const router = renderApp(ipc);
@@ -225,7 +226,7 @@ describe("welcome -> editor open flow", () => {
     }
   }, 20_000);
 
-  it("shows an error toast for a rejected open and stays on the welcome page", async () => {
+  it("shows an error toast for a rejected open and stays on the untitled editor", async () => {
     const ipc = new FakeIpc({
       files: [{ path: "/docs/note.md", text: "x" }],
       openFile: "/docs/missing.md",
@@ -235,7 +236,8 @@ describe("welcome -> editor open flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开 Markdown 文件" }));
 
     expect(await screen.findByText("文件不存在或已被移动。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "青墨" })).toBeInTheDocument();
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
     expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
   });
 
@@ -251,10 +253,12 @@ describe("welcome -> editor open flow", () => {
     await waitFor(() => expect(button).toBeEnabled());
 
     expect(screen.queryByText("操作已取消。")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "青墨" })).toBeInTheDocument();
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "未命名" })).toBeInTheDocument();
+    expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
   });
 
-  it("registers file.open exactly once while the welcome page is mounted", () => {
+  it("registers file.open exactly once while the blank editor is mounted", () => {
     const { unmount } = render(
       <AppErrorBoundary>
         <ToastProvider>

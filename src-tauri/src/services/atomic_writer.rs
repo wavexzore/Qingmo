@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::Path;
 
 use atomic_write_file::AtomicWriteFile;
 
@@ -61,29 +62,45 @@ impl AtomicWriter {
             });
         }
 
-        let mut file = AtomicWriteFile::options()
-            .open(&record.canonical_target)
-            .map_err(|error| AppError::from_io(&error))?;
-        file.write_all(&encoded)
-            .map_err(|error| AppError::from_io(&error))?;
-        fault_injection_after_temp();
-        file.commit().map_err(|error| AppError::from_io(&error))?;
-
-        let new_size = encoded.len() as u64;
-        let new_mtime_ms = std::fs::metadata(&record.canonical_target)
-            .map(|metadata| mtime_ms(&metadata))
-            .unwrap_or(0);
-
-        state.base_hash = new_hash.clone();
-        state.disk_size = new_size;
-        state.mtime_ms = new_mtime_ms;
-
-        Ok(SaveResult {
-            hash: new_hash,
-            size: new_size,
-            mtime_ms: new_mtime_ms,
-        })
+        let result = write_formatted(&record.canonical_target, &state.format, text_lf)?;
+        state.base_hash = result.hash.clone();
+        state.disk_size = result.size;
+        state.mtime_ms = result.mtime_ms;
+        Ok(result)
     }
+}
+
+/// Encodes and atomically writes text using an explicit format.
+///
+/// The save-as path calls this after the native dialog has already confirmed
+/// the target. It shares validation/encoding with the normal document save, so
+/// a new file cannot bypass the LF/NUL/10MiB rules.
+pub(crate) fn write_formatted(
+    path: &Path,
+    format: &TextFormat,
+    text_lf: &str,
+) -> Result<SaveResult, AppError> {
+    validate_text(text_lf)?;
+    let encoded = encode(format, text_lf)?;
+
+    let mut file = AtomicWriteFile::options()
+        .open(path)
+        .map_err(|error| AppError::from_io(&error))?;
+    file.write_all(&encoded)
+        .map_err(|error| AppError::from_io(&error))?;
+    fault_injection_after_temp();
+    file.commit().map_err(|error| AppError::from_io(&error))?;
+
+    let size = encoded.len() as u64;
+    let mtime_ms = std::fs::metadata(path)
+        .map(|metadata| mtime_ms(&metadata))
+        .unwrap_or(0);
+
+    Ok(SaveResult {
+        hash: blake3::hash(&encoded).to_hex().to_string(),
+        size,
+        mtime_ms,
+    })
 }
 
 fn read_current(record: &DocumentRecord) -> Result<CurrentDisk, AppError> {

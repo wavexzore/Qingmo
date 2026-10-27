@@ -8,6 +8,7 @@ import type { SeedFile } from "./types";
 export const NOTE_PATH = "/docs/note.md";
 export const CONFLICT_PATH = "/docs/conflict.md";
 export const READONLY_PATH = "/docs/readonly.mdx";
+export const SAVE_AS_PATH = "/docs/untitled.md";
 
 function fixture(name: string): string {
   return readFileSync(path.join(__dirname, "fixtures", name), "utf8");
@@ -69,6 +70,12 @@ export async function setDiskText(page: Page, path: string, text: string): Promi
 export async function setOpenFile(page: Page, path: string | null): Promise<void> {
   await page.evaluate((next) => {
     window.__QINGMO_E2E__?.setOpenFile(next);
+  }, path);
+}
+
+export async function setSaveAsFile(page: Page, path: string | null): Promise<void> {
+  await page.evaluate((next) => {
+    window.__QINGMO_E2E__?.setSaveAsFile(next);
   }, path);
 }
 

@@ -66,11 +66,9 @@ export const common = {
 
 export const editor = {
   empty: {
-    title: "No document open",
-    description:
-      "Open a .md or .markdown file from the welcome page. The body lives only in editor state.",
-    hint: "Once open, you will see the file name, encoding, line endings and save state.",
-    openButton: "Open file",
+    title: "Untitled",
+    placeholder: "Start writing…",
+    hint: "Press {{shortcut}} to open a file.",
   },
   document: {
     title: "Document loaded",

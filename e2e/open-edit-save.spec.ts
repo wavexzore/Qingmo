@@ -4,6 +4,7 @@ import {
   NOTE_PATH,
   READONLY_PATH,
   READONLY_TEXT,
+  SAVE_AS_PATH,
   emitBlur,
   endComposition,
   getFileSize,
@@ -13,8 +14,56 @@ import {
   openSeededFile,
   setComposing,
   setOpenFile,
+  setSaveAsFile,
   typeInEditor,
 } from "./helpers";
+
+test("types directly into the untitled editor and Save As binds a real path", async ({ page }) => {
+  await openApp(page);
+
+  const editor = page.getByRole("textbox");
+  await expect(page.getByTestId("untitled-editor")).toBeVisible();
+  await expect(editor).toHaveAttribute("aria-placeholder", "开始写作…");
+  await expect(page.getByTestId("status-bar")).toHaveCount(0);
+
+  await typeInEditor(page, "# Fresh\n\nhello");
+  await expect(page.getByTestId("status-bar")).toContainText("未保存");
+  expect(await getFileText(page, SAVE_AS_PATH)).toBeNull();
+
+  await page.keyboard.press(`${modifier()}+s`);
+
+  await expect.poll(() => getFileText(page, SAVE_AS_PATH)).toBe("# Fresh\n\nhello");
+  await expect(page.getByTestId("document-session")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "untitled.md" })).toBeVisible();
+  await expect(page.getByTestId("status-bar")).toContainText("已同步");
+});
+
+test("cancelling Save As keeps the untitled document dirty", async ({ page }) => {
+  await openApp(page);
+  await typeInEditor(page, "draft");
+  await setSaveAsFile(page, null);
+
+  await page.keyboard.press(`${modifier()}+s`);
+
+  await expect(page.getByTestId("untitled-editor")).toBeVisible();
+  await expect(page.getByTestId("status-bar")).toContainText("未保存");
+  expect(await getFileText(page, SAVE_AS_PATH)).toBeNull();
+});
+
+test("renders a GFM table and returns to its source when clicked", async ({ page }) => {
+  await openApp(page);
+  await typeInEditor(page, "| A | B |\n|---|---|\n| 1 | 2 |\n");
+
+  const block = page.locator(".cm-md-table-block");
+  await expect(block.locator("table")).toBeVisible();
+  await expect(block.locator("th").first()).toHaveText("A");
+  await expect(page.locator(".cm-content")).not.toContainText("|---|---|");
+
+  await block.click();
+
+  await expect(page.locator(".cm-content")).toContainText("|---|---|");
+  await expect(page.locator(".cm-md-table-block")).toHaveCount(0);
+});
 
 test("opens a seeded file, edits it and auto-saves to clean", async ({ page }) => {
   await openApp(page);
@@ -30,12 +79,13 @@ test("opens a seeded file, edits it and auto-saves to clean", async ({ page }) =
   expect(after).not.toBe(before);
 });
 
-test("cancelling the fake dialog leaves the welcome page intact", async ({ page }) => {
+test("cancelling the fake dialog leaves the blank editor intact", async ({ page }) => {
   await openApp(page);
   await setOpenFile(page, null);
   await page.getByRole("button", { name: "打开 Markdown 文件" }).click();
 
   await expect(page.getByRole("button", { name: "打开 Markdown 文件" })).toBeEnabled();
+  await expect(page.getByTestId("untitled-editor")).toBeVisible();
   await expect(page.getByTestId("document-session")).toHaveCount(0);
 });
 

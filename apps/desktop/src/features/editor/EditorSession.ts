@@ -5,6 +5,7 @@ import {
   LP_MAX_UNITS,
   livePreview,
   setModeEffect,
+  setReadOnlyEffect,
   setThemeEffect,
   themeExtension,
 } from "@qingmo/editor-core";
@@ -13,6 +14,8 @@ import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingm
 import type { SaveState } from "../../lib/save-state";
 
 export const STATUS_THROTTLE_MS = 100;
+export const UNTITLED_DOC_TOKEN = "untitled";
+export const UNTITLED_DOC_ID = "untitled";
 
 export interface EditorSelectionSnapshot {
   anchor: number;
@@ -64,6 +67,10 @@ export interface EditorSessionOptions {
   extensions?: readonly Extension[];
   /** Overridable for tests; production uses STATUS_THROTTLE_MS. */
   statusThrottleMs?: number;
+  /** Displayed by CM6 while an empty untitled document has no text. */
+  placeholder?: string;
+  /** Marks this session as an in-memory untitled document. */
+  untitledTitle?: string;
 }
 
 function fileNameOf(path: string): string {
@@ -78,10 +85,11 @@ function freezeFormat(format: TextFormat): TextFormat {
   });
 }
 
-function metadataOf(payload: FilePayload): EditorMetadataSnapshot {
+function metadataOf(payload: FilePayload, untitledTitle?: string): EditorMetadataSnapshot {
+  const untitled = untitledTitle !== undefined;
   return Object.freeze({
-    docId: payload.path,
-    fileName: fileNameOf(payload.path),
+    docId: untitled ? UNTITLED_DOC_ID : payload.path,
+    fileName: untitled ? (untitledTitle ?? "") : fileNameOf(payload.path),
     docToken: payload.docToken,
     readOnly: payload.readOnly,
     readOnlyReason: payload.readOnlyReason,
@@ -122,17 +130,19 @@ function sameCursor(left: EditorCursorSnapshot, right: EditorCursorSnapshot): bo
  * document text, so React can never become a second source of truth.
  */
 export class EditorSession {
-  readonly docToken: string;
+  private docTokenValue: string;
 
   private readonly listeners = new Set<() => void>();
   private readonly statusListeners = new Set<() => void>();
   private readonly docChangedListeners = new Set<() => void>();
   private readonly extraExtensions: readonly Extension[];
   private readonly statusThrottleMs: number;
+  private readonly placeholder: string | undefined;
   private metadata: EditorMetadataSnapshot;
   private state: EditorState;
   private snapshot: EditorSessionSnapshot;
   private previewEnabled: boolean;
+  private untitled: boolean;
   private theme: "light" | "dark" = "light";
   private themeApplied = false;
   private view: EditorView | null = null;
@@ -140,21 +150,24 @@ export class EditorSession {
   private disposed = false;
 
   private constructor(payload: FilePayload, options: EditorSessionOptions) {
-    this.docToken = payload.docToken;
+    this.docTokenValue = payload.docToken;
     this.statusThrottleMs = options.statusThrottleMs ?? STATUS_THROTTLE_MS;
     this.extraExtensions = options.extensions ?? [];
+    this.placeholder = options.placeholder;
+    this.untitled = options.untitledTitle !== undefined;
 
     this.state = createEditorState({
       doc: payload.text,
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
+      ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
     });
 
     const selection = selectionOf(this.state);
     const saveState: SaveState = payload.readOnly ? "readonly" : "clean";
     const largeFile = this.state.doc.length > LP_MAX_UNITS;
     this.previewEnabled = !largeFile;
-    this.metadata = metadataOf(payload);
+    this.metadata = metadataOf(payload, options.untitledTitle);
 
     this.snapshot = Object.freeze({
       ...this.metadata,
@@ -170,6 +183,37 @@ export class EditorSession {
 
   static create(payload: FilePayload, options: EditorSessionOptions = {}): EditorSession {
     return new EditorSession(payload, options);
+  }
+
+  /** Creates the in-memory document shown on startup, before any path exists. */
+  static createUntitled(
+    title: string,
+    options: Omit<EditorSessionOptions, "untitledTitle"> = {},
+  ): EditorSession {
+    return new EditorSession(
+      {
+        docToken: UNTITLED_DOC_TOKEN,
+        path: "",
+        text: "",
+        format: { encoding: "utf8", hasBom: false, eol: "lf" },
+        mixedEol: false,
+        hash: "",
+        size: 0,
+        textUnits: 0,
+        mtimeMs: 0,
+        readOnly: false,
+        readOnlyReason: null,
+      },
+      { ...options, untitledTitle: title },
+    );
+  }
+
+  get docToken(): string {
+    return this.docTokenValue;
+  }
+
+  get isUntitled(): boolean {
+    return this.untitled;
   }
 
   /** The only place the document body can be read; save reads it on demand. */
@@ -211,6 +255,53 @@ export class EditorSession {
   }
 
   /**
+   * Binds an untitled session to the file created by native Save As without
+   * rebuilding EditorState, so text, selection and undo history survive.
+   */
+  adoptSavedAs(payload: FilePayload): void {
+    if (this.disposed) {
+      return;
+    }
+    if (!this.untitled) {
+      throw new Error("only an untitled session can adopt a saved path");
+    }
+    if (payload.path.length === 0) {
+      throw new Error("save-as returned an empty path");
+    }
+
+    this.docTokenValue = payload.docToken;
+    this.untitled = false;
+    this.metadata = metadataOf(payload);
+
+    if (payload.readOnly) {
+      const effect = setReadOnlyEffect(true);
+      if (this.view) {
+        this.view.dispatch({ effects: effect });
+      } else {
+        this.state = this.state.update({ effects: effect }).state;
+      }
+    }
+
+    const current = this.currentState;
+    const selection = selectionOf(current);
+    this.snapshot = Object.freeze({
+      ...this.snapshot,
+      ...this.metadata,
+      saveState: payload.readOnly ? "readonly" : "clean",
+      dirty: false,
+      textUnits: current.doc.length,
+      selection,
+      cursor: cursorAt(current, selection.head),
+      version: this.snapshot.version + 1,
+    });
+
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
+    this.flushStatus();
+  }
+
+  /**
    * Rebuilds the state from a reloaded payload. A fresh EditorState also
    * clears undo history, which is the required conflict-reload semantic.
    */
@@ -226,6 +317,7 @@ export class EditorSession {
       doc: payload.text,
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
+      ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
     });
     if (this.themeApplied) {
       state = state.update({ effects: setThemeEffect(themeExtension(this.theme)) }).state;

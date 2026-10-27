@@ -32,6 +32,9 @@ export function createTauriIpc(): IpcPort {
     documentReload(docToken) {
       return invokeCommand(COMMANDS.documentReload, { docToken });
     },
+    documentSaveAs(text) {
+      return invokeCommand(COMMANDS.documentSaveAs, { text });
+    },
     documentWriteAtomic(request) {
       return invokeCommand(COMMANDS.documentWriteAtomic, request);
     },

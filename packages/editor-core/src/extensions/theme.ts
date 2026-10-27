@@ -33,6 +33,10 @@ const editorThemeSpec = {
   ".cm-line": {
     padding: "0 28px",
   },
+  ".cm-placeholder": {
+    color: "var(--qm-ink-faint)",
+    fontFamily: "var(--qm-font-sans)",
+  },
   ".cm-gutters": {
     backgroundColor: "transparent",
     color: "var(--qm-ink-faint)",

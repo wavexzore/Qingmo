@@ -39,7 +39,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 4);
+    assert_eq!(COMMANDS.len(), 5);
     assert_eq!(EVENTS, &["app://close-requested"]);
 }
 
@@ -163,6 +163,7 @@ fn invoke_handler_registers_every_contract_command() {
     let handler_source = read_text("src/commands/mod.rs");
     assert!(handler_source.contains("document::document_open"));
     assert!(handler_source.contains("document::document_reload"));
+    assert!(handler_source.contains("document::document_save_as"));
     assert!(handler_source.contains("document::document_write_atomic"));
     assert!(handler_source.contains("close::app_close_confirm"));
 

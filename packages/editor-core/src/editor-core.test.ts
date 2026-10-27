@@ -1,4 +1,4 @@
-import { ensureSyntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, LanguageDescription } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
@@ -102,7 +102,7 @@ describe("markdown composition", () => {
     expect(tree?.type.name).toBe("Document");
   });
 
-  it("registers only the eight P1 code languages", () => {
+  it("registers every documented code language alias", () => {
     expect(codeLanguages.map((language) => language.name)).toEqual([
       "JavaScript",
       "TypeScript",
@@ -112,11 +112,61 @@ describe("markdown composition", () => {
       "Shell",
       "HTML",
       "CSS",
+      "YAML",
+      "TOML",
+      "INI",
+      "Go",
+      "Java",
+      "C",
+      "C++",
+      "C#",
+      "SQL",
+      "SCSS",
+      "XML",
+      "Diff",
+      "Dockerfile",
+      "Markdown",
     ]);
     expect(languageForFilename("main.rs")?.name).toBe("Rust");
     expect(languageForFilename("main.ts")?.name).toBe("TypeScript");
     expect(languageForFilename("script.bash")?.name).toBe("Shell");
+    expect(languageForFilename("main.go")?.name).toBe("Go");
+    expect(languageForFilename("schema.sql")?.name).toBe("SQL");
+    expect(languageForFilename("style.scss")?.name).toBe("SCSS");
+    expect(languageForFilename("config.toml")?.name).toBe("TOML");
     expect(languageForFilename("unknown.xyz")).toBeNull();
+
+    const documentedAliases = [
+      "bash",
+      "shell",
+      "zsh",
+      "js",
+      "ts",
+      "jsx",
+      "tsx",
+      "json",
+      "yaml",
+      "toml",
+      "python",
+      "go",
+      "rust",
+      "java",
+      "c",
+      "cpp",
+      "csharp",
+      "sql",
+      "html",
+      "css",
+      "scss",
+      "diff",
+      "dockerfile",
+      "ini",
+      "xml",
+      "markdown",
+    ];
+    for (const alias of documentedAliases) {
+      expect(LanguageDescription.matchLanguageName(codeLanguages, alias), alias).not.toBeNull();
+    }
   });
 
   it("resolves every language loader to LanguageSupport", async () => {

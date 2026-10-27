@@ -14,6 +14,7 @@ export default tseslint.config(
       ".gitnexus/**",
       ".claude/**",
       "docs/**",
+      "third_party/**",
     ],
   },
   js.configs.recommended,

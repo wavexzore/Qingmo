@@ -11,9 +11,10 @@ Tauri 2 的 invoke 是动态字符串边界：命令名、事件名、DTO 字段
 
 ## 决策
 
-1. **命令/事件单一源：** `src-tauri/src/ipc/contract.rs` 定义 4 条命令与 1 个事件：
+1. **命令/事件单一源：** `src-tauri/src/ipc/contract.rs` 定义 5 条命令与 1 个事件：
    - `document_open`
    - `document_reload`
+   - `document_save_as`
    - `document_write_atomic`
    - `app_close_confirm`
    - `app://close-requested`
@@ -22,7 +23,7 @@ Tauri 2 的 invoke 是动态字符串边界：命令名、事件名、DTO 字段
 4. **前端镜像：** `apps/desktop/src/lib/ipc/contract.ts`/`commands.ts` 保留命令名与权限映射；契约测试同时检查 Rust 常量、TS 镜像、capability、build.rs 与生成 DTO。
 5. **端口边界：** React 组件只依赖 `IpcPort`/`PlatformPort`；只有 `lib/ipc/tauri.ts`、`lib/platform/tauri.ts` 可以 import `@tauri-apps/*`，由 dependency-cruiser 强制。
 6. **错误形状：** 所有命令返回统一 `AppError { code, message, details? }`；前端 `normalizeError` 映射为可 i18n 的错误对象，不解析字符串。
-7. **最小权限：** capability 仅保留 2 条 core event 权限 + 4 条应用命令 `allow-*`；不使用 `core:default`，不开放 fs/dialog 前端权限。
+7. **最小权限：** capability 仅保留 2 条 core event 权限 + 5 条应用命令 `allow-*`；不使用 `core:default`，不开放 fs/dialog 前端权限。
 
 ## 与蓝图 ADR-007 的偏差
 

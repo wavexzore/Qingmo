@@ -6,6 +6,7 @@
 pub const COMMANDS: &[&str] = &[
     "document_open",
     "document_reload",
+    "document_save_as",
     "document_write_atomic",
     "app_close_confirm",
 ];

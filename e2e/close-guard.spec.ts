@@ -4,6 +4,7 @@ import {
   CONFLICT_PATH,
   CONFLICT_TEXT,
   NOTE_PATH,
+  SAVE_AS_PATH,
   emitClose,
   failSaveAlways,
   getCloseConfirms,
@@ -11,8 +12,35 @@ import {
   openApp,
   openSeededFile,
   setDiskText,
+  setSaveAsFile,
   typeInEditor,
 } from "./helpers";
+
+test("closing an untitled dirty document saves it through Save As", async ({ page }) => {
+  await openApp(page);
+  await typeInEditor(page, "untitled-close");
+
+  await emitClose(page);
+
+  await expect.poll(() => getFileText(page, SAVE_AS_PATH)).toBe("untitled-close");
+  await expect.poll(() => getCloseConfirms(page)).toEqual([{ allow: true }]);
+});
+
+test("cancelling Save As during close keeps the untitled document open", async ({ page }) => {
+  await openApp(page);
+  await typeInEditor(page, "draft");
+  await setSaveAsFile(page, null);
+
+  await emitClose(page);
+
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("保存未完成");
+  await page.getByTestId("close-cancel").click();
+  await expect.poll(() => getCloseConfirms(page)).toEqual([{ allow: false }]);
+  await expect(page.getByTestId("untitled-editor")).toBeVisible();
+  await expect(page.getByTestId("status-bar")).toContainText("未保存");
+  expect(await getFileText(page, SAVE_AS_PATH)).toBeNull();
+});
 
 test("a clean close is confirmed immediately without writing", async ({ page }) => {
   await openApp(page);

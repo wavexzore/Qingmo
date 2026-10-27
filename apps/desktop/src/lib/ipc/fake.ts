@@ -25,8 +25,10 @@ export interface FakeFile {
 
 export interface FakeIpcOptions {
   files?: FakeFile[];
-  /** `null` simulates a cancelled native dialog. */
+  /** `null` simulates a cancelled native open dialog. */
   openFile?: string | null;
+  /** `null` simulates a cancelled native save dialog. */
+  saveAsFile?: string | null;
   delayMs?: number;
 }
 
@@ -73,6 +75,18 @@ function byteLength(text: string): number {
   return textEncoder.encode(text).length;
 }
 
+function ensureMarkdownPath(path: string): string {
+  const fileName = path.split(/[\\/]/).pop() ?? path;
+  const extension = fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() : undefined;
+  if (extension === "md" || extension === "markdown") {
+    return path;
+  }
+  if (!fileName.includes(".") || fileName.endsWith(".")) {
+    return `${path}.md`;
+  }
+  throw new AppError("UNSUPPORTED_EXTENSION", "save-as only supports .md and .markdown files");
+}
+
 function copyFormat(format: TextFormat): TextFormat {
   return {
     encoding: format.encoding,
@@ -96,6 +110,7 @@ export class FakeIpc implements IpcPort {
   private readonly commandDelays = new Map<CommandName, number>();
   private active: { token: string; path: string } | null = null;
   private openFile: string | null;
+  private saveAsFile: string | null;
   private nextToken = 1;
   private clock = 0;
   private defaultDelayMs: number;
@@ -110,6 +125,7 @@ export class FakeIpc implements IpcPort {
       options.openFile !== undefined
         ? options.openFile
         : (this.records.keys().next().value ?? null);
+    this.saveAsFile = options.saveAsFile !== undefined ? options.saveAsFile : "/docs/untitled.md";
     this.defaultDelayMs = options.delayMs ?? 0;
   }
 
@@ -137,6 +153,10 @@ export class FakeIpc implements IpcPort {
 
   setOpenFile(path: string | null): void {
     this.openFile = path;
+  }
+
+  setSaveAsFile(path: string | null): void {
+    this.saveAsFile = path;
   }
 
   /** Simulates an external editor changing the file; the base hash stays old. */
@@ -225,6 +245,40 @@ export class FakeIpc implements IpcPort {
     this.nextToken += 1;
     this.active = { token, path };
     return this.toPayload(record, token);
+  }
+
+  async documentSaveAs(text: string): Promise<FilePayload> {
+    await this.wait(COMMANDS.documentSaveAs);
+    this.maybeThrow(COMMANDS.documentSaveAs);
+
+    const path = this.saveAsFile;
+    if (path === null) {
+      throw new AppError("CANCELLED", "save dialog was cancelled");
+    }
+    const target = ensureMarkdownPath(path);
+    this.validateText(text);
+
+    const existing = this.records.get(target);
+    const format = existing
+      ? copyFormat(existing.format)
+      : { encoding: "utf8" as const, hasBom: false, eol: "lf" as const };
+    const hash = fakeHash(text);
+    const next: FakeRecord = {
+      path: target,
+      text,
+      format,
+      readOnlyReason: null,
+      baseHash: hash,
+      diskHash: hash,
+      size: byteLength(text),
+      mtimeMs: this.tick(),
+    };
+    this.records.set(target, next);
+
+    const token = `fake-doc-${this.nextToken}`;
+    this.nextToken += 1;
+    this.active = { token, path: target };
+    return this.toPayload(next, token);
   }
 
   async documentReload(docToken: string): Promise<FilePayload> {
