@@ -162,6 +162,24 @@ describe("collectDecorationSpecs", () => {
     expect(specs).toContainEqual({ kind: "replace", from: 6, to: 11 });
   });
 
+  it("does not restyle the paragraph above a lone dash", () => {
+    const doc = "ascii path\n-\n";
+    const state = stateFor(doc);
+    const specs = collect(state, [{ from: doc.length, to: doc.length }]);
+
+    expect(find(specs, "line", "cm-md-h2")).toBeUndefined();
+    expect(specs).not.toContainEqual({ kind: "replace", from: 11, to: 12 });
+  });
+
+  it("renders a two-character dash as a setext underline", () => {
+    const doc = "ascii path\n--\n";
+    const state = stateFor(doc);
+    const specs = collect(state, [{ from: doc.length, to: doc.length }]);
+
+    expect(find(specs, "line", "cm-md-h2")).toMatchObject({ from: 0 });
+    expect(specs).toContainEqual({ kind: "replace", from: 11, to: 13 });
+  });
+
   it("marks strikethrough and hides its delimiters", () => {
     const doc = "~~gone~~\n";
     const state = stateFor(doc);
