@@ -234,10 +234,6 @@ function addLineClassesForBlock(
   }
 }
 
-function tableCellText(doc: EditorState["doc"], cell: MarkdownNode): string {
-  return doc.sliceString(cell.from, cell.to).trim();
-}
-
 function parseAlignment(delimiter: string): TableAlignment[] {
   const trimmed = delimiter.trim();
   const inner = trimmed.startsWith("|") ? trimmed.slice(1) : trimmed;
@@ -259,6 +255,18 @@ function parseAlignment(delimiter: string): TableAlignment[] {
   });
 }
 
+/**
+ * Source range of one table cell. The trimmed `text` is what the rendered
+ * widget shows; `from`/`to` include the surrounding padding so an in-place
+ * edit can replace the text without disturbing the table's alignment or
+ * column spacing.
+ */
+export interface TableCellRange {
+  from: number;
+  to: number;
+  text: string;
+}
+
 export interface ParsedTable {
   from: number;
   to: number;
@@ -268,6 +276,83 @@ export interface ParsedTable {
   headerLine: number;
   delimiterLine: number;
   rowLines: number[];
+  headerCells: TableCellRange[];
+  rowCells: TableCellRange[][];
+}
+
+function isEscapedPipe(text: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+/**
+ * Splits a table row into cell ranges. Lezer omits `TableCell` children for
+ * empty cells, which would make a freshly inserted row impossible to fill in;
+ * scanning the row text keeps every column addressable.
+ */
+function splitTableRow(text: string, offset: number): TableCellRange[] {
+  const segments: Array<{ start: number; end: number }> = [];
+  let start = text.startsWith("|") && !isEscapedPipe(text, 0) ? 1 : 0;
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === "|" && !isEscapedPipe(text, index)) {
+      segments.push({ start, end: index });
+      start = index + 1;
+    }
+  }
+  const trailing = text.slice(start);
+  if (
+    segments.length === 0 ||
+    (start < text.length && !(segments.length > 0 && trailing.trim().length === 0))
+  ) {
+    // Whitespace after the closing pipe is table padding, not a new column.
+    segments.push({ start, end: text.length });
+  }
+
+  return segments.map((segment) => {
+    const raw = text.slice(segment.start, segment.end);
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      // An empty cell has no text range of its own. Put the insertion point
+      // between its padding so typing keeps the surrounding spaces.
+      const position = offset + segment.start + Math.floor(raw.length / 2);
+      return { from: position, to: position, text: "" };
+    }
+    const leading = raw.length - raw.trimStart().length;
+    const trailing = raw.length - raw.trimEnd().length;
+    return {
+      from: offset + segment.start + leading,
+      to: offset + segment.end - trailing,
+      text: trimmed,
+    };
+  });
+}
+
+function padTableCells(
+  cells: TableCellRange[],
+  columns: number,
+  rowText: string,
+  rowOffset: number,
+): TableCellRange[] {
+  if (cells.length >= columns) {
+    return cells.slice(0, columns);
+  }
+  // A short row still gets an editable cell for every header column. Insert
+  // missing values before the closing pipe so the Markdown stays well formed.
+  const position =
+    rowText.endsWith("|") && !isEscapedPipe(rowText, rowText.length - 1)
+      ? rowOffset + rowText.length - 1
+      : rowOffset + rowText.length;
+  return [
+    ...cells,
+    ...Array.from({ length: columns - cells.length }, () => ({
+      from: position,
+      to: position,
+      text: "",
+    })),
+  ];
 }
 
 export function readTable(doc: EditorState["doc"], table: MarkdownNode): ParsedTable | null {
@@ -277,16 +362,22 @@ export function readTable(doc: EditorState["doc"], table: MarkdownNode): ParsedT
     return null;
   }
 
-  const header = directChildren(headerNode, "TableCell").map((cell) => tableCellText(doc, cell));
+  const headerCells = splitTableRow(
+    doc.sliceString(headerNode.from, headerNode.to),
+    headerNode.from,
+  );
+  const header = headerCells.map((cell) => cell.text);
   if (header.length === 0) {
     return null;
   }
 
   const align = parseAlignment(doc.sliceString(delimiterNode.from, delimiterNode.to));
-  const rows = directChildren(table, "TableRow").map((row) => {
-    const cells = directChildren(row, "TableCell").map((cell) => tableCellText(doc, cell));
-    return header.map((_, index) => cells[index] ?? "");
+  const rowNodes = directChildren(table, "TableRow");
+  const rowCells = rowNodes.map((row) => {
+    const rowText = doc.sliceString(row.from, row.to);
+    return padTableCells(splitTableRow(rowText, row.from), header.length, rowText, row.from);
   });
+  const rows = rowCells.map((cells) => header.map((_, index) => cells[index]?.text ?? ""));
 
   return {
     from: doc.lineAt(table.from).from,
@@ -296,7 +387,9 @@ export function readTable(doc: EditorState["doc"], table: MarkdownNode): ParsedT
     rows,
     headerLine: doc.lineAt(headerNode.from).from,
     delimiterLine: doc.lineAt(delimiterNode.from).from,
-    rowLines: directChildren(table, "TableRow").map((row) => doc.lineAt(row.from).from),
+    rowLines: rowNodes.map((row) => doc.lineAt(row.from).from),
+    headerCells,
+    rowCells,
   };
 }
 
@@ -1141,15 +1234,21 @@ export function collectDecorationSpecs(
             addLineClassesForBlock(state, syntaxNode, range, addLineClass, "cm-md-code-block");
 
             if (code) {
+              // The language badge belongs to the bottom-right corner of the
+              // block, like Typora. Both fence markers reveal themselves when
+              // the caret reaches either line; the badge steps aside then so
+              // the raw info string stays editable.
+              const openingRevealed = rangeIsRevealed(code.openingLine.from, code.openingLine.to);
+              const closingRevealed = rangeIsRevealed(code.closingLine.from, code.closingLine.to);
+              const fencesRevealed = openingRevealed || closingRevealed;
               if (code.openingLine.from >= range.from && code.openingLine.from <= range.to) {
                 addLineClass(code.openingLine.from, "cm-md-code-fence");
-                // Replace the opening fence with a language badge. The badge
-                // is inline, so it stays within CM6's single-line rule.
-                addWidget(code.openingLine.from, code.openingLine.to, {
-                  kind: "code-language",
-                  language: code.language,
-                  title: code.title,
-                });
+                if (!openingRevealed) {
+                  // The opening fence is hidden; collapse its line so the
+                  // block does not start with a blank row.
+                  addLineClass(code.openingLine.from, "cm-md-code-fence-hidden");
+                }
+                addReplace(code.openingLine.from, code.openingLine.to, syntaxNode);
               }
               const openingNumber = doc.lineAt(code.openingLine.from).number;
               const closingNumber = doc.lineAt(code.closingLine.from).number;
@@ -1185,7 +1284,19 @@ export function collectDecorationSpecs(
               }
               if (code.closingLine.from >= range.from && code.closingLine.from <= range.to) {
                 addLineClass(code.closingLine.from, "cm-md-code-fence");
-                addReplace(code.closingLine.from, code.closingLine.to, syntaxNode);
+                addLineClass(code.closingLine.from, "cm-md-code-fence-close");
+                const badged =
+                  !fencesRevealed &&
+                  addWidget(code.closingLine.from, code.closingLine.to, {
+                    kind: "code-language",
+                    language: code.language,
+                    title: code.title,
+                  });
+                if (badged) {
+                  addLineClass(code.closingLine.from, "cm-md-code-fence-badged");
+                } else {
+                  addReplace(code.closingLine.from, code.closingLine.to, syntaxNode);
+                }
               }
             } else {
               const openingLine = doc.lineAt(syntaxNode.from);

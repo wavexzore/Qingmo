@@ -38,6 +38,7 @@ export {
   type LivePreviewWidgetSpec,
   type ParsedTable,
   type TableAlignment,
+  type TableCellRange,
   type VisibleRange,
 } from "./live-preview/specs";
 export { TABLE_BLOCK_MAX_UNITS, tableBlockPreview } from "./live-preview/table-blocks";

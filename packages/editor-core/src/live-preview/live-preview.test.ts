@@ -1,7 +1,7 @@
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_EDITOR_UI_COPY,
@@ -12,6 +12,7 @@ import {
   createEditorState,
   livePreviewPlugin,
   setEditorUiCopyEffect,
+  setReadOnlyEffect,
   type DecorationSpec,
   type EditorUiCopy,
   type LivePreviewWidgetSpec,
@@ -235,23 +236,25 @@ describe("collectDecorationSpecs", () => {
     });
   });
 
-  it("renders a fenced code block with a language badge and hidden closing fence", () => {
+  it("renders a fenced code block with the language badge on its closing fence", () => {
     const state = stateFor();
     const specs = collect(state, [{ from: state.doc.length, to: state.doc.length }]);
     const fence = fixture.indexOf("```js");
     const openingLine = state.doc.lineAt(fence);
     const closingLine = state.doc.lineAt(fixture.lastIndexOf("```"));
 
-    expect(specs).toContainEqual({
-      kind: "widget",
-      from: openingLine.from,
-      to: openingLine.to,
-      widget: { kind: "code-language", language: "js", title: null },
-    });
+    // The opening fence collapses; the closing fence carries the badge, which
+    // puts the language in the block's bottom-right corner.
     expect(specs).toContainEqual({
       kind: "replace",
+      from: openingLine.from,
+      to: openingLine.to,
+    });
+    expect(specs).toContainEqual({
+      kind: "widget",
       from: closingLine.from,
       to: closingLine.to,
+      widget: { kind: "code-language", language: "js", title: null },
     });
     expect(
       specs.some(
@@ -266,7 +269,7 @@ describe("collectDecorationSpecs", () => {
         (spec) =>
           spec.kind === "line" &&
           spec.from === openingLine.from &&
-          spec.className === "cm-md-code-fence",
+          spec.className === "cm-md-code-fence-hidden",
       ),
     ).toBe(true);
   });
@@ -782,11 +785,43 @@ describe("livePreviewPlugin", () => {
     views.push({ view, parent });
 
     view.dispatch({ selection: { anchor: doc.length } });
-    expect(view.dom.querySelector(".cm-md-code-language")?.textContent).toBe("js");
+    const badge = view.dom.querySelector(".cm-md-code-language");
+    expect(badge?.textContent).toBe("js");
+    // The badge lives in the closing fence line: bottom-right of the block.
+    expect(badge?.closest(".cm-line")?.classList.contains("cm-md-code-fence-close")).toBe(true);
+    // The hidden opening fence collapses instead of leaving a blank row.
+    expect(view.dom.querySelector(".cm-line")?.classList.contains("cm-md-code-fence-hidden")).toBe(
+      true,
+    );
 
     view.dispatch({ selection: { anchor: 0 } });
     expect(view.dom.querySelector(".cm-md-code-language")).toBeNull();
     expect(view.dom.querySelector(".cm-line")?.textContent).toContain("```js");
+    expect(view.dom.querySelector(".cm-line")?.classList.contains("cm-md-code-fence-hidden")).toBe(
+      false,
+    );
+  });
+
+  it("syntax-highlights the language declared on a fenced block", async () => {
+    const doc = "```ts\nconst answer: number = 42;\n```\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    view.dispatch({ selection: { anchor: doc.length } });
+    // The nested parser loads asynchronously; once it is ready CM6 emits
+    // token spans instead of a single plain-text node.
+    await vi.waitFor(
+      () => {
+        const keyword = Array.from(view.dom.querySelectorAll(".cm-line span")).find(
+          (span) => span.textContent === "const",
+        );
+        expect(keyword).toBeDefined();
+        expect(keyword?.className).not.toBe("");
+      },
+      { timeout: 3_000 },
+    );
   });
 
   it("labels external diagram fences as source-only", () => {
@@ -864,31 +899,212 @@ describe("livePreviewPlugin", () => {
     );
   });
 
-  it("renders a GFM table as a block widget and reveals its source on click", () => {
-    const doc = "| A | B |\n| :- | -: |\n| 1 | 2 |\n";
+  it("renders a GFM table as an editable block widget without revealing source", () => {
+    const doc = "| A | B |\n| :- | -: |\n| 1 | 2 |\n\n结尾段落\n";
     const parent = document.createElement("div");
     document.body.append(parent);
     const view = new EditorView({ state: stateFor(doc), parent });
     views.push({ view, parent });
 
-    // Caret starts in the table: the source is visible and styled.
-    expect(view.dom.querySelector(".cm-md-table-header")).not.toBeNull();
-    expect(view.dom.querySelector(".cm-md-table-block")).toBeNull();
-
-    // Moving outside the table renders it as a real block widget.
-    view.dispatch({ selection: { anchor: doc.length } });
-    const block = view.dom.querySelector(".cm-md-table-block");
+    // Tables are fixed in rendered form, even while the caret starts inside
+    // their source range, so clicking a cell never flips to Markdown source.
+    expect(view.dom.querySelector(".cm-md-table-header")).toBeNull();
+    const block = view.dom.querySelector<HTMLElement>(".cm-md-table-block");
     expect(block).not.toBeNull();
     expect(block?.querySelector("table")).not.toBeNull();
     expect(block?.querySelector("th")?.textContent).toBe("A");
-    expect(view.dom.querySelector(".cm-md-table-header")).toBeNull();
     expect(view.state.doc.toString()).toBe(doc);
 
-    // Clicking the rendered table returns to the editable source.
-    block?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
-    expect(view.state.selection.main.head).toBe(0);
-    expect(view.dom.querySelector(".cm-md-table-block")).toBeNull();
-    expect(view.dom.querySelector(".cm-md-table-header")).not.toBeNull();
+    const cell = block?.querySelector<HTMLInputElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    expect(cell?.value).toBe("1");
+    if (!cell) {
+      return;
+    }
+    cell.value = "9";
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    // Only the edited cell range changes; padding and alignment stay intact.
+    expect(view.state.doc.toString()).toBe("| A | B |\n| :- | -: |\n| 9 | 2 |\n\n结尾段落\n");
+    const edited = view.dom.querySelector<HTMLElement>(".cm-md-table-block tbody tr td");
+    expect(edited?.textContent).toBe("9");
+    expect(view.dom.querySelector(".cm-md-table-header")).toBeNull();
+  });
+
+  it("adds a row when Tab is pressed in the last table cell", () => {
+    const doc = "| A | B |\n| --- | --- |\n| 1 | 2 |\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const last = view.dom.querySelector<HTMLInputElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="1"]',
+    );
+    expect(last).not.toBeNull();
+    last?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+    );
+
+    expect(view.state.doc.toString()).toBe("| A | B |\n| --- | --- |\n| 1 | 2 |\n|  |  |\n");
+    expect(view.dom.querySelectorAll(".cm-md-table-block tbody tr")).toHaveLength(2);
+
+    // Empty cells are addressable too; typing keeps the cell padding.
+    const fresh = view.dom.querySelector<HTMLInputElement>(
+      '.cm-md-table-cell-input[data-row="1"][data-col="0"]',
+    );
+    expect(fresh).not.toBeNull();
+    if (fresh) {
+      fresh.value = "3";
+      fresh.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      expect(view.state.doc.toString()).toBe("| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 |  |\n");
+    }
+  });
+
+  it("edits a table inside a block quote and keeps the quote prefix", () => {
+    const doc = "> | A | B |\n> | --- | --- |\n> | 1 | 2 |\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const cell = view.dom.querySelector<HTMLInputElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    expect(cell?.value).toBe("1");
+    if (!cell) {
+      return;
+    }
+    cell.value = "9";
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    expect(view.state.doc.toString()).toBe("> | A | B |\n> | --- | --- |\n> | 9 | 2 |\n");
+  });
+
+  it("adds rows to a block-quoted table with the same prefix", () => {
+    const doc = "> | A |\n> | --- |\n> | 1 |\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const last = view.dom.querySelector<HTMLInputElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    last?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+    );
+
+    expect(view.state.doc.toString()).toBe("> | A |\n> | --- |\n> | 1 |\n> |  |\n");
+  });
+
+  it("ignores trailing whitespace after the closing table pipe", () => {
+    const doc = "| A | B |   \n| --- | --- |\n| 1 | 2 |   \n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const block = view.dom.querySelector(".cm-md-table-block");
+    expect(block?.querySelectorAll("thead th")).toHaveLength(2);
+    expect(block?.querySelectorAll("tbody td")).toHaveLength(2);
+  });
+
+  it("removes cell editors when the document becomes read-only", () => {
+    const doc = "| A | B |\n| --- | --- |\n| 1 | 2 |\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    expect(view.dom.querySelectorAll(".cm-md-table-cell-input").length).toBe(4);
+    view.dispatch({ effects: setReadOnlyEffect(true) });
+    expect(view.dom.querySelector(".cm-md-table-block")).not.toBeNull();
+    expect(view.dom.querySelectorAll(".cm-md-table-cell-input")).toHaveLength(0);
+    expect(view.dom.querySelector(".cm-md-table-block")?.getAttribute("title")).toBe("");
+  });
+
+  it("moves a selection out of the hidden table source", async () => {
+    const doc = "| A |\n| --- |\n| 1 |\n\nTail\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    view.dispatch({ selection: { anchor: 0 } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(view.state.selection.main.head).toBe(doc.indexOf("\n\nTail") + 1);
+  });
+
+  it("keeps the caret while the table source is being typed", async () => {
+    const doc = "| A |\n| --- |\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    view.dispatch({ selection: { anchor: doc.length } });
+    const insert = "| 1 |";
+    view.dispatch({
+      changes: { from: doc.length, insert },
+      selection: { anchor: doc.length + insert.length },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(view.state.selection.main.head).toBe(doc.length + insert.length);
+  });
+
+  it("preserves escaped pipes and tables without outer pipes", () => {
+    const escaped = "| A | B |\n| --- | --- |\n| a \\| b | 2 |\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const escapeView = new EditorView({ state: stateFor(escaped), parent });
+    views.push({ view: escapeView, parent });
+
+    const escapedCell = escapeView.dom.querySelector<HTMLInputElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    expect(escapedCell?.value).toBe("a \\| b");
+    if (escapedCell) {
+      escapedCell.value = "x | y";
+      escapedCell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      expect(escapeView.state.doc.toString()).toContain("| x \\| y | 2 |");
+    }
+
+    const bare = "A | B\n--- | ---\n1 | 2\n";
+    const bareView = new EditorView({ state: stateFor(bare), parent });
+    views.push({ view: bareView, parent });
+    const bareCell = bareView.dom.querySelector<HTMLInputElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    expect(bareCell?.value).toBe("1");
+    if (bareCell) {
+      bareCell.value = "9";
+      bareCell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      expect(bareView.state.doc.toString()).toBe("A | B\n--- | ---\n9 | 2\n");
+    }
+  });
+
+  it("commits on Enter and leaves the caret after the table", () => {
+    const doc = "| A |\n| --- |\n| 1 |\n\nTail\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const cell = view.dom.querySelector<HTMLInputElement>(".cm-md-table-cell-input");
+    expect(cell).not.toBeNull();
+    if (!cell) {
+      return;
+    }
+    cell.value = "longer";
+    cell.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+
+    const edited = view.state.doc.toString();
+    expect(edited).toContain("| longer |");
+    expect(view.state.selection.main.head).toBe(edited.indexOf("\n\nTail") + 1);
   });
 
   it("renders highlight, sub/sup and safe inline HTML inside table cells", () => {

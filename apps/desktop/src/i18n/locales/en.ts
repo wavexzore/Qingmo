@@ -181,7 +181,7 @@ export const editor = {
     renderTimeout: "Mermaid diagram render timed out",
   },
   math: { editSource: "Click to edit the formula source" },
-  table: { editSource: "Click to edit the table source" },
+  table: { editSource: "Click a cell to edit the table" },
   definitionList: { editSource: "Click to edit the definition list source" },
   comments: {
     wrapperTitle: "Click to view the comment source",

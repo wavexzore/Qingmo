@@ -177,7 +177,7 @@ export const editor = {
     renderTimeout: "Mermaid 图表渲染超时",
   },
   math: { editSource: "点击编辑公式源码" },
-  table: { editSource: "点击编辑表格源码" },
+  table: { editSource: "点击单元格编辑表格" },
   definitionList: { editSource: "点击编辑定义列表源码" },
   comments: {
     wrapperTitle: "点击查看注释源码",

@@ -132,7 +132,7 @@ test("cancelling Save As keeps the untitled document dirty", async ({ page }) =>
   expect(await getFileText(page, SAVE_AS_PATH)).toBeNull();
 });
 
-test("renders a GFM table and returns to its source when clicked", async ({ page }) => {
+test("renders a GFM table and edits a cell without revealing its source", async ({ page }) => {
   await openApp(page);
   await typeInEditor(page, "| A | B |\n|---|---|\n| 1 | 2 |\n");
 
@@ -141,10 +141,14 @@ test("renders a GFM table and returns to its source when clicked", async ({ page
   await expect(block.locator("th").first()).toHaveText("A");
   await expect(page.locator(".cm-content")).not.toContainText("|---|---|");
 
-  await block.click();
+  const cell = block.locator('input[data-row="0"][data-col="0"]');
+  await cell.click();
+  await cell.fill("9");
+  await page.keyboard.press("Enter");
 
-  await expect(page.locator(".cm-content")).toContainText("|---|---|");
-  await expect(page.locator(".cm-md-table-block")).toHaveCount(0);
+  await expect(block.locator("tbody td").first()).toHaveText("9");
+  await expect(page.locator(".cm-content")).not.toContainText("|---|---|");
+  await expect(page.locator(".cm-md-table-block")).toHaveCount(1);
 });
 
 test("opens a seeded file, edits it and auto-saves to clean", async ({ page }) => {
