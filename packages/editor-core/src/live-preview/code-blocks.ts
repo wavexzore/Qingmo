@@ -182,14 +182,53 @@ const nestedCodeTheme = EditorView.theme({
 });
 
 /**
- * Keep the chip as snug as Typora's language label. `ch` follows the
- * monospace face, and the extra padding covers the input's inline padding and
- * border so short values such as `ts` are never clipped.
+ * One entry in the language picker. `value` is written into the fence info
+ * string; an empty value clears it and renders the block as plain text.
  */
-function sizeLanguageChip(chip: HTMLInputElement): void {
-  const length = chip.value.length;
-  chip.size = Math.max(2, length);
-  chip.style.width = length === 0 ? "6em" : `${Math.max(2.5, length + 1.8)}ch`;
+interface LanguageChoice {
+  value: string;
+  label: string;
+  /** Terms matched by the filter input (names, aliases and extensions). */
+  terms: readonly string[];
+  custom?: boolean;
+}
+
+const PLAIN_TEXT_TERMS = ["text", "plain", "plaintext", "txt", "none"] as const;
+
+function languageChoices(plainText: string): LanguageChoice[] {
+  const choices: LanguageChoice[] = [{ value: "", label: plainText, terms: PLAIN_TEXT_TERMS }];
+  for (const description of codeLanguages) {
+    const value = description.name.toLowerCase();
+    choices.push({
+      value,
+      label: description.name,
+      terms: [description.name, value, ...description.alias, ...description.extensions],
+    });
+  }
+  for (const [value, label] of Object.entries(EXTERNAL_DIAGRAM_LANGUAGES)) {
+    choices.push({ value, label, terms: [value, label.toLowerCase()] });
+  }
+  return choices;
+}
+
+/** Resolve a fence token (including aliases such as `js`) to a choice value. */
+function languageChoiceValue(choices: readonly LanguageChoice[], token: string): string | null {
+  const normalized = token.trim().toLowerCase();
+  if (normalized === "") {
+    return "";
+  }
+  const match = choices.find((choice) =>
+    choice.terms.some((term) => term.trim().toLowerCase() === normalized),
+  );
+  return match ? match.value : null;
+}
+
+function updateLanguageLabel(handle: CodeBlockHandle): void {
+  const value = handle.language || "text";
+  const label = `${handle.copy.codeBlock.language}: ${value}`;
+  handle.languageLabel.textContent = value;
+  handle.languageButton.title = label;
+  handle.languageButton.setAttribute("aria-label", label);
 }
 
 /**
@@ -219,7 +258,13 @@ interface CodeBlockHandle {
   languageCompartment: Compartment;
   readOnlyCompartment: Compartment;
   metaCompartment: Compartment;
-  chip: HTMLInputElement;
+  picker: HTMLElement;
+  languageButton: HTMLButtonElement;
+  languageLabel: HTMLElement;
+  languagePopover: HTMLElement;
+  languageSearch: HTMLInputElement;
+  languageList: HTMLElement;
+  closeLanguage: (restoreFocus?: boolean) => void;
   titleNode: HTMLElement;
   externalNode: HTMLElement | null;
   copyButton: HTMLButtonElement;
@@ -233,6 +278,8 @@ interface CodeBlockHandle {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+let languagePickerCount = 0;
 
 function svgIcon(doc: Document): SVGSVGElement {
   const svg = doc.createElementNS(SVG_NS, "svg");
@@ -284,6 +331,16 @@ function createMoreIcon(doc: Document): SVGSVGElement {
     dot.setAttribute("fill", "currentColor");
     svg.append(dot);
   }
+  return svg;
+}
+
+function createChevronIcon(doc: Document): SVGSVGElement {
+  const svg = svgIcon(doc);
+  svg.classList.add("cm-md-code-language-chevron");
+  const chevron = strokeShape(doc, "path");
+  chevron.setAttribute("d", "M4.2 6.4 8 10.2l3.8-3.8");
+  chevron.setAttribute("stroke-width", "1.3");
+  svg.append(chevron);
   return svg;
 }
 
@@ -462,18 +519,47 @@ class CodeBlockWidget extends WidgetType {
     const actions = doc.createElement("span");
     actions.className = "cm-md-code-actions";
 
-    const chip = doc.createElement("input");
-    chip.type = "text";
-    chip.className = "cm-md-code-language";
-    chip.value = this.code.language;
-    chip.placeholder = this.copy.codeBlock.language;
-    chip.setAttribute("aria-label", this.copy.codeBlock.language);
-    chip.spellcheck = false;
-    chip.autocapitalize = "off";
-    chip.autocomplete = "off";
-    chip.readOnly = this.readOnly;
-    chip.tabIndex = this.readOnly ? -1 : 0;
-    sizeLanguageChip(chip);
+    const picker = doc.createElement("span");
+    picker.className = "cm-md-code-language-picker";
+
+    const languageButton = doc.createElement("button");
+    languageButton.type = "button";
+    languageButton.className = "cm-md-code-language";
+    languageButton.setAttribute("aria-haspopup", "listbox");
+    languageButton.setAttribute("aria-expanded", "false");
+    languageButton.disabled = this.readOnly;
+    languageButton.tabIndex = this.readOnly ? -1 : 0;
+
+    const languageLabel = doc.createElement("span");
+    languageLabel.className = "cm-md-code-language-label";
+    languageButton.append(languageLabel, createChevronIcon(doc));
+
+    const languagePopover = doc.createElement("div");
+    languagePopover.className = "cm-md-code-language-popover";
+    languagePopover.hidden = true;
+
+    const languageSearch = doc.createElement("input");
+    languageSearch.type = "text";
+    languageSearch.className = "cm-md-code-language-search";
+    languageSearch.placeholder = this.copy.codeBlock.searchLanguage;
+    languageSearch.setAttribute("aria-label", this.copy.codeBlock.searchLanguage);
+    languageSearch.spellcheck = false;
+    languageSearch.autocomplete = "off";
+    languageSearch.setAttribute("role", "combobox");
+    languageSearch.setAttribute("aria-expanded", "false");
+    languageSearch.setAttribute("aria-autocomplete", "list");
+
+    const languageList = doc.createElement("div");
+    languageList.className = "cm-md-code-language-list";
+    languageList.setAttribute("role", "listbox");
+    languageList.setAttribute("aria-label", this.copy.codeBlock.language);
+
+    const pickerId = `cm-md-code-language-${++languagePickerCount}`;
+    languageList.id = `${pickerId}-list`;
+    languageSearch.setAttribute("aria-controls", languageList.id);
+
+    languagePopover.append(languageSearch, languageList);
+    picker.append(languageButton, languagePopover);
 
     const copyButton = actionButton(doc, "cm-md-code-copy", this.copy.codeBlock.copy);
     const copyIcon = createCopyIcon(doc);
@@ -497,7 +583,7 @@ class CodeBlockWidget extends WidgetType {
     const selectItem = menuItem(doc, this.copy.codeBlock.selectAll);
     menu.append(copyItem, selectItem);
 
-    actions.append(chip, copyButton, moreButton);
+    actions.append(picker, copyButton, moreButton);
     header.append(dots, title, spacer, actions, menu);
     wrapper.append(header);
 
@@ -526,7 +612,13 @@ class CodeBlockWidget extends WidgetType {
       languageCompartment: new Compartment(),
       readOnlyCompartment: new Compartment(),
       metaCompartment: new Compartment(),
-      chip,
+      picker,
+      languageButton,
+      languageLabel,
+      languagePopover,
+      languageSearch,
+      languageList,
+      closeLanguage: () => {},
       titleNode: title,
       externalNode: null,
       copyButton,
@@ -624,18 +716,147 @@ class CodeBlockWidget extends WidgetType {
       moreButton.setAttribute("aria-expanded", "true");
       menu.querySelector<HTMLButtonElement>(".cm-md-code-menu-item")?.focus();
     };
+
+    let languageOpen = false;
+    let optionButtons: HTMLButtonElement[] = [];
+    let optionChoices: LanguageChoice[] = [];
+    let activeOption = 0;
+
+    const setActiveOption = (index: number): void => {
+      if (optionButtons.length === 0) {
+        languageSearch.removeAttribute("aria-activedescendant");
+        return;
+      }
+      const next = Math.max(0, Math.min(index, optionButtons.length - 1));
+      optionButtons[activeOption]?.removeAttribute("data-active");
+      activeOption = next;
+      const option = optionButtons[next];
+      if (!option) {
+        return;
+      }
+      option.setAttribute("data-active", "true");
+      languageSearch.setAttribute("aria-activedescendant", option.id);
+      option.scrollIntoView?.({ block: "nearest" });
+    };
+
+    function closeLanguage(restoreFocus = false): void {
+      if (!languageOpen) {
+        return;
+      }
+      languageOpen = false;
+      languagePopover.hidden = true;
+      languageSearch.value = "";
+      languageSearch.setAttribute("aria-expanded", "false");
+      languageButton.setAttribute("aria-expanded", "false");
+      if (restoreFocus) {
+        languageButton.focus();
+      }
+    }
+    handle.closeLanguage = closeLanguage;
+
+    const applyChoice = (choice: LanguageChoice): void => {
+      const current =
+        languageChoiceValue(languageChoices(handle.copy.codeBlock.plainText), handle.language) ??
+        handle.language.trim();
+      closeLanguage();
+      if (choice.value === current) {
+        return;
+      }
+      commitLanguageValue(handle, choice.value);
+    };
+
+    const renderLanguageOptions = (): void => {
+      const query = languageSearch.value.trim();
+      const normalized = query.toLowerCase();
+      const choices = languageChoices(handle.copy.codeBlock.plainText);
+      const currentToken = handle.language.trim();
+      const catalogValue = languageChoiceValue(choices, currentToken);
+      if (currentToken && catalogValue === null) {
+        choices.unshift({ value: currentToken, label: currentToken, terms: [currentToken] });
+      }
+      let visible = normalized
+        ? choices.filter((choice) =>
+            choice.terms.some((term) => term.toLowerCase().includes(normalized)),
+          )
+        : choices;
+      if (
+        normalized &&
+        !choices.some((choice) =>
+          choice.terms.some((term) => term.trim().toLowerCase() === normalized),
+        )
+      ) {
+        visible = visible.concat({
+          value: normalized.split(/\s+/)[0] ?? "",
+          label: handle.copy.codeBlock.customLanguage(query),
+          terms: [normalized],
+          custom: true,
+        });
+      }
+
+      const selectedToken = catalogValue ?? currentToken;
+      optionChoices = visible;
+      optionButtons = visible.map((choice, index) => {
+        const option = doc.createElement("button");
+        option.type = "button";
+        option.id = `${pickerId}-option-${index}`;
+        option.className = "cm-md-code-language-option";
+        option.setAttribute("role", "option");
+        option.setAttribute(
+          "aria-selected",
+          String(!choice.custom && choice.value === selectedToken),
+        );
+        option.tabIndex = -1;
+        option.textContent = choice.label;
+        option.addEventListener("mousedown", (event) => {
+          event.stopPropagation();
+        });
+        option.addEventListener("click", () => {
+          applyChoice(choice);
+        });
+        return option;
+      });
+      languageList.replaceChildren(...optionButtons);
+      const selectedIndex = visible.findIndex(
+        (choice) => !choice.custom && choice.value === selectedToken,
+      );
+      activeOption = 0;
+      setActiveOption(selectedIndex >= 0 ? selectedIndex : 0);
+    };
+
+    const openLanguage = (): void => {
+      if (languageOpen || handle.readOnly) {
+        return;
+      }
+      languageOpen = true;
+      languagePopover.hidden = false;
+      languageSearch.setAttribute("aria-expanded", "true");
+      languageButton.setAttribute("aria-expanded", "true");
+      renderLanguageOptions();
+      languageSearch.focus();
+    };
+
     const onDocumentMouseDown = (event: MouseEvent): void => {
-      if (!menuOpen) {
-        return;
-      }
       const target = event.target;
-      if (target instanceof Node && (menu.contains(target) || moreButton.contains(target))) {
+      if (!(target instanceof Node)) {
         return;
       }
-      closeMenu();
+      if (menuOpen && !menu.contains(target) && !moreButton.contains(target)) {
+        closeMenu();
+      }
+      if (languageOpen && !picker.contains(target)) {
+        closeLanguage();
+      }
     };
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" && menuOpen) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (languageOpen) {
+        event.preventDefault();
+        closeLanguage(true);
+        return;
+      }
+      if (menuOpen) {
         event.preventDefault();
         closeMenu(true);
       }
@@ -675,31 +896,71 @@ class CodeBlockWidget extends WidgetType {
       });
     });
 
-    chip.addEventListener("mousedown", (event) => {
+    languageButton.addEventListener("mousedown", (event) => {
       event.stopPropagation();
     });
-    chip.addEventListener("focus", () => {
-      chip.select();
+    languageButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (languageOpen) {
+        closeLanguage();
+      } else {
+        openLanguage();
+      }
     });
-    chip.addEventListener("input", () => {
-      sizeLanguageChip(chip);
+    languagePopover.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
     });
-    chip.addEventListener("keydown", (event) => {
+    languageSearch.addEventListener("input", () => {
+      renderLanguageOptions();
+    });
+    languageSearch.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveOption(activeOption + 1);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveOption(activeOption - 1);
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        setActiveOption(0);
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        setActiveOption(optionButtons.length - 1);
+        return;
+      }
       if (event.key === "Enter") {
         event.preventDefault();
-        commitLanguage(handle);
-        handle.nested.focus();
+        const choice = optionChoices[activeOption];
+        if (choice) {
+          applyChoice(choice);
+        }
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        chip.value = handle.language;
-        sizeLanguageChip(chip);
-        chip.blur();
+        event.stopPropagation();
+        closeLanguage(true);
+        return;
+      }
+      if (event.key === "Tab") {
+        closeLanguage();
       }
     });
-    chip.addEventListener("blur", () => {
-      commitLanguage(handle);
+    picker.addEventListener("focusout", (event) => {
+      if (!languageOpen) {
+        return;
+      }
+      const next = event.relatedTarget;
+      if (next instanceof Node && picker.contains(next)) {
+        return;
+      }
+      closeLanguage();
     });
 
     wrapper.addEventListener("mousedown", (event) => {
@@ -709,6 +970,7 @@ class CodeBlockWidget extends WidgetType {
       }
     });
 
+    updateLanguageLabel(handle);
     updateInfo(handle);
     return wrapper;
   }
@@ -734,16 +996,14 @@ class CodeBlockWidget extends WidgetType {
     handle.highlightLines = this.code.highlightLines;
     dom.dataset.codeFrom = String(this.code.openingLine.from);
 
-    if (dom.ownerDocument.activeElement !== handle.chip) {
-      if (handle.chip.value !== this.code.language) {
-        handle.chip.value = this.code.language;
-        sizeLanguageChip(handle.chip);
-      }
+    handle.languageSearch.placeholder = this.copy.codeBlock.searchLanguage;
+    handle.languageSearch.setAttribute("aria-label", this.copy.codeBlock.searchLanguage);
+    handle.languageList.setAttribute("aria-label", this.copy.codeBlock.language);
+    handle.languageButton.disabled = this.readOnly;
+    handle.languageButton.tabIndex = this.readOnly ? -1 : 0;
+    if (this.readOnly) {
+      handle.closeLanguage();
     }
-    handle.chip.readOnly = this.readOnly;
-    handle.chip.tabIndex = this.readOnly ? -1 : 0;
-    handle.chip.placeholder = this.copy.codeBlock.language;
-    handle.chip.setAttribute("aria-label", this.copy.codeBlock.language);
 
     handle.copyItem.textContent = this.copy.codeBlock.copy;
     handle.selectItem.textContent = this.copy.codeBlock.selectAll;
@@ -755,6 +1015,7 @@ class CodeBlockWidget extends WidgetType {
     }
 
     applyLanguage(handle, this.code.language);
+    updateLanguageLabel(handle);
 
     if (handle.readOnly !== this.readOnly) {
       handle.readOnly = this.readOnly;
@@ -871,11 +1132,11 @@ function leaveBlock(handle: CodeBlockHandle, direction: "before" | "after"): boo
   return true;
 }
 
-function commitLanguage(handle: CodeBlockHandle): void {
+function commitLanguageValue(handle: CodeBlockHandle, raw: string): void {
   if (handle.destroyed || handle.readOnly) {
     return;
   }
-  const next = handle.chip.value.trim().split(/\s+/)[0] ?? "";
+  const next = raw.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
   if (next === handle.language) {
     return;
   }
@@ -900,13 +1161,12 @@ function commitLanguage(handle: CodeBlockHandle): void {
   });
   handle.language = next;
   handle.infoTo = handle.infoFrom + next.length;
-  handle.chip.value = next;
-  sizeLanguageChip(handle.chip);
+  updateLanguageLabel(handle);
   updateInfo(handle);
 }
 
 function updateInfo(handle: CodeBlockHandle): void {
-  const host = handle.chip.parentElement;
+  const host = handle.picker.parentElement;
   if (!host) {
     return;
   }
@@ -915,7 +1175,7 @@ function updateInfo(handle: CodeBlockHandle): void {
     if (!handle.externalNode) {
       handle.externalNode = handle.dom.ownerDocument.createElement("span");
       handle.externalNode.className = "cm-md-code-external";
-      host.insertBefore(handle.externalNode, handle.chip);
+      host.insertBefore(handle.externalNode, handle.picker);
     }
     handle.externalNode.textContent = handle.copy.widgets.externalRender;
     handle.externalNode.title = handle.copy.widgets.externalRenderHint(external);

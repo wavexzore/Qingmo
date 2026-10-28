@@ -123,6 +123,9 @@ export function buildEditorUiCopy(language: SupportedLanguage): EditorUiCopy {
     table: { editSource: t("table.editSource") },
     codeBlock: {
       language: t("codeBlock.language"),
+      searchLanguage: t("codeBlock.searchLanguage"),
+      plainText: t("codeBlock.plainText"),
+      customLanguage: (value) => t("codeBlock.customLanguage", { value }),
       copy: t("codeBlock.copy"),
       copied: t("codeBlock.copied"),
       copyFailed: t("codeBlock.copyFailed"),

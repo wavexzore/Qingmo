@@ -46,8 +46,8 @@ test("renders terminal chrome with a top-right language chip", async ({ page }) 
   await expect(block.locator(".cm-md-code-copy")).toHaveAttribute("aria-label", "复制代码");
   await expect(block.locator(".cm-md-code-more")).toHaveAttribute("aria-label", "更多操作");
 
-  const chip = header.locator("input.cm-md-code-language");
-  await expect(chip).toHaveValue("ts");
+  const chip = header.locator("button.cm-md-code-language");
+  await expect(chip).toHaveText("ts");
 
   const firstCodeLine = block.locator(".cm-line").filter({ hasText: "const answer" }).first();
   await expect(firstCodeLine).toBeVisible();
@@ -122,11 +122,13 @@ test("edits code in place and updates the fence language", async ({ page }) => {
 
   await expect.poll(() => getFileText(page, CODE_PATH)).toContain("console.log(answer); // ok");
 
-  const chip = block.locator("input.cm-md-code-language");
+  const chip = block.locator("button.cm-md-code-language");
   await chip.click();
-  await chip.fill("js");
-  await page.keyboard.press("Enter");
+  const search = block.locator(".cm-md-code-language-search");
+  await expect(search).toBeVisible();
+  await search.fill("js");
+  await block.locator(".cm-md-code-language-option").filter({ hasText: "JavaScript" }).click();
 
-  await expect.poll(() => getFileText(page, CODE_PATH)).toContain("```js\n");
-  await expect(chip).toHaveValue("js");
+  await expect.poll(() => getFileText(page, CODE_PATH)).toContain("```javascript\n");
+  await expect(chip).toHaveText("javascript");
 });
