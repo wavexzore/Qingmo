@@ -11,6 +11,7 @@ import { COMMANDS } from "../../lib/ipc/commands";
 import { FakeIpc } from "../../lib/ipc/fake";
 import type { IpcPort } from "../../lib/ipc/port";
 import { FakePlatform } from "../../lib/platform/fake";
+import { FakeLogPort } from "../../lib/log/fake";
 import { FakeUpdatePort } from "../../lib/update/fake";
 import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
@@ -33,7 +34,9 @@ function renderApp(
   render(
     <AppErrorBoundary>
       <ToastProvider>
-        <AppServicesProvider services={{ ipc, platform, updates: new FakeUpdatePort() }}>
+        <AppServicesProvider
+          services={{ ipc, platform, updates: new FakeUpdatePort(), logs: new FakeLogPort() }}
+        >
           <DocumentSessionProvider>
             {options.onSession ? <SessionProbe onSession={options.onSession} /> : null}
             <UpdateProvider autoCheck={false}>
@@ -248,7 +251,7 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(5);
+    expect(options).toHaveLength(6);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("打开文件"),
@@ -345,6 +348,7 @@ describe("blank editor -> editor open flow", () => {
               ipc: fileIpc(),
               platform: new FakePlatform(),
               updates: new FakeUpdatePort(),
+              logs: new FakeLogPort(),
             }}
           >
             <DocumentSessionProvider>

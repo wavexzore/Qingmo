@@ -14,7 +14,8 @@ function usage() {
   console.error(`Usage:
   node scripts/release/make-latest-json.mjs \\
     --version <X.Y.Z> --artifacts <bundle/macos> --out <latest.json> \\
-    [--base-url <release download base>] [--notes <text> | --notes-file <path>]
+    [--base-url <release download base>] [--notes <text> | --notes-file <path>] \
+    [--notes-zh-file <path> --notes-en-file <path>]
 
 The release URL defaults to:
   https://github.com/wavexzore/Qingmo/releases/download/v<version>
@@ -34,6 +35,8 @@ function parseArgs(argv) {
     baseUrl: null,
     notes: "",
     notesFile: null,
+    notesZhFile: null,
+    notesEnFile: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -66,6 +69,12 @@ function parseArgs(argv) {
       case "--notes-file":
         options.notesFile = value;
         break;
+      case "--notes-zh-file":
+        options.notesZhFile = value;
+        break;
+      case "--notes-en-file":
+        options.notesEnFile = value;
+        break;
       default:
         fail(`unknown argument: ${argument}`);
     }
@@ -85,6 +94,12 @@ function parseArgs(argv) {
   }
   if (options.notes && options.notesFile) {
     fail("--notes and --notes-file are mutually exclusive");
+  }
+  if (Boolean(options.notesZhFile) !== Boolean(options.notesEnFile)) {
+    fail("--notes-zh-file and --notes-en-file must be provided together");
+  }
+  if ((options.notes || options.notesFile) && options.notesZhFile) {
+    fail("--notes-file is mutually exclusive with the per-language notes files");
   }
   return options;
 }
@@ -155,14 +170,26 @@ function readSignedVersion(decoded, signaturePath) {
   return match[1];
 }
 
-function readNotes(options) {
-  if (options.notesFile) {
-    if (!existsSync(options.notesFile)) {
-      fail(`notes file does not exist: ${options.notesFile}`);
-    }
-    return readFileSync(options.notesFile, "utf8");
+function readNotesFile(notesFile) {
+  if (!existsSync(notesFile)) {
+    fail(`notes file does not exist: ${notesFile}`);
   }
-  return options.notes;
+  return readFileSync(notesFile, "utf8");
+}
+
+function readNotes(options) {
+  if (options.notesZhFile) {
+    const zh = readNotesFile(options.notesZhFile);
+    const en = readNotesFile(options.notesEnFile);
+    return {
+      notes: [`[zh-CN]`, zh.trim(), "", `[en-US]`, en.trim()].join("\n") + "\n",
+      notesByLocale: { "zh-CN": zh, "en-US": en },
+    };
+  }
+  return {
+    notes: options.notesFile ? readNotesFile(options.notesFile) : options.notes,
+    notesByLocale: null,
+  };
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -176,10 +203,20 @@ if (signedVersion !== options.version) {
   );
 }
 
-const notes = readNotes(options);
+const { notes, notesByLocale } = readNotes(options);
 const notesBytes = Buffer.byteLength(notes, "utf8");
 if (notesBytes > NOTES_MAX_BYTES) {
   fail(`notes is ${notesBytes} bytes, exceeds the ${NOTES_MAX_BYTES}-byte limit`);
+}
+if (notesByLocale) {
+  for (const [language, text] of Object.entries(notesByLocale)) {
+    const bytes = Buffer.byteLength(text, "utf8");
+    if (bytes > NOTES_MAX_BYTES) {
+      fail(
+        `notesByLocale.${language} is ${bytes} bytes, exceeds the ${NOTES_MAX_BYTES}-byte limit`,
+      );
+    }
+  }
 }
 
 const baseUrl = validateHttpsBase(
@@ -189,6 +226,7 @@ const assetUrl = `${baseUrl}/${encodeURIComponent(tarballName)}`;
 const manifest = {
   version: options.version,
   notes,
+  ...(notesByLocale ? { notesByLocale } : {}),
   pub_date: new Date().toISOString(),
   platforms: {
     "darwin-aarch64": { signature, url: assetUrl },

@@ -19,6 +19,7 @@ import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { EditorSession } from "../editor/EditorSession";
 import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
+import { LogDialog } from "../logs/LogDialog";
 import { UpdateHost } from "../update/UpdateHost";
 import { useUpdateController, useUpdateSnapshot } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
@@ -40,6 +41,7 @@ export function WorkspaceLayout() {
   const updateSnapshot = useUpdateSnapshot();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
   const openingRef = useRef(false);
   const sessionRef = useRef(session);
   const coordinatorRef = useRef(coordinator);
@@ -65,7 +67,11 @@ export function WorkspaceLayout() {
   );
   useCommandKeybindings({
     enabled:
-      !paletteOpen && !updateBlocked && !updateDialogOpen && updateSnapshot?.phase !== "installing",
+      !paletteOpen &&
+      !logsOpen &&
+      !updateBlocked &&
+      !updateDialogOpen &&
+      updateSnapshot?.phase !== "installing",
     onOpenPalette: openPalette,
     onError: handleCommandError,
   });
@@ -134,7 +140,11 @@ export function WorkspaceLayout() {
   // keyboard shortcuts: no menu-driven open/save while a modal or install is
   // in progress.
   const menuEnabled =
-    !paletteOpen && !updateBlocked && !updateDialogOpen && updateSnapshot?.phase !== "installing";
+    !paletteOpen &&
+    !logsOpen &&
+    !updateBlocked &&
+    !updateDialogOpen &&
+    updateSnapshot?.phase !== "installing";
 
   useEffect(() => {
     if (!menuEnabled) {
@@ -166,9 +176,25 @@ export function WorkspaceLayout() {
         case MENU_ACTIONS.themeSystem:
           uiStore.setTheme("system");
           break;
+        case MENU_ACTIONS.logs:
+          setLogsOpen(true);
+          break;
       }
     });
   }, [menuEnabled, openDocument, openPalette, platform, runMenuCommand]);
+
+  useEffect(() => {
+    const disposable = commandRegistry.register({
+      id: "app.openLogs",
+      titleKey: "commands:app.openLogs",
+      category: "commands:category.app",
+      keybinding: "Mod+Alt+L",
+      run: () => {
+        setLogsOpen(true);
+      },
+    });
+    return () => disposable.dispose();
+  }, []);
 
   useEffect(() => {
     const disposable = commandRegistry.register({
@@ -219,19 +245,22 @@ export function WorkspaceLayout() {
   }, [hasSession]);
 
   return (
-    <>
-      <Outlet />
+    <div className="flex h-dvh flex-col bg-paper">
+      <UpdateHost
+        blocked={updateBlocked}
+        dialogOpen={updateDialogOpen}
+        onDialogOpenChange={setUpdateDialogOpen}
+      />
+      <div className="min-h-0 flex-1">
+        <Outlet />
+      </div>
       <CommandPalette open={paletteOpen} onClose={closePalette} onError={handleCommandError} />
       <CloseConfirmDialog
         prompt={closeGuard.prompt}
         onAllow={closeGuard.allowClose}
         onCancel={closeGuard.cancelClose}
       />
-      <UpdateHost
-        blocked={updateBlocked}
-        dialogOpen={updateDialogOpen}
-        onDialogOpenChange={setUpdateDialogOpen}
-      />
-    </>
+      <LogDialog open={logsOpen} onClose={() => setLogsOpen(false)} />
+    </div>
   );
 }

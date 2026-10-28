@@ -54,7 +54,8 @@ export async function emitMenuAction(
     | "view.toggleTheme"
     | "theme.light"
     | "theme.dark"
-    | "theme.system",
+    | "theme.system"
+    | "app.openLogs",
 ): Promise<void> {
   await page.evaluate((next) => {
     window.__QINGMO_E2E__?.emitMenuAction(next);

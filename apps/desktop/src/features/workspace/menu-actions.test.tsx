@@ -8,6 +8,7 @@ import { AppErrorBoundary } from "../../components/AppErrorBoundary";
 import { ToastProvider } from "../../components/ToastHost";
 import { FakeIpc } from "../../lib/ipc/fake";
 import { FakePlatform } from "../../lib/platform/fake";
+import { FakeLogPort } from "../../lib/log/fake";
 import { FakeUpdatePort } from "../../lib/update/fake";
 import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
@@ -21,7 +22,9 @@ function renderApp() {
   render(
     <AppErrorBoundary>
       <ToastProvider>
-        <AppServicesProvider services={{ ipc, platform, updates: new FakeUpdatePort() }}>
+        <AppServicesProvider
+          services={{ ipc, platform, updates: new FakeUpdatePort(), logs: new FakeLogPort() }}
+        >
           <DocumentSessionProvider>
             <UpdateProvider autoCheck={false}>
               <RouterProvider router={router} />

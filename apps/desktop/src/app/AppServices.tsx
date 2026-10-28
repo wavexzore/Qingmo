@@ -7,6 +7,9 @@ import { FakePlatform } from "../lib/platform/fake";
 import type { PlatformPort } from "../lib/platform/port";
 import { isTauriRuntime } from "../lib/platform/runtime";
 import { createTauriPlatform } from "../lib/platform/tauri";
+import { FakeLogPort } from "../lib/log/fake";
+import type { LogPort } from "../lib/log/port";
+import { createTauriLogPort } from "../lib/log/tauri";
 import { FakeUpdatePort } from "../lib/update/fake";
 import type { UpdatePort } from "../lib/update/port";
 import { createTauriUpdatePort } from "../lib/update/tauri";
@@ -16,6 +19,7 @@ export interface AppServices {
   ipc: IpcPort;
   platform: PlatformPort;
   updates: UpdatePort;
+  logs: LogPort;
 }
 
 /**
@@ -33,6 +37,7 @@ export function createAppServices(): AppServices {
       ipc: createTauriIpc(),
       platform: createTauriPlatform(),
       updates: createTauriUpdatePort(),
+      logs: createTauriLogPort(),
     };
   }
 
@@ -40,6 +45,7 @@ export function createAppServices(): AppServices {
     ipc: new FakeIpc(),
     platform: new FakePlatform(),
     updates: new FakeUpdatePort(),
+    logs: new FakeLogPort(),
   };
 }
 

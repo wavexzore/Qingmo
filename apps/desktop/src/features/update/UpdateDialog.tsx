@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import type { UpdateSnapshot } from "@qingmo/shared";
 import { Button } from "@qingmo/ui";
 
+import { resolveNotes } from "./notes";
+
 export interface UpdateDialogProps {
   open: boolean;
   snapshot: UpdateSnapshot | null;
@@ -47,7 +49,7 @@ export function UpdateDialog({
   onDownload,
   onInstall,
 }: UpdateDialogProps) {
-  const { t } = useTranslation(["update", "errors"]);
+  const { t, i18n } = useTranslation(["update", "errors"]);
   const previousFocus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -92,6 +94,7 @@ export function UpdateDialog({
   const percent = progress ? formatPercent(progress.downloaded, progress.total) : null;
   const canDownload = phase === "available" && !disabled;
   const canInstall = phase === "ready" && !disabled;
+  const notes = update ? resolveNotes(update, i18n.language) : null;
 
   return (
     <div
@@ -135,7 +138,7 @@ export function UpdateDialog({
             {t("update:dialog.notes")}
           </p>
           <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-ink-muted">
-            {update?.body?.trim() ? update.body : t("update:dialog.noNotes")}
+            {notes || t("update:dialog.noNotes")}
           </p>
         </div>
 

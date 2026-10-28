@@ -263,11 +263,16 @@ elif [[ -n "$notes_file" ]]; then
   cp -f "$notes_file" "$out_dir/RELEASE-NOTES.txt"
 else
   node scripts/release/check-release-notes.mjs --version "$version" --out "$out_dir/RELEASE-NOTES.txt"
+  node scripts/release/check-release-notes.mjs --version "$version" --lang zh-CN --out "$out_dir/RELEASE-NOTES.zh.txt"
+  node scripts/release/check-release-notes.mjs --version "$version" --lang en-US --out "$out_dir/RELEASE-NOTES.en.txt"
 fi
 chmod 644 "$out_dir"/*
 rm -f "$out_dir/latest.json" "$out_dir/SHA256SUMS.txt"
 
 notes_args=(--notes-file "$out_dir/RELEASE-NOTES.txt")
+if [[ -f "$out_dir/RELEASE-NOTES.zh.txt" && -f "$out_dir/RELEASE-NOTES.en.txt" ]]; then
+  notes_args=(--notes-zh-file "$out_dir/RELEASE-NOTES.zh.txt" --notes-en-file "$out_dir/RELEASE-NOTES.en.txt")
+fi
 
 info "generating latest.json"
 node scripts/release/make-latest-json.mjs \

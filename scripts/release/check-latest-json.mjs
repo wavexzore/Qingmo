@@ -119,6 +119,34 @@ function validateNotes(notes) {
   );
 }
 
+function validateNotesByLocale(value) {
+  if (value === undefined) {
+    return;
+  }
+  assert(
+    value && typeof value === "object" && !Array.isArray(value),
+    "notesByLocale must be an object",
+  );
+  const languages = Object.keys(value);
+  assert(languages.length > 0, "notesByLocale is empty");
+  for (const language of languages) {
+    assert(
+      ["zh-CN", "en-US"].includes(language),
+      `unsupported notesByLocale language: ${language}`,
+    );
+    const text = value[language];
+    assert(
+      typeof text === "string" && text.trim().length > 0,
+      `notesByLocale.${language} must be a non-empty string`,
+    );
+    const bytes = Buffer.byteLength(text, "utf8");
+    assert(
+      bytes <= NOTES_MAX_BYTES,
+      `notesByLocale.${language} is ${bytes} bytes, exceeds the ${NOTES_MAX_BYTES}-byte limit`,
+    );
+  }
+}
+
 function validateDate(value) {
   assert(typeof value === "string" && value.length > 0, "pub_date must be a string");
   assert(
@@ -264,6 +292,7 @@ function main() {
   );
   validateDate(manifest.pub_date);
   validateNotes(manifest.notes);
+  validateNotesByLocale(manifest.notesByLocale);
 
   const platforms = manifest.platforms;
   assert(

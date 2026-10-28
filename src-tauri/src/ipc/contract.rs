@@ -18,6 +18,11 @@ pub const COMMANDS: &[&str] = &[
     "app_update_check",
     "app_update_download",
     "app_update_install",
+    "app_logs_list",
+    "app_logs_stats",
+    "app_logs_export",
+    "app_logs_open_dir",
+    "app_logs_clear",
 ];
 
 pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";
@@ -42,6 +47,7 @@ pub const MENU_FILE_SAVE: &str = "file.save";
 pub const MENU_PALETTE_OPEN: &str = "palette.open";
 pub const MENU_VIEW_TOGGLE_LIVE_PREVIEW: &str = "view.toggleLivePreview";
 pub const MENU_VIEW_TOGGLE_THEME: &str = "view.toggleTheme";
+pub const MENU_LOGS: &str = "app.openLogs";
 pub const MENU_THEME_LIGHT: &str = "theme.light";
 pub const MENU_THEME_DARK: &str = "theme.dark";
 pub const MENU_THEME_SYSTEM: &str = "theme.system";
@@ -52,6 +58,7 @@ pub const MENU_ACTIONS: &[&str] = &[
     MENU_PALETTE_OPEN,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW,
     MENU_VIEW_TOGGLE_THEME,
+    MENU_LOGS,
     MENU_THEME_LIGHT,
     MENU_THEME_DARK,
     MENU_THEME_SYSTEM,

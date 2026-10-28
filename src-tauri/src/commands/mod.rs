@@ -1,6 +1,7 @@
 pub mod about;
 pub mod close;
 pub mod document;
+pub mod logs;
 pub mod update;
 pub mod view;
 
@@ -22,5 +23,10 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         update::app_update_check,
         update::app_update_download,
         update::app_update_install,
+        logs::app_logs_list,
+        logs::app_logs_stats,
+        logs::app_logs_export,
+        logs::app_logs_open_dir,
+        logs::app_logs_clear,
     ]
 }
