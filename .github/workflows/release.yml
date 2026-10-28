@@ -271,13 +271,23 @@ jobs:
           fi
           dmg="$(find "src-tauri/target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$dmg"
+          staple_with_retry() {
+            for attempt in 1 2 3 4 5; do
+              if xcrun stapler staple "$dmg"; then
+                return 0
+              fi
+              echo "stapler staple failed (attempt $attempt/5); retrying in 15s"
+              sleep 15
+            done
+            return 1
+          }
           if ! xcrun stapler validate "$dmg" >/dev/null 2>&1; then
             xcrun notarytool submit "$dmg" \
               --apple-id "$APPLE_ID" \
               --password "$APPLE_PASSWORD" \
               --team-id "$APPLE_TEAM_ID" \
               --wait
-            xcrun stapler staple "$dmg"
+            staple_with_retry
           fi
           xcrun stapler validate "$dmg"
 
