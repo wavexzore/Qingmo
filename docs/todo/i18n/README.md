@@ -23,13 +23,13 @@ feature_name: "运行时国际化与原生本地化"
 status: "done"                   # todo | in_progress | blocked | partial | done | rolled_back | cancelled
 current_task: "none"              # 当前应执行的任务；无则写 none
 last_completed_task: "T-018"
-next_action: "T-001~T-018 全部完成；残余 PARTIAL：Windows 交叉编译（缺 Windows SDK/ring C 头）、Save As 原生对话框与菜单展开/大文档真机手测未执行"
+next_action: "T-001~T-018 全部完成；Windows 构建/122 Rust 测试/469 单测/80 E2E 全通过；残余：Windows 原生菜单与对话框未自动化手测、Windows clippy/fmt 组件不可用"
 verification_status: "pass"       # not_run | pass | fail | partial | skipped；T-002~T-018 绿；真机冒烟已完成
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
 last_verification_command: "pnpm ci:web && pnpm ci:rust && pnpm ci:generated && pnpm ci:negative && pnpm test:e2e"
-last_updated: "2026-10-28T15:05:00+08:00"
+last_updated: "2026-10-28T15:40:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -108,7 +108,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 |---|---|---|---|
 | R-001 | 原生菜单与命令面板可切换 `zh-CN` / `en`，切换后所有 React UI 立即更新 | 单测 + E2E：`AC-001` | PASS（E2E i18n.spec） |
 | R-002 | 语言偏好持久化到现有 UI 偏好层；非法值/被禁用 localStorage 不影响启动 | 单测：`AC-002` | PASS（E2E 刷新保持 + 非法值回退） |
-| R-003 | 原生菜单标题、菜单项、勾选状态在切换后同步；不出现第二份 Rust 文案表 | Rust 单测 + 手动冒烟：`AC-003` | PASS（Rust 菜单单测 + macOS 真机切换；Windows 未验） |
+| R-003 | 原生菜单标题、菜单项、勾选状态在切换后同步；不出现第二份 Rust 文案表 | Rust 单测 + 手动冒烟：`AC-003` | PASS（Rust 菜单单测 + macOS 真机；Windows 编译/E2E 通过，原生菜单未手测） |
 | R-004 | 文档窗口标题、About 窗口标题、另存为默认文件名随语言变化；未命名名称由 R-006 覆盖 | Rust 单测 + 手动冒烟：`AC-004` | PASS（Rust 单测 + macOS 真机窗口/About 标题；Save As 对话框未手测） |
 | R-005 | 多窗口（main / doc-* / about）语言一致；About 通过 storage 事件跟随，不重复建第二套状态 | 单测 + E2E：`AC-005` | PASS（E2E 三窗口同步） |
 | R-006 | 未命名文档的 placeholder 与状态栏名称在切换后不残留旧语言 | 单测 + E2E：`AC-006` | PASS（单测 + E2E 往返） |
@@ -423,8 +423,8 @@ struct NativeShellLabels {
 |---|---|---|---|---|
 | AC-001 | 菜单/命令面板切换语言后，palette、状态栏、冲突、更新、日志、About 全部即时更新 | T-008/T-009/T-016 | PASS（E2E `i18n.spec.ts`） | `E-049`/C-032 |
 | AC-002 | 重启后保持上次语言；非法值/禁用 localStorage 时启动回退 zh-CN，本次会话仍可切换且不崩 | T-003/T-008 | PASS（E2E 持久化/非法值） | `E-049`/C-032 |
-| AC-003 | 原生菜单标题/项/勾选在 en/zh 下正确；无 Rust 文案表 | T-005/T-009 | PASS（Rust 菜单单测 + macOS 真机；Windows 未验） | `E-038`/`E-051`/C-034 |
-| AC-004 | 文档窗口/About 标题、Save As 默认名随语言变化；未命名名称由 AC-006 覆盖 | T-006 | PASS（Rust 单测 + macOS 真机窗口/About 标题；Save As 对话框未手测） | `E-039`/`E-051`/C-034 |
+| AC-003 | 原生菜单标题/项/勾选在 en/zh 下正确；无 Rust 文案表 | T-005/T-009 | PASS（Rust 单测 + macOS 真机；Windows 编译/E2E，原生菜单未手测） | `E-038`/`E-051`/`E-052`/C-035 |
+| AC-004 | 文档窗口/About 标题、Save As 默认名随语言变化；未命名名称由 AC-006 覆盖 | T-006 | PASS（Rust 单测 + macOS 真机；Save As/Windows 原生对话框未手测） | `E-039`/`E-051`/`E-052`/C-035 |
 | AC-005 | main/doc-*/about 三窗口语言一致；About 通过 storage 跟随 | T-008/T-010 | PASS（E2E 三窗口同步） | `E-049`/C-032 |
 | AC-006 | 未命名 placeholder/状态栏名称切换后无旧语言残留 | T-012/T-016 | PASS（单测 + E2E 往返） | `E-045`/`E-049`/C-009 |
 | AC-007 | `editor-core` 可见文案/aria/title 通过 Facet 本地化；无第二套 i18n | T-013/T-014 | PASS（185 测试 + 非测试 0 汉字） | `E-047`/C-030 |
@@ -537,6 +537,7 @@ pnpm ci:web && pnpm ci:rust && pnpm ci:generated
 | 2026-10-28T12:12:00+08:00 | 终审复核：存储降级/重启重入/IME/`ShellLocale` state/`{ request }` IPC 形状；GitNexus 增量重建到 12:04 | OpenCode / DeepSeek V4.1 | `05 P1-16~P1-20`；`02 §8`；12:08 基线 391 |
 | 2026-10-28T12:20:00+08:00 | 人工确认 Q-001~Q-008 全部采纳建议：Q-001/002/003/004/005/007/008=A，Q-006=批准；解除 B-001 | Qingmo 维护者 | `README §12`；`01 §12`；`02 §7 B-001` |
 | 2026-10-28T13:52:00+08:00 | T-006 完成：`window_title_for(path, app_name)`、`apply_window_titles`（pending/token/miss）、About 中性回退、Save As 默认名取 `ShellLocale`；66 lib 测试通过 | OpenCode / DeepSeek V4.1 | `02 E-039`；C-008 |
+| 2026-10-28T15:40:00+08:00 | Windows 兼容性验证完成：`cargo check --all-targets`、122 条 Rust 测试、`pnpm typecheck`、469 条单测、`pnpm build`、80 条 E2E 全部通过，应用二进制可启动；修复 symlink 测试门控、日志 set_modified 句柄、目录→NOT_A_FILE、测试清单/本地 URL、Ctrl+K；Windows clippy/fmt 因 rustup 组件缺失未跑 | OpenCode / DeepSeek V4.1 | `02 E-052`；C-035 |
 | 2026-10-28T15:05:00+08:00 | T-018 完成：合并 `feat/external-change-watch`（0bac056）后 `pnpm ci:web`（469 测试）/`ci:rust`/`ci:generated`/`ci:negative`/`test:e2e`（80 条）全通过；macOS 调试包真机验证中文↔英文菜单、窗口/About 标题、Quit/CloseGuard、重启保持并切回中文；Windows 交叉编译因缺 SDK 头 PARTIAL | OpenCode / DeepSeek V4.1 | `02 E-051`；C-034 |
 | 2026-10-28T14:40:00+08:00 | T-017 完成：新增 ADR-0006，更新 ADR 索引/蓝图 §8.4/技术栈/TOPOLOGY 0.3/README 双语状态/analysis 04 §2.15 与计数；`git diff --check` 通过 | OpenCode / DeepSeek V4.1 | `02 E-050`；C-033 |
 | 2026-10-28T14:27:00+08:00 | T-016 完成：`e2e/i18n.spec.ts` 6 场景（切换/持久化/非法值/多窗口/About/未命名/命名空文件/日志复数与日期）；`FakeIpc.stagePendingPath` + E2E pending seed、FakeLogPort fileCount；全量 E2E 77 条通过 | OpenCode / DeepSeek V4.1 | `02 E-049`；C-032 |
