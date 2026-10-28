@@ -3,6 +3,7 @@ import { EditorView, placeholder as cmPlaceholder } from "@codemirror/view";
 
 import { basicExtensions } from "./extensions/basic";
 import { markdownExtensions } from "./extensions/markdown";
+import { codeBlockSelectAll } from "./extensions/select-all";
 import { qingmoEditorTheme } from "./extensions/theme";
 import { DEFAULT_EDITOR_UI_COPY, editorUiCopy, type EditorUiCopy } from "./i18n";
 import { LP_MAX_UNITS } from "./limits";
@@ -90,6 +91,7 @@ export function createEditorState({
     extensions: [
       ...basicExtensions,
       ...markdownExtensions,
+      codeBlockSelectAll,
       themeCompartment.of(qingmoEditorTheme),
       readOnlyCompartment.of(readOnlyExtensions(readOnly)),
       modeCompartment.of(previewEnabled ? livePreview() : []),

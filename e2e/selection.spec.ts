@@ -71,3 +71,36 @@ test("source-mode multi-line selection inverts every selected line", async ({ pa
   expect(dark.markerHeight).toBeGreaterThan(30);
   expect(dark.accent).not.toBe(light.accent);
 });
+
+const CODE_BLOCK_DOC = [
+  "# Selection",
+  "",
+  "```ts",
+  "const a = 1;",
+  "const b = 2;",
+  "```",
+  "",
+  "Tail",
+  "",
+].join("\n");
+
+test("select all inside a fenced code block selects only the code text", async ({ page }) => {
+  await openApp(page, [{ path: "/docs/select-all.md", text: CODE_BLOCK_DOC }]);
+  await openSeededFile(page, "select-all.md");
+
+  const selectedText = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(".cm-selectedText")]
+        .map((element) => element.textContent)
+        .join("\n"),
+    );
+
+  await page.locator(".cm-line").filter({ hasText: "const b = 2;" }).click();
+  await page.keyboard.press(`${modifier()}+a`);
+
+  await expect.poll(selectedText).toBe("const a = 1;\nconst b = 2;");
+
+  // A second press keeps the block selected instead of escalating to the document.
+  await page.keyboard.press(`${modifier()}+a`);
+  await expect.poll(selectedText).toBe("const a = 1;\nconst b = 2;");
+});
