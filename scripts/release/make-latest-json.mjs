@@ -9,13 +9,21 @@ import path from "node:path";
 
 const NOTES_MAX_BYTES = 100 * 1024;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const PLATFORM_PATTERN =
+  /^(?:darwin-(?:aarch64|x86_64|universal(?:-[a-z0-9-]+)?)|windows-(?:x86_64|aarch64|i686|armv7)|linux-(?:x86_64|aarch64|i686|armv7))$/;
 
 function usage() {
   console.error(`Usage:
   node scripts/release/make-latest-json.mjs \\
-    --version <X.Y.Z> --artifacts <bundle/macos> --out <latest.json> \\
-    [--base-url <release download base>] [--notes <text> | --notes-file <path>] \
-    [--notes-zh-file <path> --notes-en-file <path>]
+    --version <X.Y.Z> --artifacts <bundle-dir> --out <latest.json> \\
+    [--base-url <release download base>] [--notes <text> | --notes-file <path>] \\
+    [--notes-zh-file <path> --notes-en-file <path>] \\
+    [--platform <os-arch>=<artifact>]...
+
+Without --platform the updater artifacts are detected by name:
+  *.app.tar.gz   -> darwin-aarch64 and darwin-x86_64 (universal build)
+  *-setup.exe    -> windows-x86_64 (falls back to *.msi)
+  *.AppImage     -> linux-x86_64
 
 The release URL defaults to:
   https://github.com/wavexzore/Qingmo/releases/download/v<version>
@@ -37,6 +45,7 @@ function parseArgs(argv) {
     notesFile: null,
     notesZhFile: null,
     notesEnFile: null,
+    platforms: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -75,6 +84,22 @@ function parseArgs(argv) {
       case "--notes-en-file":
         options.notesEnFile = value;
         break;
+      case "--platform": {
+        const separator = value.indexOf("=");
+        if (separator <= 0 || separator === value.length - 1) {
+          fail(`--platform must be <os-arch>=<artifact>: ${value}`);
+        }
+        const key = value.slice(0, separator);
+        const artifact = value.slice(separator + 1);
+        if (!PLATFORM_PATTERN.test(key)) {
+          fail(`unsupported platform key: ${key}`);
+        }
+        if (path.basename(artifact) !== artifact) {
+          fail(`--platform artifact must be a bare file name: ${artifact}`);
+        }
+        options.platforms.push({ key, artifact });
+        break;
+      }
       default:
         fail(`unknown argument: ${argument}`);
     }
@@ -120,26 +145,63 @@ function validateHttpsBase(value) {
   return value.replace(/\/+$/, "");
 }
 
-function findUpdaterArtifact(artifacts) {
+function isRegularFile(filePath) {
+  return existsSync(filePath) && statSync(filePath).isFile();
+}
+
+/**
+ * Resolves one updater entry per platform. Explicit `--platform` arguments
+ * win; otherwise the Tauri bundle names are detected so the same script serves
+ * the local macOS release and the all-platform GitHub release.
+ */
+function resolveTargets(artifacts, explicitPlatforms) {
   if (!existsSync(artifacts) || !statSync(artifacts).isDirectory()) {
     fail(`artifacts directory does not exist: ${artifacts}`);
   }
-  const candidates = readdirSync(artifacts).filter((name) => name.endsWith(".app.tar.gz"));
-  if (candidates.length !== 1) {
+  if (explicitPlatforms.length > 0) {
+    return explicitPlatforms;
+  }
+
+  const names = readdirSync(artifacts);
+  const targets = [];
+  const pickSingle = (suffix, label) => {
+    const matches = names.filter((name) => name.endsWith(suffix));
+    if (matches.length > 1) {
+      fail(
+        `expected at most one ${label} in ${artifacts}, found ${matches.length}: ${matches.join(", ")}`,
+      );
+    }
+    return matches[0] ?? null;
+  };
+
+  const tarball = pickSingle(".app.tar.gz", "*.app.tar.gz");
+  if (tarball) {
+    targets.push({ key: "darwin-aarch64", artifact: tarball });
+    targets.push({ key: "darwin-x86_64", artifact: tarball });
+  }
+
+  const setup = pickSingle("-setup.exe", "*-setup.exe");
+  const msi = pickSingle(".msi", "*.msi");
+  if (setup && msi) {
     fail(
-      `expected exactly one *.app.tar.gz in ${artifacts}, found ${candidates.length}: ${candidates.join(", ") || "none"}`,
+      "found both *-setup.exe and *.msi; pass --platform windows-x86_64=<artifact> to choose one",
     );
   }
-  const name = candidates[0];
-  const tarballPath = path.join(artifacts, name);
-  const signaturePath = path.join(artifacts, `${name}.sig`);
-  if (!existsSync(tarballPath) || !statSync(tarballPath).isFile()) {
-    fail(`updater tarball is not a regular file: ${tarballPath}`);
+  if (setup ?? msi) {
+    targets.push({ key: "windows-x86_64", artifact: setup ?? msi });
   }
-  if (!existsSync(signaturePath) || !statSync(signaturePath).isFile()) {
-    fail(`missing signature: ${signaturePath}`);
+
+  const appImage = pickSingle(".AppImage", "*.AppImage");
+  if (appImage) {
+    targets.push({ key: "linux-x86_64", artifact: appImage });
   }
-  return { name, tarballPath, signaturePath };
+
+  if (targets.length === 0) {
+    fail(
+      `no updater artifacts found in ${artifacts}; expected *.app.tar.gz, *-setup.exe, *.msi or *.AppImage`,
+    );
+  }
+  return targets;
 }
 
 function readSignature(signaturePath) {
@@ -170,6 +232,18 @@ function readSignedVersion(decoded, signaturePath) {
   return match[1];
 }
 
+function readSignedFile(decoded, signaturePath) {
+  const trusted = decoded.split("\n").find((line) => line.startsWith("trusted comment:"));
+  if (!trusted) {
+    fail(`${signaturePath} has no minisign trusted comment`);
+  }
+  const match = /(?:^|[\t ])file:([^\t\s]+)/.exec(trusted);
+  if (!match) {
+    fail(`${signaturePath} has no signed file name`);
+  }
+  return match[1];
+}
+
 function readNotesFile(notesFile) {
   if (!existsSync(notesFile)) {
     fail(`notes file does not exist: ${notesFile}`);
@@ -194,13 +268,35 @@ function readNotes(options) {
 
 const options = parseArgs(process.argv.slice(2));
 const artifacts = path.resolve(options.artifacts);
-const { name: tarballName, signaturePath } = findUpdaterArtifact(artifacts);
-const { signature, decoded } = readSignature(signaturePath);
-const signedVersion = readSignedVersion(decoded, signaturePath);
-if (signedVersion !== options.version) {
-  fail(
-    `--version ${options.version} does not match signature version ${signedVersion} in ${signaturePath}`,
-  );
+const baseUrl = validateHttpsBase(
+  options.baseUrl ?? `https://github.com/wavexzore/Qingmo/releases/download/v${options.version}`,
+);
+
+const platforms = {};
+for (const target of resolveTargets(artifacts, options.platforms)) {
+  const artifactPath = path.join(artifacts, target.artifact);
+  const signaturePath = `${artifactPath}.sig`;
+  if (!isRegularFile(artifactPath)) {
+    fail(`updater artifact is not a regular file: ${artifactPath}`);
+  }
+  if (!isRegularFile(signaturePath)) {
+    fail(`missing signature: ${signaturePath}`);
+  }
+  const { signature, decoded } = readSignature(signaturePath);
+  const signedVersion = readSignedVersion(decoded, signaturePath);
+  if (signedVersion !== options.version) {
+    fail(
+      `--version ${options.version} does not match signature version ${signedVersion} in ${signaturePath}`,
+    );
+  }
+  const signedFile = readSignedFile(decoded, signaturePath);
+  if (path.basename(signedFile) !== target.artifact) {
+    fail(`${signaturePath} signs ${signedFile}, expected ${target.artifact}`);
+  }
+  platforms[target.key] = {
+    signature,
+    url: `${baseUrl}/${encodeURIComponent(target.artifact)}`,
+  };
 }
 
 const { notes, notesByLocale } = readNotes(options);
@@ -219,24 +315,17 @@ if (notesByLocale) {
   }
 }
 
-const baseUrl = validateHttpsBase(
-  options.baseUrl ?? `https://github.com/wavexzore/Qingmo/releases/download/v${options.version}`,
-);
-const assetUrl = `${baseUrl}/${encodeURIComponent(tarballName)}`;
 const manifest = {
   version: options.version,
   notes,
   ...(notesByLocale ? { notesByLocale } : {}),
   pub_date: new Date().toISOString(),
-  platforms: {
-    "darwin-aarch64": { signature, url: assetUrl },
-    "darwin-x86_64": { signature, url: assetUrl },
-  },
+  platforms,
 };
 
 const outPath = path.resolve(options.out);
 mkdirSync(path.dirname(outPath), { recursive: true });
 writeFileSync(outPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(
-  `make-latest-json: wrote ${outPath} (${options.version}, ${tarballName}, ${notesBytes} bytes notes)`,
+  `make-latest-json: wrote ${outPath} (${options.version}, ${Object.keys(platforms).join(", ")}, ${notesBytes} bytes notes)`,
 );

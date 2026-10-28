@@ -15,8 +15,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const NOTES_MAX_BYTES = 100 * 1024;
-const REQUIRED_PLATFORMS = ["darwin-aarch64", "darwin-x86_64"];
-const PLATFORM_PATTERN = /^darwin-(aarch64|x86_64|universal(?:-[a-z0-9-]+)?)$/;
+const DEFAULT_REQUIRED_PLATFORMS = ["darwin-aarch64", "darwin-x86_64"];
+const PLATFORM_PATTERN =
+  /^(?:darwin-(?:aarch64|x86_64|universal(?:-[a-z0-9-]+)?)|windows-(?:x86_64|aarch64|i686|armv7)|linux-(?:x86_64|aarch64|i686|armv7))$/;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const ALLOWED_HOSTS = new Set([
   "api.github.com",
@@ -29,7 +30,8 @@ function usage() {
   console.error(`Usage:
   node scripts/release/check-latest-json.mjs \\
     --latest-json <latest.json> --tag <vX.Y.Z> \\
-    --pubkey <base64-or-file> --artifacts <dir> [--no-network]
+    --pubkey <base64-or-file> --artifacts <dir> \\
+    [--require darwin-aarch64,darwin-x86_64,...] [--no-network]
 
 Exit codes:
   0  manifest is valid
@@ -44,6 +46,7 @@ function parseArgs(argv) {
     pubkey: null,
     artifacts: null,
     noNetwork: false,
+    require: DEFAULT_REQUIRED_PLATFORMS,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -74,6 +77,22 @@ function parseArgs(argv) {
       case "--artifacts":
         options.artifacts = value;
         break;
+      case "--require": {
+        const keys = value
+          .split(",")
+          .map((key) => key.trim())
+          .filter(Boolean);
+        if (keys.length === 0) {
+          fail("--require needs at least one platform key");
+        }
+        for (const key of keys) {
+          if (!PLATFORM_PATTERN.test(key)) {
+            fail(`unsupported required platform key: ${key}`);
+          }
+        }
+        options.require = keys;
+        break;
+      }
       default:
         fail(`unknown argument: ${argument}`);
     }
@@ -304,7 +323,7 @@ function main() {
   for (const platform of platformNames) {
     assert(PLATFORM_PATTERN.test(platform), `unsupported platform key: ${platform}`);
   }
-  for (const platform of REQUIRED_PLATFORMS) {
+  for (const platform of options.require) {
     assert(
       platformNames.includes(platform),
       `latest.json is missing required platform: ${platform}`,

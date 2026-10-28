@@ -109,9 +109,11 @@ if [[ -n "$notes" && -n "$notes_file" ]]; then
 fi
 
 tag="v$version"
+product_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+[[ -n "$product_name" ]] || die "productName is empty in src-tauri/tauri.conf.json"
 macos_dir="$root/src-tauri/target/$target/release/bundle/macos"
 dmg_dir="$root/src-tauri/target/$target/release/bundle/dmg"
-app="$macos_dir/Qingmo.app"
+app="$macos_dir/$product_name.app"
 
 info "release version: $version"
 node scripts/release/check-versions.mjs --expect "$version"
@@ -200,12 +202,12 @@ else
 fi
 
 [[ -d "$app" ]] || die "app not found: $app"
-tarball="$macos_dir/Qingmo.app.tar.gz"
+tarball="$macos_dir/$product_name.app.tar.gz"
 sig="$tarball.sig"
 [[ -f "$tarball" ]] || die "updater tarball not found: $tarball"
 [[ -s "$sig" ]] || die "updater signature not found: $sig"
-dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name '*.dmg' -print -quit 2>/dev/null || true)"
-[[ -n "$dmg" ]] || die "dmg not found under: $dmg_dir"
+dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name "$product_name*.dmg" -print -quit 2>/dev/null || true)"
+[[ -n "$dmg" ]] || die "dmg for $product_name not found under: $dmg_dir"
 
 info "verifying app signature, Gatekeeper assessment and notarization ticket"
 codesign --verify --deep --strict --verbose=2 "$app"
@@ -214,8 +216,8 @@ xcrun stapler validate "$app"
 
 verify_dir="$(mktemp -d)"
 tar -xzf "$tarball" -C "$verify_dir"
-archived_app="$(find "$verify_dir" -maxdepth 4 -name 'Qingmo.app' -type d -print -quit)"
-[[ -n "$archived_app" ]] || die "Qingmo.app not found inside: $tarball"
+archived_app="$(find "$verify_dir" -maxdepth 4 -name "$product_name.app" -type d -print -quit)"
+[[ -n "$archived_app" ]] || die "$product_name.app not found inside: $tarball"
 info "verifying the app inside the updater tarball"
 codesign --verify --deep --strict --verbose=2 "$archived_app"
 spctl --assess --type execute --verbose=4 "$archived_app"
@@ -280,6 +282,8 @@ node scripts/release/make-latest-json.mjs \
   --artifacts "$out_dir" \
   --out "$out_dir/latest.json" \
   --base-url "https://github.com/wavexzore/Qingmo/releases/download/$tag" \
+  --platform "darwin-aarch64=$product_name.app.tar.gz" \
+  --platform "darwin-x86_64=$product_name.app.tar.gz" \
   "${notes_args[@]}"
 
 pubkey="$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")"
