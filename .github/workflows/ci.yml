@@ -38,6 +38,9 @@ jobs:
       - name: Version single source
         run: node scripts/release/check-versions.mjs
 
+      - name: Release notes for current version
+        run: node scripts/release/check-release-notes.mjs
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

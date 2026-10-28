@@ -17,8 +17,8 @@ Options:
   --version <X.Y.Z>    Release version (default: src-tauri/tauri.conf.json)
   --skip-build         Reuse existing universal bundle artifacts
   --skip-notarize      Do not submit the DMG to Apple (app must already be notarized)
-  --notes <text>       latest.json release notes (default: "Qingmo <version>")
-  --notes-file <path>  Read release notes from a file
+  --notes <text>       latest.json release notes (default: resources/notes.json)
+  --notes-file <path>  Read release notes from a file (overrides resources/notes.json)
   --out-dir <path>     Output directory (default: release-artifacts/v<version>)
   -h, --help           Show this help
 
@@ -54,6 +54,13 @@ notes=""
 notes_file=""
 out_dir=""
 target="universal-apple-darwin"
+verify_dir=""
+
+cleanup() {
+  [[ -n "$verify_dir" ]] && rm -rf "$verify_dir"
+  return 0
+}
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -108,6 +115,8 @@ app="$macos_dir/Qingmo.app"
 
 info "release version: $version"
 node scripts/release/check-versions.mjs --expect "$version"
+info "checking release notes for $version"
+node scripts/release/check-release-notes.mjs --version "$version"
 
 if [[ $skip_build -eq 0 ]]; then
   if [[ -n "${APPLE_CERTIFICATE_FILE:-}" ]]; then
@@ -204,7 +213,6 @@ spctl --assess --type execute --verbose=4 "$app"
 xcrun stapler validate "$app"
 
 verify_dir="$(mktemp -d)"
-trap 'rm -rf "$verify_dir"' EXIT
 tar -xzf "$tarball" -C "$verify_dir"
 archived_app="$(find "$verify_dir" -maxdepth 4 -name 'Qingmo.app' -type d -print -quit)"
 [[ -n "$archived_app" ]] || die "Qingmo.app not found inside: $tarball"
@@ -248,13 +256,18 @@ if [[ "$out_dir" == "$macos_dir" ]]; then
 fi
 mkdir -p "$out_dir"
 cp -f "$tarball" "$sig" "$dmg" "$out_dir/"
+
+if [[ -n "$notes" ]]; then
+  printf '%s\n' "$notes" >"$out_dir/RELEASE-NOTES.txt"
+elif [[ -n "$notes_file" ]]; then
+  cp -f "$notes_file" "$out_dir/RELEASE-NOTES.txt"
+else
+  node scripts/release/check-release-notes.mjs --version "$version" --out "$out_dir/RELEASE-NOTES.txt"
+fi
 chmod 644 "$out_dir"/*
 rm -f "$out_dir/latest.json" "$out_dir/SHA256SUMS.txt"
 
-notes_args=(--notes "${notes:-Qingmo $version}")
-if [[ -n "$notes_file" ]]; then
-  notes_args=(--notes-file "$notes_file")
-fi
+notes_args=(--notes-file "$out_dir/RELEASE-NOTES.txt")
 
 info "generating latest.json"
 node scripts/release/make-latest-json.mjs \
@@ -285,7 +298,7 @@ cat <<EOF
 Local release is ready and validated. Nothing was uploaded.
 
 Next (manual, after review):
-  gh release create $tag --draft --title "$tag" --generate-notes
+  gh release create $tag --draft --title "$tag" --notes-file "$out_dir/RELEASE-NOTES.txt"
   gh release upload $tag "$out_dir"/* --clobber
   gh release view $tag --json isDraft,assets
   # After checking latest.json and assets:
