@@ -92,6 +92,67 @@ if (!manifest.notes.includes("[zh-CN]")) throw new Error("bilingual notes missin
 ' "$tmp/latest-locale.json"
 echo "PASS: per-language notes"
 
+multi="$tmp/multi"
+mkdir -p "$multi"
+mac_artifact="$multi/青墨.app.tar.gz"
+cp "$artifact" "$mac_artifact"
+minisign -S -s "$tmp/test.key" -m "$mac_artifact" -x "$tmp/mac.sig" \
+  -t $'file:青墨.app.tar.gz\tversion:0.1.0' >/dev/null
+node -e 'process.stdout.write(Buffer.from(require("fs").readFileSync(process.argv[1])).toString("base64"))' \
+  "$tmp/mac.sig" >"$mac_artifact.sig"
+
+win_artifact="$multi/青墨_0.1.0_x64-setup.exe"
+printf 'windows-artifact' >"$win_artifact"
+minisign -S -s "$tmp/test.key" -m "$win_artifact" -x "$tmp/win.sig" \
+  -t $'file:青墨_0.1.0_x64-setup.exe\tversion:0.1.0' >/dev/null
+node -e 'process.stdout.write(Buffer.from(require("fs").readFileSync(process.argv[1])).toString("base64"))' \
+  "$tmp/win.sig" >"$win_artifact.sig"
+
+linux_artifact="$multi/Qingmo_0.1.0_amd64.AppImage"
+printf 'linux-artifact' >"$linux_artifact"
+minisign -S -s "$tmp/test.key" -m "$linux_artifact" -x "$tmp/linux.sig" \
+  -t $'file:Qingmo_0.1.0_amd64.AppImage\tversion:0.1.0' >/dev/null
+node -e 'process.stdout.write(Buffer.from(require("fs").readFileSync(process.argv[1])).toString("base64"))' \
+  "$tmp/linux.sig" >"$linux_artifact.sig"
+
+node "$make_script" \
+  --version 0.1.0 \
+  --artifacts "$multi" \
+  --out "$multi/latest.json" \
+  --base-url "$base_url" \
+  --notes "fixture notes" >/dev/null
+node -e '
+const fs = require("fs");
+const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const baseUrl = process.argv[2];
+const keys = Object.keys(manifest.platforms).sort();
+const expected = ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64"];
+if (JSON.stringify(keys) !== JSON.stringify(expected)) {
+  throw new Error(`wrong platform keys: ${keys.join(", ")}`);
+}
+if (
+  manifest.platforms["darwin-aarch64"].url !== `${baseUrl}/${encodeURIComponent("青墨.app.tar.gz")}`
+) {
+  throw new Error("wrong darwin url");
+}
+if (
+  manifest.platforms["windows-x86_64"].url !==
+  `${baseUrl}/${encodeURIComponent("青墨_0.1.0_x64-setup.exe")}`
+) {
+  throw new Error("wrong windows url");
+}
+if (manifest.platforms["linux-x86_64"].url !== `${baseUrl}/Qingmo_0.1.0_amd64.AppImage`) {
+  throw new Error("wrong linux url");
+}
+' "$multi/latest.json" "$base_url"
+node "$check_script" \
+  --latest-json "$multi/latest.json" \
+  --tag v0.1.0 \
+  --pubkey "$tmp/test.pub" \
+  --artifacts "$multi" \
+  --require darwin-aarch64,darwin-x86_64,windows-x86_64,linux-x86_64 >/dev/null
+echo "PASS: all-platform manifest"
+
 expect_fail "one language file only" "must be provided together" \
   node "$make_script" --version 0.1.0 --artifacts "$tmp" --out "$tmp/bad.json" --base-url "$base_url" \
   --notes-zh-file "$tmp/notes-zh.txt"
@@ -127,7 +188,7 @@ expect_fail "missing signed version" "has no signed version" \
 cp "$tmp/good.sig" "$artifact.sig"
 
 mkdir -p "$tmp/empty"
-expect_fail "no updater tarball" "expected exactly one" \
+expect_fail "no updater tarball" "no updater artifacts found" \
   node "$make_script" --version 0.1.0 --artifacts "$tmp/empty" --out "$tmp/bad.json" --base-url "$base_url"
 
 echo "make-latest-json negative fixtures: PASS"

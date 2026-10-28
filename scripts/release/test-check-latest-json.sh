@@ -39,7 +39,7 @@ const platforms = {
   "darwin-x86_64": { signature, url },
 };
 if (variant === "windows") {
-  platforms["windows-x86_64"] = { signature, url };
+  platforms["freebsd-x86_64"] = { signature, url };
 }
 const manifest = {
   version,
@@ -93,12 +93,56 @@ expect_pass "valid manifest" \
 expect_pass "structure-only lint" \
   --latest-json "$tmp/latest.json" --tag v0.1.0 --no-network
 
+win_artifact="$tmp/Qingmo_0.1.0_x64-setup.exe"
+printf 'windows-artifact' >"$win_artifact"
+minisign -S -s "$tmp/test.key" -m "$win_artifact" -x "$tmp/win.sig" \
+  -t $'file:Qingmo_0.1.0_x64-setup.exe\tversion:0.1.0' >/dev/null
+win_signature="$(node -e 'process.stdout.write(Buffer.from(require("fs").readFileSync(process.argv[1])).toString("base64"))' "$tmp/win.sig")"
+
+linux_artifact="$tmp/Qingmo_0.1.0_amd64.AppImage"
+printf 'linux-artifact' >"$linux_artifact"
+minisign -S -s "$tmp/test.key" -m "$linux_artifact" -x "$tmp/linux.sig" \
+  -t $'file:Qingmo_0.1.0_amd64.AppImage\tversion:0.1.0' >/dev/null
+linux_signature="$(node -e 'process.stdout.write(Buffer.from(require("fs").readFileSync(process.argv[1])).toString("base64"))' "$tmp/linux.sig")"
+
+DARWIN_SIGNATURE="$signature" WIN_SIGNATURE="$win_signature" LINUX_SIGNATURE="$linux_signature" \
+  OUT="$tmp/multi.json" node <<'NODE'
+const fs = require("fs");
+const base = "https://github.com/wavexzore/Qingmo/releases/download/v0.1.0";
+const manifest = {
+  version: "0.1.0",
+  notes: "fixture notes",
+  pub_date: "2026-10-27T12:00:00Z",
+  platforms: {
+    "darwin-aarch64": { signature: process.env.DARWIN_SIGNATURE, url: `${base}/Qingmo.app.tar.gz` },
+    "darwin-x86_64": { signature: process.env.DARWIN_SIGNATURE, url: `${base}/Qingmo.app.tar.gz` },
+    "windows-x86_64": {
+      signature: process.env.WIN_SIGNATURE,
+      url: `${base}/Qingmo_0.1.0_x64-setup.exe`,
+    },
+    "linux-x86_64": {
+      signature: process.env.LINUX_SIGNATURE,
+      url: `${base}/Qingmo_0.1.0_amd64.AppImage`,
+    },
+  },
+};
+fs.writeFileSync(process.env.OUT, JSON.stringify(manifest, null, 2));
+NODE
+
+expect_pass "all-platform manifest" \
+  --latest-json "$tmp/multi.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp" \
+  --require darwin-aarch64,darwin-x86_64,windows-x86_64,linux-x86_64
+
+expect_fail "missing required platform" "missing required platform: windows-x86_64" \
+  --latest-json "$tmp/latest.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp" \
+  --require windows-x86_64
+
 write_manifest bad-version
 expect_fail "version mismatch" "does not match tag" \
   --latest-json "$tmp/latest.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp"
 
 write_manifest windows
-expect_fail "windows platform key" "unsupported platform key" \
+expect_fail "unknown platform key" "unsupported platform key" \
   --latest-json "$tmp/latest.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp"
 
 write_manifest appledouble
