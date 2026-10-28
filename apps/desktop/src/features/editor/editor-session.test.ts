@@ -182,6 +182,32 @@ describe("EditorSession", () => {
     }
   });
 
+  it("keeps and clamps the cursor when a reload replaces the payload", () => {
+    const session = EditorSession.create(payload({ text: "hello world\n" }));
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      view.dispatch({ selection: { anchor: 6, head: 6 } });
+
+      session.replacePayload(
+        payload({ text: "hello brave world\n", hash: "hash-2", size: 18, textUnits: 18 }),
+      );
+      expect(view.state.doc.toString()).toBe("hello brave world\n");
+      expect(session.getSnapshot().selection).toEqual({ anchor: 6, head: 6 });
+
+      // A shorter disk version must not leave the selection past the end.
+      session.replacePayload(payload({ text: "hi\n", hash: "hash-3", size: 3, textUnits: 3 }));
+      expect(session.getSnapshot().selection).toEqual({ anchor: 3, head: 3 });
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+  });
+
   it("accepts extra extensions for the T-009 composition hook", () => {
     const session = EditorSession.create(payload(), {
       extensions: [EditorState.tabSize.of(4)],

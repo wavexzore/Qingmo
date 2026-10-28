@@ -85,6 +85,12 @@ export async function setDiskText(page: Page, path: string, text: string): Promi
   );
 }
 
+export async function deleteDiskFile(page: Page, path: string): Promise<void> {
+  await page.evaluate((filePath) => {
+    window.__QINGMO_E2E__?.deleteDiskFile(filePath);
+  }, path);
+}
+
 export async function setOpenFile(page: Page, path: string | null): Promise<void> {
   await page.evaluate((next) => {
     window.__QINGMO_E2E__?.setOpenFile(next);

@@ -13,7 +13,7 @@ import {
 
 function stateFor(doc: string) {
   const state = createEditorState({ doc });
-  ensureSyntaxTree(state, state.doc.length, 2_000);
+  ensureSyntaxTree(state, state.doc.length, 10_000);
   return state;
 }
 

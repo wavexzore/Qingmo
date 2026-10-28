@@ -1,4 +1,4 @@
-import type { FilePayload, SaveRequest, SaveResult } from "@qingmo/shared";
+import type { DocumentChangedPayload, FilePayload, SaveRequest, SaveResult } from "@qingmo/shared";
 
 export interface CloseConfirmRequest {
   allow: boolean;
@@ -29,6 +29,12 @@ export interface IpcPort {
   /** Native Save As; the webview supplies text but never a path. */
   documentSaveAs(text: string): Promise<FilePayload>;
   documentWriteAtomic(request: SaveRequest): Promise<SaveResult>;
+  /**
+   * Rust reports a different (or missing) disk version for an open document.
+   * The payload carries its `docToken`; every window ignores tokens it does
+   * not own. Returns an unsubscribe function.
+   */
+  onDocumentChanged(callback: (change: DocumentChangedPayload) => void): () => void;
   appCloseConfirm(request: CloseConfirmRequest): Promise<void>;
   /** Mirrors this window's Live Preview mode in the native menu bar. */
   appSetLivePreview(request: LivePreviewRequest): Promise<void>;

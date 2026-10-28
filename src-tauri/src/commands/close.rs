@@ -4,7 +4,7 @@ use crate::commands::about::ABOUT_WINDOW_LABEL;
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::contract::EVENT_CLOSE_REQUESTED;
 use crate::ipc::dto::{CloseReason, CloseRequestedPayload};
-use crate::state::{CloseGuard, CloseOutcome, DocumentRegistry, WindowSessions};
+use crate::state::{CloseGuard, CloseOutcome, DocumentRegistry, DocumentWatcher, WindowSessions};
 
 /// Resolves the windows that must confirm a close.
 ///
@@ -144,6 +144,9 @@ pub fn app_close_confirm<R: tauri::Runtime>(
             tracing::info!(?reason, window = label, "close request confirmed");
             if let Some(token) = sessions.release(&label) {
                 registry.release(&token);
+                if let Some(watcher) = app.try_state::<DocumentWatcher>() {
+                    watcher.unwatch(&token);
+                }
             }
 
             if reason == CloseReason::Exit {
