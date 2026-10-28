@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { renderTeX } from "./widgets";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
@@ -121,6 +122,7 @@ function buildMathBlocks(state: EditorState): MathBlockState {
   }
 
   const doc = state.doc;
+  const copy = state.facet(editorUiCopy);
   const code = codeRanges(state);
   const inCode = (from: number, to: number) =>
     code.some((range) => from >= range.from && to <= range.to);
@@ -160,7 +162,7 @@ function buildMathBlocks(state: EditorState): MathBlockState {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new MathBlockWidget(range.tex, range.from, range.to),
+          widget: new MathBlockWidget(copy, range.tex, range.from, range.to),
         }).range(range.from, range.to),
       );
     }
@@ -184,7 +186,7 @@ function buildMathBlocks(state: EditorState): MathBlockState {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new MathBlockWidget(range.tex, range.from, range.to),
+          widget: new MathBlockWidget(copy, range.tex, range.from, range.to),
         }).range(range.from, range.to),
       );
     }
@@ -200,6 +202,7 @@ function buildMathBlocks(state: EditorState): MathBlockState {
 
 class MathBlockWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly tex: string,
     private readonly from: number,
     private readonly to: number,
@@ -210,6 +213,7 @@ class MathBlockWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof MathBlockWidget &&
+      other.copy.version === this.copy.version &&
       other.tex === this.tex &&
       other.from === this.from &&
       other.to === this.to
@@ -219,7 +223,7 @@ class MathBlockWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-math-block";
-    wrapper.title = "点击编辑公式源码";
+    wrapper.title = this.copy.math.editSource;
 
     wrapper.addEventListener("mousedown", (event) => {
       if (event.button !== 0) {
@@ -252,7 +256,7 @@ export const mathBlockPreview = StateField.define<MathBlockState>({
   create: buildMathBlocks,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildMathBlocks(transaction.state);
     }
 

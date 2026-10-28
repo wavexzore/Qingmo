@@ -1,5 +1,6 @@
 import type {
   AppErrorCode,
+  ApplyLocaleRequest,
   CloseReason,
   ReadOnlyReason,
   TextFormat,
@@ -48,6 +49,8 @@ export interface E2eBridge {
   clearErrors(): void;
   getCloseConfirms(): CloseConfirmRequest[];
   getLivePreviewMenuCalls(): boolean[];
+  getLocaleCalls(): ApplyLocaleRequest[];
+  setLogFileCount(count: number): void;
   setUpdateAvailable(update: E2eUpdateInfo | null): void;
   setUpdateError(operation: "check" | "download" | "install", code: AppErrorCode | null): void;
   holdUpdateDownload(): void;
@@ -60,6 +63,8 @@ export interface E2eBridge {
 declare global {
   interface Window {
     __QINGMO_E2E_SEED__?: E2eSeedFile[];
+    /** Path staged for a `/?window=document` boot. */
+    __QINGMO_E2E_PENDING__?: string;
     __QINGMO_E2E__?: E2eBridge;
   }
 }
@@ -76,6 +81,10 @@ export function createE2eServices(): {
 } {
   const files = window.__QINGMO_E2E_SEED__ ?? [];
   const ipc = new FakeIpc({ files });
+  const pendingPath = window.__QINGMO_E2E_PENDING__;
+  if (pendingPath) {
+    ipc.stagePendingPath(pendingPath);
+  }
   const platform = new FakePlatform();
   const updates = new FakeUpdatePort();
   const logs = new FakeLogPort();
@@ -111,6 +120,10 @@ export function createE2eServices(): {
     },
     getCloseConfirms: () => [...ipc.closeConfirmCalls],
     getLivePreviewMenuCalls: () => [...ipc.livePreviewCalls],
+    getLocaleCalls: () => [...ipc.localeCalls],
+    setLogFileCount: (count) => {
+      logs.fileCount = count;
+    },
     setUpdateAvailable: (update) => {
       updates.setUpdate(
         update

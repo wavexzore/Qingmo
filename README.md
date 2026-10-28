@@ -68,7 +68,7 @@ Qingmo is **pre-1.0** and under active development. The editor MVP is usable tod
 | --- | --- |
 | Editor MVP (open, edit, save, Live Preview, themes, palette, large files) | ✅ Implemented and covered by unit, Rust integration and Playwright E2E tests |
 | Save reliability (autosave, atomic write, conflict banner, close guard) | ✅ Implemented |
-| Native menu, multi-window, i18n (zh-CN / en) | ✅ Implemented |
+| Native menu, multi-window, runtime i18n (zh-CN / en) | ✅ Implemented and covered by unit, Rust contract and Playwright E2E tests; real-device menu smoke pending |
 | macOS signed auto-update | ✅ Local release chain validated; real-device install smoke test still pending |
 | Workspace file tree, full-text search, SQLite index, crash recovery | 🚧 Planned for P2 |
 | Plugin SDK, Worker/iframe runtime, capability broker, plugin market | 🚧 Designed for P3, not shipped |

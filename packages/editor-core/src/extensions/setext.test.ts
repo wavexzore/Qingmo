@@ -13,8 +13,10 @@ interface ParsedNode {
 function parse(doc: string): ParsedNode[] {
   const state = createEditorState({ doc });
   ensureSyntaxTree(state, state.doc.length, 10_000);
+  // Adopt the completed parse context before reading `syntaxTree(state)`.
+  const parsed = state.update({}).state;
   const nodes: ParsedNode[] = [];
-  syntaxTree(state).iterate({
+  syntaxTree(parsed).iterate({
     enter(node) {
       if (node.name !== "Document") {
         nodes.push({

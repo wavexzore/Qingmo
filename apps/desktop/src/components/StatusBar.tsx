@@ -4,6 +4,7 @@ import type { ReadOnlyReason } from "@qingmo/shared";
 import { cx } from "@qingmo/ui";
 
 import type { SaveState } from "../lib/save-state";
+import { formatBytes, formatEncoding, formatEol } from "../lib/format";
 
 export type { SaveState } from "../lib/save-state";
 export type StatusBarMode = "source" | "livePreview";
@@ -46,19 +47,6 @@ const saveStateTone: Record<SaveState, string> = {
   readonly: "bg-ink-faint",
 };
 
-function formatSize(size: number | null): string {
-  if (size === null) {
-    return "—";
-  }
-  if (size < 1024) {
-    return `${size} B`;
-  }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
-  }
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function Item({ label, value }: { label: string; value: string }) {
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1.5">
@@ -75,7 +63,7 @@ export interface StatusBarProps {
 }
 
 export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusBarProps) {
-  const { t } = useTranslation(["common", "editor"]);
+  const { t, i18n } = useTranslation(["common", "editor"]);
 
   const fileName = snapshot.fileName ?? t("common:status.noFile");
   const saveLabel = t(`common:saveState.${snapshot.saveState}`);
@@ -131,9 +119,9 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
           </button>
         ) : null}
         <Item label={t("common:status.cursor")} value={cursorLabel} />
-        <Item label={t("common:status.encoding")} value={snapshot.encoding ?? "—"} />
-        <Item label={t("common:status.eol")} value={snapshot.eol ?? "—"} />
-        <Item label={t("common:status.size")} value={formatSize(snapshot.size)} />
+        <Item label={t("common:status.encoding")} value={formatEncoding(snapshot.encoding)} />
+        <Item label={t("common:status.eol")} value={formatEol(snapshot.eol)} />
+        <Item label={t("common:status.size")} value={formatBytes(snapshot.size, i18n.language)} />
       </div>
 
       <span className="ml-auto flex shrink-0 items-center gap-2">

@@ -18,6 +18,7 @@ import {
 import { FOOTNOTE_DEFINITION, readFootnoteDefinitions, readInlineFootnotes } from "./footnotes";
 import { INLINE_HTML_TAGS } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
+import { editorUiCopy } from "../i18n";
 import { LP_MAX_UNITS, MAX_LINE_UNITS } from "../limits";
 
 export type { MarkdownNode } from "./markdown-node";
@@ -678,6 +679,8 @@ export function collectDecorationSpecs(
     return [];
   }
 
+  const copy = state.facet(editorUiCopy);
+
   const specs = new Map<string, DecorationSpec>();
   const lineClasses = new Map<number, Set<string>>();
   const handledRanges: VisibleRange[] = [];
@@ -887,7 +890,7 @@ export function collectDecorationSpecs(
       }
       addWidget(note.from, note.to, {
         kind: "inline-footnote",
-        label: `注${note.index}`,
+        label: copy.widgets.inlineFootnoteLabel(note.index),
         content: note.content,
       });
       // Keep the Link node Lezer creates for `[content]` from hiding its
@@ -1074,7 +1077,7 @@ export function collectDecorationSpecs(
                   kind: "image",
                   src: imageSource,
                   alt: size ? embed.target : embed.label,
-                  title: `嵌入图片：${embed.target}`,
+                  title: copy.media.imageEmbedTitle(embed.target),
                   width: size?.width ?? null,
                   height: size?.height ?? null,
                 });

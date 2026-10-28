@@ -1,4 +1,4 @@
-import type { FilePayload, SaveRequest, SaveResult } from "@qingmo/shared";
+import type { ApplyLocaleRequest, FilePayload, SaveRequest, SaveResult } from "@qingmo/shared";
 
 export interface CloseConfirmRequest {
   allow: boolean;
@@ -32,4 +32,6 @@ export interface IpcPort {
   appCloseConfirm(request: CloseConfirmRequest): Promise<void>;
   /** Mirrors this window's Live Preview mode in the native menu bar. */
   appSetLivePreview(request: LivePreviewRequest): Promise<void>;
+  /** Projects the current language and native labels into the shell. */
+  appApplyLocale(request: ApplyLocaleRequest): Promise<void>;
 }

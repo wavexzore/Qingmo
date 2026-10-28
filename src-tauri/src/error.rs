@@ -27,6 +27,7 @@ pub enum AppErrorCode {
     UpdateInstallFailed,
     UpdateUnsupported,
     UpdateNotReady,
+    InvalidLocale,
 }
 
 /// The only error shape returned by the four P1 commands.

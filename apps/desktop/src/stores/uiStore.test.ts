@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  LANGUAGE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   UiStore,
   type ThemeMediaQuery,
@@ -14,10 +15,16 @@ interface MemoryStorage extends ThemeStorage {
   writes: string[];
 }
 
-function memoryStorage(initial?: string | null): MemoryStorage {
+function memoryStorage(
+  initialTheme?: string | null,
+  initialLanguage?: string | null,
+): MemoryStorage {
   const values = new Map<string, string>();
-  if (initial !== undefined && initial !== null) {
-    values.set(THEME_STORAGE_KEY, initial);
+  if (initialTheme !== undefined && initialTheme !== null) {
+    values.set(THEME_STORAGE_KEY, initialTheme);
+  }
+  if (initialLanguage !== undefined && initialLanguage !== null) {
+    values.set(LANGUAGE_STORAGE_KEY, initialLanguage);
   }
   return {
     values,
@@ -30,6 +37,14 @@ function memoryStorage(initial?: string | null): MemoryStorage {
       this.writes.push(value);
     },
   };
+}
+
+function uiSnapshot(
+  theme: ThemePreference,
+  resolvedTheme: "light" | "dark",
+  language: "zh-CN" | "en" = "zh-CN",
+) {
+  return { theme, resolvedTheme, language };
 }
 
 interface FakeMedia extends ThemeMediaQuery {
@@ -94,7 +109,7 @@ describe("uiStore theme", () => {
 
     store.initialize();
 
-    expect(store.getSnapshot()).toEqual({ theme: "dark", resolvedTheme: "dark" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("dark", "dark"));
     expect(root.attributes.get("data-theme")).toBe("dark");
   });
 
@@ -104,7 +119,7 @@ describe("uiStore theme", () => {
 
     store.initialize();
 
-    expect(store.getSnapshot()).toEqual({ theme: "system", resolvedTheme: "dark" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("system", "dark"));
   });
 
   it("persists explicit themes and toggles the resolved theme", () => {
@@ -117,13 +132,13 @@ describe("uiStore theme", () => {
     store.initialize();
     store.setTheme("dark");
 
-    expect(store.getSnapshot()).toEqual({ theme: "dark", resolvedTheme: "dark" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("dark", "dark"));
     expect(storage.values.get(THEME_STORAGE_KEY)).toBe("dark");
     expect(root.attributes.get("data-theme")).toBe("dark");
     expect(listener).toHaveBeenCalledTimes(1);
 
     expect(store.toggleTheme()).toBe("light");
-    expect(store.getSnapshot()).toEqual({ theme: "light", resolvedTheme: "light" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("light", "light"));
     expect(storage.values.get(THEME_STORAGE_KEY)).toBe("light");
     expect(root.attributes.get("data-theme")).toBe("light");
   });
@@ -137,7 +152,7 @@ describe("uiStore theme", () => {
     storage.values.set(THEME_STORAGE_KEY, "dark");
     store.syncFromStorage();
 
-    expect(store.getSnapshot()).toEqual({ theme: "dark", resolvedTheme: "dark" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("dark", "dark"));
     expect(root.attributes.get("data-theme")).toBe("dark");
     expect(storage.writes).toEqual([]);
   });
@@ -148,11 +163,11 @@ describe("uiStore theme", () => {
     const store = createStore({ media, root });
 
     store.initialize();
-    expect(store.getSnapshot()).toEqual({ theme: "system", resolvedTheme: "light" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("system", "light"));
     expect(media.listenerCount()).toBe(1);
 
     media.emit(true);
-    expect(store.getSnapshot()).toEqual({ theme: "system", resolvedTheme: "dark" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("system", "dark"));
     expect(root.attributes.get("data-theme")).toBe("dark");
 
     store.setTheme("light");
@@ -160,11 +175,11 @@ describe("uiStore theme", () => {
     expect(root.attributes.get("data-theme")).toBe("light");
 
     media.emit(false);
-    expect(store.getSnapshot()).toEqual({ theme: "light", resolvedTheme: "light" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("light", "light"));
 
     store.setTheme("system");
     expect(media.listenerCount()).toBe(1);
-    expect(store.getSnapshot()).toEqual({ theme: "system", resolvedTheme: "light" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("system", "light"));
   });
 
   it("survives blocked storage and an invalid preference", () => {
@@ -179,12 +194,85 @@ describe("uiStore theme", () => {
     const store = createStore({ storage, media: null });
 
     expect(() => store.initialize()).not.toThrow();
-    expect(store.getSnapshot()).toEqual({ theme: "system", resolvedTheme: "light" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("system", "light"));
 
     expect(() => store.setTheme("sepia" as ThemePreference)).not.toThrow();
-    expect(store.getSnapshot()).toEqual({ theme: "system", resolvedTheme: "light" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("system", "light"));
 
     expect(() => store.setTheme("dark")).not.toThrow();
-    expect(store.getSnapshot()).toEqual({ theme: "dark", resolvedTheme: "dark" });
+    expect(store.getSnapshot()).toEqual(uiSnapshot("dark", "dark"));
+  });
+});
+
+describe("uiStore language", () => {
+  it("defaults to zh-CN and reads a supported persisted language", () => {
+    const defaultStore = createStore({ storage: memoryStorage(null) });
+    expect(defaultStore.getSnapshot().language).toBe("zh-CN");
+    expect(defaultStore.readPersistedLanguage()).toBeNull();
+
+    const enStore = createStore({ storage: memoryStorage(null, "en") });
+    expect(enStore.getSnapshot().language).toBe("en");
+    expect(enStore.readPersistedLanguage()).toBe("en");
+  });
+
+  it("falls back to zh-CN for an invalid persisted language", () => {
+    const store = createStore({ storage: memoryStorage(null, "en-US") });
+
+    expect(store.getSnapshot().language).toBe("zh-CN");
+    expect(store.readPersistedLanguage()).toBe("zh-CN");
+  });
+
+  it("persists language without changing the theme and ignores no-op writes", () => {
+    const storage = memoryStorage(null);
+    const store = createStore({ storage });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.setLanguage("en");
+
+    expect(store.getSnapshot()).toEqual(uiSnapshot("system", "light", "en"));
+    expect(storage.values.get(LANGUAGE_STORAGE_KEY)).toBe("en");
+    expect(storage.writes).toEqual(["en"]);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    store.setLanguage("en");
+    expect(storage.writes).toEqual(["en"]);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    store.setLanguage("fr" as never);
+    expect(store.getSnapshot().language).toBe("en");
+    expect(storage.writes).toEqual(["en"]);
+  });
+
+  it("syncs theme and language together with one notification", () => {
+    const storage = memoryStorage("light", "zh-CN");
+    const store = createStore({ storage });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    storage.values.set(THEME_STORAGE_KEY, "dark");
+    storage.values.set(LANGUAGE_STORAGE_KEY, "en");
+    store.syncFromStorage();
+
+    expect(store.getSnapshot()).toEqual(uiSnapshot("dark", "dark", "en"));
+    expect(storage.writes).toEqual([]);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an in-memory language when storage is blocked or writes fail", () => {
+    const storage: ThemeStorage = {
+      getItem() {
+        return null;
+      },
+      setItem() {
+        throw new Error("quota exceeded");
+      },
+    };
+    const store = createStore({ storage });
+
+    expect(() => store.setLanguage("en")).not.toThrow();
+    expect(store.getSnapshot().language).toBe("en");
+    expect(store.getSnapshot().theme).toBe("system");
+    expect(store.readPersistedLanguage()).toBeNull();
   });
 });

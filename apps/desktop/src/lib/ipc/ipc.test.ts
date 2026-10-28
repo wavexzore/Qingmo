@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FilePayload, SaveResult } from "@qingmo/shared";
+import type {
+  ApplyLocaleRequest,
+  FilePayload,
+  NativeShellLabels,
+  SaveResult,
+} from "@qingmo/shared";
 
 const tauriMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -30,6 +35,13 @@ const payload: FilePayload = {
 
 const saveResult: SaveResult = { hash: "hash-2", size: 4, mtimeMs: 2 };
 
+function localeRequest(): ApplyLocaleRequest {
+  return {
+    language: "en",
+    labels: { appName: "Qingmo" } as unknown as NativeShellLabels,
+  };
+}
+
 function asAppError(value: unknown): AppError {
   expect(value).toBeInstanceOf(AppError);
   return value as AppError;
@@ -41,11 +53,12 @@ beforeEach(() => {
 
 describe("AppError normalization", () => {
   it("lists every generated error code exactly once", () => {
-    expect(APP_ERROR_CODES).toHaveLength(19);
+    expect(APP_ERROR_CODES).toHaveLength(20);
     expect(new Set(APP_ERROR_CODES).size).toBe(APP_ERROR_CODES.length);
     for (const code of APP_ERROR_CODES) {
       expect(isAppErrorCode(code)).toBe(true);
     }
+    expect(isAppErrorCode("INVALID_LOCALE")).toBe(true);
     expect(isAppErrorCode("NOT_A_CODE")).toBe(false);
     expect(isAppErrorCode(null)).toBe(false);
   });
@@ -135,6 +148,15 @@ describe("Tauri IpcPort adapter", () => {
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(5, "app_close_confirm", {
       allow: false,
     });
+  });
+
+  it("sends appApplyLocale with the request wrapper", async () => {
+    const request = localeRequest();
+    tauriMocks.invoke.mockResolvedValueOnce(null);
+
+    await expect(createTauriIpc().appApplyLocale(request)).resolves.toBeUndefined();
+
+    expect(tauriMocks.invoke).toHaveBeenCalledWith("app_apply_locale", { request });
   });
 
   it("turns a Tauri rejection object into AppError", async () => {
@@ -436,6 +458,15 @@ describe("FakeIpc", () => {
     await ipc.appCloseConfirm({ allow: false });
     await ipc.appCloseConfirm({ allow: true });
     expect(ipc.closeConfirmCalls).toEqual([{ allow: false }, { allow: true }]);
+  });
+
+  it("records locale projections for controller tests", async () => {
+    const ipc = new FakeIpc();
+    const request = localeRequest();
+
+    await ipc.appApplyLocale(request);
+
+    expect(ipc.localeCalls).toEqual([request]);
   });
 
   it("honors per-command delay overrides", async () => {

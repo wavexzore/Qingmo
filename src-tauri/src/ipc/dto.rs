@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::error::{AppError, AppErrorCode};
+
 /// Encoding of the file on disk. UTF-16 without a BOM is intentionally absent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -221,4 +223,234 @@ pub struct UpdateProgressPayload {
     pub generation: u64,
     pub downloaded: u64,
     pub total: Option<u64>,
+}
+
+/// UI language selected in the webview.
+///
+/// The webview owns the user preference and projects it into native shell
+/// labels; Rust never keeps a second copy of the menu copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub enum AppLanguage {
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "en")]
+    En,
+}
+
+/// Every label the native shell renders. The frontend builds this DTO; Rust
+/// only validates and renders it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeShellLabels {
+    pub app_name: String,
+    pub about: String,
+    pub services: String,
+    pub hide_app: String,
+    pub hide_others: String,
+    pub show_all: String,
+    pub quit_app: String,
+    pub file: String,
+    pub open: String,
+    pub save: String,
+    pub close_window: String,
+    pub edit: String,
+    pub undo: String,
+    pub redo: String,
+    pub cut: String,
+    pub copy: String,
+    pub paste: String,
+    pub select_all: String,
+    pub view: String,
+    pub live_preview: String,
+    pub command_palette: String,
+    pub toggle_theme: String,
+    pub logs: String,
+    pub fullscreen: String,
+    pub theme: String,
+    pub theme_light: String,
+    pub theme_dark: String,
+    pub theme_system: String,
+    pub language: String,
+    #[serde(rename = "languageZhCN")]
+    pub language_zh_cn: String,
+    pub language_en: String,
+    pub window: String,
+    pub minimize: String,
+    pub zoom: String,
+    pub maximize: String,
+    pub bring_all_to_front: String,
+    pub help: String,
+    pub untitled_file_name: String,
+}
+
+pub const NATIVE_SHELL_LABEL_LIMIT: usize = 80;
+pub const NATIVE_SHELL_APP_NAME_LIMIT: usize = 32;
+pub const NATIVE_SHELL_FILE_NAME_LIMIT: usize = 120;
+
+fn invalid_locale(field: &str, reason: &str) -> AppError {
+    AppError::new(
+        AppErrorCode::InvalidLocale,
+        format!("invalid native shell label: {field} ({reason})"),
+    )
+    .with_details(serde_json::json!({ "field": field, "reason": reason }))
+}
+
+fn is_bidi_format_char(character: char) -> bool {
+    matches!(
+        character,
+        '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+fn validate_untitled_file_name(name: &str) -> Result<(), AppError> {
+    let field = "untitledFileName";
+    if name.trim().is_empty() {
+        return Err(invalid_locale(field, "empty"));
+    }
+    if name.chars().count() > NATIVE_SHELL_FILE_NAME_LIMIT {
+        return Err(invalid_locale(field, "too_long"));
+    }
+    if name
+        .chars()
+        .any(|character| character.is_control() || is_bidi_format_char(character))
+    {
+        return Err(invalid_locale(field, "control_character"));
+    }
+    if !name.ends_with(".md") {
+        return Err(invalid_locale(field, "invalid_file_name"));
+    }
+    if name.starts_with('.')
+        || name.contains("..")
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+        || name.contains(':')
+    {
+        return Err(invalid_locale(field, "invalid_file_name"));
+    }
+    let path = std::path::Path::new(name);
+    if path.is_absolute() || path.file_name().and_then(|value| value.to_str()) != Some(name) {
+        return Err(invalid_locale(field, "invalid_file_name"));
+    }
+    Ok(())
+}
+
+impl NativeShellLabels {
+    /// Menu/title labels only; `untitledFileName` is validated separately.
+    pub fn fields(&self) -> [(&'static str, &str); 37] {
+        [
+            ("appName", &self.app_name),
+            ("about", &self.about),
+            ("services", &self.services),
+            ("hideApp", &self.hide_app),
+            ("hideOthers", &self.hide_others),
+            ("showAll", &self.show_all),
+            ("quitApp", &self.quit_app),
+            ("file", &self.file),
+            ("open", &self.open),
+            ("save", &self.save),
+            ("closeWindow", &self.close_window),
+            ("edit", &self.edit),
+            ("undo", &self.undo),
+            ("redo", &self.redo),
+            ("cut", &self.cut),
+            ("copy", &self.copy),
+            ("paste", &self.paste),
+            ("selectAll", &self.select_all),
+            ("view", &self.view),
+            ("livePreview", &self.live_preview),
+            ("commandPalette", &self.command_palette),
+            ("toggleTheme", &self.toggle_theme),
+            ("logs", &self.logs),
+            ("fullscreen", &self.fullscreen),
+            ("theme", &self.theme),
+            ("themeLight", &self.theme_light),
+            ("themeDark", &self.theme_dark),
+            ("themeSystem", &self.theme_system),
+            ("language", &self.language),
+            ("languageZhCN", &self.language_zh_cn),
+            ("languageEn", &self.language_en),
+            ("window", &self.window),
+            ("minimize", &self.minimize),
+            ("zoom", &self.zoom),
+            ("maximize", &self.maximize),
+            ("bringAllToFront", &self.bring_all_to_front),
+            ("help", &self.help),
+        ]
+    }
+
+    pub fn validate(&self) -> Result<(), AppError> {
+        for (field, value) in self.fields() {
+            let limit = if field == "appName" {
+                NATIVE_SHELL_APP_NAME_LIMIT
+            } else {
+                NATIVE_SHELL_LABEL_LIMIT
+            };
+            if value.trim().is_empty() {
+                return Err(invalid_locale(field, "empty"));
+            }
+            if value.chars().count() > limit {
+                return Err(invalid_locale(field, "too_long"));
+            }
+            if value
+                .chars()
+                .any(|character| character.is_control() || is_bidi_format_char(character))
+            {
+                return Err(invalid_locale(field, "control_character"));
+            }
+        }
+        validate_untitled_file_name(&self.untitled_file_name)
+    }
+}
+
+/// Complete payload of `app_apply_locale`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyLocaleRequest {
+    pub language: AppLanguage,
+    pub labels: NativeShellLabels,
+}
+
+#[cfg(test)]
+pub fn test_native_labels(app_name: &str) -> NativeShellLabels {
+    NativeShellLabels {
+        app_name: app_name.to_string(),
+        about: format!("About {app_name}"),
+        services: "Services".to_string(),
+        hide_app: format!("Hide {app_name}"),
+        hide_others: "Hide Others".to_string(),
+        show_all: "Show All".to_string(),
+        quit_app: format!("Quit {app_name}"),
+        file: "File".to_string(),
+        open: "Open…".to_string(),
+        save: "Save".to_string(),
+        close_window: "Close Window".to_string(),
+        edit: "Edit".to_string(),
+        undo: "Undo".to_string(),
+        redo: "Redo".to_string(),
+        cut: "Cut".to_string(),
+        copy: "Copy".to_string(),
+        paste: "Paste".to_string(),
+        select_all: "Select All".to_string(),
+        view: "View".to_string(),
+        live_preview: "Live Preview".to_string(),
+        command_palette: "Command Palette".to_string(),
+        toggle_theme: "Toggle Theme".to_string(),
+        logs: "Logs…".to_string(),
+        fullscreen: "Full Screen".to_string(),
+        theme: "Theme".to_string(),
+        theme_light: "Light".to_string(),
+        theme_dark: "Dark".to_string(),
+        theme_system: "System".to_string(),
+        language: "Language".to_string(),
+        language_zh_cn: "简体中文".to_string(),
+        language_en: "English".to_string(),
+        window: "Window".to_string(),
+        minimize: "Minimize".to_string(),
+        zoom: "Zoom".to_string(),
+        maximize: "Maximize".to_string(),
+        bring_all_to_front: "Bring All to Front".to_string(),
+        help: "Help".to_string(),
+        untitled_file_name: "Untitled.md".to_string(),
+    }
 }

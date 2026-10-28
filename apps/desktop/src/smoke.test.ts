@@ -1,11 +1,12 @@
 import { EDITOR_MODE } from "@qingmo/editor-core";
-import { APP_NAME } from "@qingmo/shared";
 import { cx } from "@qingmo/ui";
 import { describe, expect, it } from "vitest";
 
+import i18n from "./i18n";
+
 describe("workspace smoke", () => {
   it("exposes the product identity", () => {
-    expect(APP_NAME).toBe("青墨");
+    expect(i18n.t("common:appName")).toBe("青墨");
   });
 
   it("keeps editor modes as a closed contract", () => {

@@ -10,7 +10,7 @@ import { FakeIpc } from "../../lib/ipc/fake";
 import { FakePlatform } from "../../lib/platform/fake";
 import { FakeLogPort } from "../../lib/log/fake";
 import { FakeUpdatePort } from "../../lib/update/fake";
-import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
+import { LANGUAGE_STORAGE_KEY, THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider } from "../editor/DocumentSessionContext";
 import { UpdateProvider } from "../update/UpdateProvider";
@@ -42,7 +42,10 @@ afterEach(() => {
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");
   commandRegistry.unregister("view.toggleTheme");
+  commandRegistry.unregister("language.zh-CN");
+  commandRegistry.unregister("language.en");
   uiStore.setTheme("system");
+  uiStore.setLanguage("zh-CN");
 });
 
 describe("native menu actions", () => {
@@ -66,6 +69,18 @@ describe("native menu actions", () => {
 
     platform.emitMenuAction("theme.system");
     await waitFor(() => expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("system"));
+  });
+
+  it("applies the two language menu items", async () => {
+    const { platform } = renderApp();
+
+    platform.emitMenuAction("language.en");
+    await waitFor(() => expect(uiStore.getSnapshot().language).toBe("en"));
+    expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("en");
+
+    platform.emitMenuAction("language.zh-CN");
+    await waitFor(() => expect(uiStore.getSnapshot().language).toBe("zh-CN"));
+    expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("zh-CN");
   });
 
   it("opens a document and saves it through the menu", async () => {

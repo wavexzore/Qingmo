@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import type { ConflictDetails } from "@qingmo/shared";
 import { Button } from "@qingmo/ui";
 
+import { formatBytes } from "../../lib/format";
+
 export interface ConflictBannerProps {
   conflict: ConflictDetails;
   errorCode?: string | null;
@@ -25,7 +27,7 @@ export function ConflictBanner({
   onOverwrite,
   onDismiss,
 }: ConflictBannerProps) {
-  const { t } = useTranslation(["editor"]);
+  const { t, i18n } = useTranslation(["editor"]);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -69,7 +71,7 @@ export function ConflictBanner({
           {t("editor:conflict.description")}
         </p>
         <p className="mt-1 font-mono text-[10px] text-ink-faint">
-          {conflict.currentHash.slice(0, 12)} · {conflict.currentSize} B
+          {conflict.currentHash.slice(0, 12)} · {formatBytes(conflict.currentSize, i18n.language)}
         </p>
         {errorCode ? (
           <p className="mt-1 text-xs text-danger">

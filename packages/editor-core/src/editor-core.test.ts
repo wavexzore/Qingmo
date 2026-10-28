@@ -12,6 +12,7 @@ import {
   qingmoEditorTheme,
   readOnlyCompartment,
   setModeEffect,
+  setPlaceholderEffect,
   setReadOnlyEffect,
   setThemeEffect,
 } from "./index";
@@ -92,12 +93,34 @@ describe("compartments", () => {
     expect(modeCompartment).toBeDefined();
     expect(qingmoEditorTheme).toBeDefined();
   });
+
+  it("reconfigures the placeholder without recreating the state", () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const state = createEditorState({ doc: "" });
+    const view = new EditorView({ state, parent });
+
+    try {
+      expect(parent.querySelector(".cm-placeholder")).toBeNull();
+
+      view.dispatch({ effects: setPlaceholderEffect("Start writing…") });
+      expect(parent.querySelector(".cm-placeholder")?.textContent).toBe("Start writing…");
+      expect(view.state.doc.toString()).toBe("");
+
+      view.dispatch({ effects: setPlaceholderEffect("开始写作…") });
+      expect(parent.querySelector(".cm-placeholder")?.textContent).toBe("开始写作…");
+      expect(view.state.doc.toString()).toBe("");
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
+  });
 });
 
 describe("markdown composition", () => {
   it("parses Markdown via the composed language support", () => {
     const state = createEditorState({ doc: "# heading\n\n**strong** and `code`\n" });
-    const tree = ensureSyntaxTree(state, state.doc.length, 2_000);
+    const tree = ensureSyntaxTree(state, state.doc.length, 10_000);
     expect(tree).not.toBeNull();
     expect(tree?.type.name).toBe("Document");
   });

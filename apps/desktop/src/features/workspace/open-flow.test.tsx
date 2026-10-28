@@ -141,6 +141,7 @@ describe("openFile", () => {
       documentWriteAtomic: vi.fn(),
       appCloseConfirm: vi.fn(),
       appSetLivePreview: vi.fn(),
+      appApplyLocale: vi.fn(),
     };
     const brokenResult = await openFile(broken);
     expect(brokenResult.ok).toBe(false);
@@ -251,7 +252,7 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(6);
+    expect(options).toHaveLength(8);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("打开文件"),
@@ -259,6 +260,8 @@ describe("blank editor -> editor open flow", () => {
         expect.stringContaining("切换实时预览"),
         expect.stringContaining("切换主题"),
         expect.stringContaining("检查更新"),
+        expect.stringContaining("简体中文"),
+        expect.stringContaining("English"),
       ]),
     );
 

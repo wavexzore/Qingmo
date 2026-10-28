@@ -1,7 +1,7 @@
 import type { UpdateInfo } from "@qingmo/shared";
 
 const MARKER = /^\[(zh-CN|zh|en-US|en)\]$/i;
-const HEADINGS = { zh: "中文", en: "English" } as const;
+const HEADINGS = { zh: "\u4e2d\u6587", en: "English" } as const;
 
 type NotesLanguage = keyof typeof HEADINGS;
 
@@ -40,7 +40,7 @@ function splitSections(body: string): Record<NotesLanguage, string> | null {
  *
  * The updater manifest has a single `notes` string, so a bilingual note is
  * published with `[zh-CN]` / `[en-US]` markers. Older releases used the plain
- * `中文` / `English` headings; both are understood. Bodies without either are
+ * legacy Chinese / English headings; both are understood. Bodies without either are
  * returned unchanged, and an empty section falls back to the other language
  * instead of showing nothing.
  */

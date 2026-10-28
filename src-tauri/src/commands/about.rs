@@ -6,7 +6,6 @@ use crate::ipc::dto::{AboutInfo, AboutLink};
 
 /// Stable label and size for the custom About window.
 pub const ABOUT_WINDOW_LABEL: &str = "about";
-const ABOUT_WINDOW_TITLE: &str = "关于青墨";
 const ABOUT_WINDOW_WIDTH: f64 = 640.0;
 const ABOUT_WINDOW_HEIGHT: f64 = 400.0;
 
@@ -64,6 +63,12 @@ impl AboutLink {
     }
 }
 
+fn about_window_title(labels: Option<crate::ipc::dto::NativeShellLabels>) -> String {
+    labels
+        .map(|labels| labels.about)
+        .unwrap_or_else(|| "Qingmo".to_string())
+}
+
 /// Opens the About window, or focuses it when it is already open.
 ///
 /// The window mirrors the Colophon prototype: fixed 640 × 400, no native
@@ -87,12 +92,13 @@ pub fn open_about<R: Runtime>(app: &AppHandle<R>) -> Result<(), AppError> {
         return Ok(());
     }
 
+    let about_title = about_window_title(app.state::<crate::state::ShellLocale>().labels());
     let window = WebviewWindowBuilder::new(
         app,
         ABOUT_WINDOW_LABEL,
         WebviewUrl::App("about.html".into()),
     )
-    .title(ABOUT_WINDOW_TITLE)
+    .title(about_title)
     .inner_size(ABOUT_WINDOW_WIDTH, ABOUT_WINDOW_HEIGHT)
     .resizable(false)
     .maximizable(false)
@@ -173,6 +179,15 @@ mod tests {
         assert_eq!(info.platform, platform_label());
         assert_eq!(info.license, "Apache-2.0");
         assert_eq!(info.copyright, "© 2026 Qingmo Contributors");
+    }
+
+    #[test]
+    fn about_title_falls_back_to_a_neutral_name() {
+        assert_eq!(about_window_title(None), "Qingmo");
+
+        let labels = crate::ipc::dto::test_native_labels("青墨");
+        assert_eq!(about_window_title(Some(labels.clone())), "About 青墨");
+        assert_eq!(labels.about, "About 青墨");
     }
 
     #[test]

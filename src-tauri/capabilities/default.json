@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Minimal permissions for Qingmo document windows: core event listen/unlisten plus the eleven application commands.",
+  "description": "Minimal permissions for Qingmo document windows: core event listen/unlisten plus the application commands.",
   "windows": ["main", "doc-*"],
   "permissions": [
     "core:event:allow-listen",
@@ -12,6 +12,7 @@
     "allow-document-write-atomic",
     "allow-app-close-confirm",
     "allow-app-set-live-preview",
+    "allow-app-apply-locale",
     "allow-app-update-status",
     "allow-app-update-check",
     "allow-app-update-download",

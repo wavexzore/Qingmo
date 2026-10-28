@@ -21,11 +21,11 @@ pub mod state;
 
 use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use ipc::contract::{
-    EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_OPEN, MENU_FILE_SAVE, MENU_PALETTE_OPEN,
-    MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW,
-    MENU_VIEW_TOGGLE_THEME,
+    EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_OPEN, MENU_FILE_SAVE, MENU_LANGUAGE_EN,
+    MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
+    MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_THEME,
 };
-use ipc::dto::MenuActionPayload;
+use ipc::dto::{AppLanguage, MenuActionPayload, NativeShellLabels};
 
 /// Menu ids handled in Rust instead of being forwarded to the webview.
 const MENU_ABOUT: &str = "app.about";
@@ -81,8 +81,6 @@ fn init_tracing(log_dir: Option<&PathBuf>) {
     init(log_dir.and_then(file_appender));
 }
 
-const ABOUT_LABEL: &str = "关于青墨";
-
 /// Which platform menu layout to build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MenuPlatform {
@@ -104,41 +102,42 @@ fn menu_platform() -> MenuPlatform {
 /// arrangement can be asserted in tests without creating AppKit objects, which
 /// must happen on the main thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MenuSpec {
-    title: &'static str,
-    items: Vec<MenuEntry>,
+struct MenuSpec<'a> {
+    title: &'a str,
+    items: Vec<MenuEntry<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MenuEntry {
+enum MenuEntry<'a> {
     Separator,
-    Services(&'static str),
-    Hide(&'static str),
-    HideOthers(&'static str),
-    ShowAll(&'static str),
-    Undo(&'static str),
-    Redo(&'static str),
-    Cut(&'static str),
-    Copy(&'static str),
-    Paste(&'static str),
-    SelectAll(&'static str),
-    Minimize(&'static str),
-    Maximize(&'static str),
-    BringAllToFront(&'static str),
+    Services(&'a str),
+    Hide(&'a str),
+    HideOthers(&'a str),
+    ShowAll(&'a str),
+    Undo(&'a str),
+    Redo(&'a str),
+    Cut(&'a str),
+    Copy(&'a str),
+    Paste(&'a str),
+    SelectAll(&'a str),
+    Minimize(&'a str),
+    Maximize(&'a str),
+    BringAllToFront(&'a str),
     Action {
         id: &'static str,
-        label: &'static str,
-        accelerator: Option<&'static str>,
+        label: &'a str,
+        accelerator: Option<&'a str>,
     },
     /// A toggle that shows a checkmark while the mode is active.
     Checked {
         id: &'static str,
-        label: &'static str,
+        label: &'a str,
         checked: bool,
     },
+    Submenu(MenuSpec<'a>),
 }
 
-fn action(id: &'static str, label: &'static str, accelerator: Option<&'static str>) -> MenuEntry {
+fn action<'a>(id: &'static str, label: &'a str, accelerator: Option<&'a str>) -> MenuEntry<'a> {
     MenuEntry::Action {
         id,
         label,
@@ -146,126 +145,213 @@ fn action(id: &'static str, label: &'static str, accelerator: Option<&'static st
     }
 }
 
-/// Builds the Chinese application menu for macOS and Windows.
+/// Builds the localized application menu for macOS and Windows.
 ///
-/// The default Tauri menu exposes File/Edit/View/Window/Help entries that do
-/// not match Qingmo's command surface. This menu keeps only working items:
-/// file operations, native editing actions, view/theme toggles and window
-/// controls. Custom items are forwarded to the webview through
-/// `app://menu-action`; native predefined items (undo/copy/paste) stay in the
-/// platform so the first responder keeps handling text editing.
+/// Rust owns no copy: every title and label comes from the frontend-projected
+/// `NativeShellLabels`. The default Tauri menu exposes File/Edit/View/Window/
+/// Help entries that do not match Qingmo's command surface, so this layout
+/// keeps only working items: file operations, native editing actions,
+/// view/theme/language toggles and window controls. Custom items are forwarded
+/// to the webview through `app://menu-action`; native predefined items
+/// (undo/copy/paste) stay in the platform so the first responder keeps handling
+/// text editing.
 ///
 /// Platform differences:
 /// - macOS keeps the standard application submenu and Window's "Bring All to
 ///   Front"; Quit lives in the app submenu.
-/// - Windows uses the in-window menu bar: Quit lives in 文件 and Help carries
+/// - Windows uses the in-window menu bar: Quit lives in File and Help carries
 ///   the About dialog.
 ///
 /// Quit/close/fullscreen deliberately use custom items: quitting through the
 /// platform default (`NSApplication terminate:` / `PostQuitMessage`) bypasses
 /// CloseGuard, so both platforms route these actions through the Rust guard.
-fn menu_layout(platform: MenuPlatform) -> Vec<MenuSpec> {
+fn menu_layout<'a>(
+    platform: MenuPlatform,
+    labels: &'a NativeShellLabels,
+    language: AppLanguage,
+    live_preview: bool,
+) -> Vec<MenuSpec<'a>> {
     let macos = platform == MenuPlatform::Mac;
 
     let mut file_items = vec![
-        action(MENU_FILE_OPEN, "打开…", Some("CmdOrCtrl+O")),
-        action(MENU_FILE_SAVE, "保存", Some("CmdOrCtrl+S")),
+        action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
+        action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
         MenuEntry::Separator,
-        action(MENU_CLOSE_WINDOW, "关闭窗口", Some("CmdOrCtrl+W")),
+        action(MENU_CLOSE_WINDOW, &labels.close_window, Some("CmdOrCtrl+W")),
     ];
     if !macos {
         file_items.push(MenuEntry::Separator);
-        file_items.push(action(MENU_QUIT, "退出青墨", Some("CmdOrCtrl+Q")));
+        file_items.push(action(MENU_QUIT, &labels.quit_app, Some("CmdOrCtrl+Q")));
     }
 
     let mut window_items = vec![
-        MenuEntry::Minimize("最小化"),
-        MenuEntry::Maximize(if macos { "缩放" } else { "最大化" }),
+        MenuEntry::Minimize(&labels.minimize),
+        MenuEntry::Maximize(if macos {
+            &labels.zoom
+        } else {
+            &labels.maximize
+        }),
     ];
     if macos {
         window_items.push(MenuEntry::Separator);
-        window_items.push(MenuEntry::BringAllToFront("前置全部窗口"));
+        window_items.push(MenuEntry::BringAllToFront(&labels.bring_all_to_front));
     }
 
     let fullscreen_accel = if macos { "Ctrl+Cmd+F" } else { "F11" };
     let logs_accel = if macos { "Cmd+Alt+L" } else { "Ctrl+Alt+L" };
 
+    let language_menu = MenuEntry::Submenu(MenuSpec {
+        title: &labels.language,
+        items: vec![
+            MenuEntry::Checked {
+                id: MENU_LANGUAGE_ZH_CN,
+                label: &labels.language_zh_cn,
+                checked: language == AppLanguage::ZhCn,
+            },
+            MenuEntry::Checked {
+                id: MENU_LANGUAGE_EN,
+                label: &labels.language_en,
+                checked: language == AppLanguage::En,
+            },
+        ],
+    });
+
     let mut menus = Vec::new();
     if macos {
         menus.push(MenuSpec {
-            title: "青墨",
+            title: &labels.app_name,
             items: vec![
-                action(MENU_ABOUT, ABOUT_LABEL, None),
+                action(MENU_ABOUT, &labels.about, None),
                 MenuEntry::Separator,
-                MenuEntry::Services("服务"),
+                MenuEntry::Services(&labels.services),
                 MenuEntry::Separator,
-                MenuEntry::Hide("隐藏青墨"),
-                MenuEntry::HideOthers("隐藏其他"),
-                MenuEntry::ShowAll("显示全部"),
+                MenuEntry::Hide(&labels.hide_app),
+                MenuEntry::HideOthers(&labels.hide_others),
+                MenuEntry::ShowAll(&labels.show_all),
                 MenuEntry::Separator,
-                action(MENU_QUIT, "退出青墨", Some("CmdOrCtrl+Q")),
+                action(MENU_QUIT, &labels.quit_app, Some("CmdOrCtrl+Q")),
             ],
         });
     }
     menus.push(MenuSpec {
-        title: "文件",
+        title: &labels.file,
         items: file_items,
     });
     menus.push(MenuSpec {
-        title: "编辑",
+        title: &labels.edit,
         items: vec![
-            MenuEntry::Undo("撤销"),
-            MenuEntry::Redo("重做"),
+            MenuEntry::Undo(&labels.undo),
+            MenuEntry::Redo(&labels.redo),
             MenuEntry::Separator,
-            MenuEntry::Cut("剪切"),
-            MenuEntry::Copy("复制"),
-            MenuEntry::Paste("粘贴"),
-            MenuEntry::SelectAll("全选"),
+            MenuEntry::Cut(&labels.cut),
+            MenuEntry::Copy(&labels.copy),
+            MenuEntry::Paste(&labels.paste),
+            MenuEntry::SelectAll(&labels.select_all),
         ],
     });
     menus.push(MenuSpec {
-        title: "显示",
+        title: &labels.view,
         items: vec![
             MenuEntry::Checked {
                 id: MENU_VIEW_TOGGLE_LIVE_PREVIEW,
-                label: "实时预览",
-                checked: true,
+                label: &labels.live_preview,
+                checked: live_preview,
             },
-            action(MENU_PALETTE_OPEN, "命令面板", Some("CmdOrCtrl+K")),
+            action(
+                MENU_PALETTE_OPEN,
+                &labels.command_palette,
+                Some("CmdOrCtrl+K"),
+            ),
             action(
                 MENU_VIEW_TOGGLE_THEME,
-                "切换主题",
+                &labels.toggle_theme,
                 Some("CmdOrCtrl+Shift+L"),
             ),
             MenuEntry::Separator,
-            action(MENU_LOGS, "日志…", Some(logs_accel)),
-            action(MENU_TOGGLE_FULLSCREEN, "全屏", Some(fullscreen_accel)),
+            language_menu,
+            MenuEntry::Separator,
+            action(MENU_LOGS, &labels.logs, Some(logs_accel)),
+            action(
+                MENU_TOGGLE_FULLSCREEN,
+                &labels.fullscreen,
+                Some(fullscreen_accel),
+            ),
         ],
     });
     menus.push(MenuSpec {
-        title: "主题",
+        title: &labels.theme,
         items: vec![
-            action(MENU_THEME_LIGHT, "浅色", None),
-            action(MENU_THEME_DARK, "深色", None),
-            action(MENU_THEME_SYSTEM, "跟随系统", None),
+            action(MENU_THEME_LIGHT, &labels.theme_light, None),
+            action(MENU_THEME_DARK, &labels.theme_dark, None),
+            action(MENU_THEME_SYSTEM, &labels.theme_system, None),
         ],
     });
     menus.push(MenuSpec {
-        title: "窗口",
+        title: &labels.window,
         items: window_items,
     });
     if !macos {
         menus.push(MenuSpec {
-            title: "帮助",
-            items: vec![action(MENU_ABOUT, ABOUT_LABEL, None)],
+            title: &labels.help,
+            items: vec![action(MENU_ABOUT, &labels.about, None)],
         });
     }
 
     menus
 }
 
+/// Startup fallback used before the webview sends its first projection.
+///
+/// It is intentionally minimal and neutral: a custom Quit item always routes
+/// through CloseGuard, and the standard edit items keep text editing usable.
+/// It must never fall back to `Menu::default`, whose platform Quit bypasses the
+/// guard and whose About item would add a second copy source.
+fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
+    let macos = platform == MenuPlatform::Mac;
+    let mut file_items = vec![action(
+        MENU_CLOSE_WINDOW,
+        "Close Window",
+        Some("CmdOrCtrl+W"),
+    )];
+    if !macos {
+        file_items.push(MenuEntry::Separator);
+        file_items.push(action(MENU_QUIT, "Quit", Some("CmdOrCtrl+Q")));
+    }
+
+    let mut menus = Vec::new();
+    if macos {
+        menus.push(MenuSpec {
+            title: "Qingmo",
+            items: vec![
+                MenuEntry::Separator,
+                action(MENU_QUIT, "Quit", Some("CmdOrCtrl+Q")),
+            ],
+        });
+    }
+    menus.push(MenuSpec {
+        title: "File",
+        items: file_items,
+    });
+    menus.push(MenuSpec {
+        title: "Edit",
+        items: vec![
+            MenuEntry::Undo("Undo"),
+            MenuEntry::Redo("Redo"),
+            MenuEntry::Separator,
+            MenuEntry::Cut("Cut"),
+            MenuEntry::Copy("Copy"),
+            MenuEntry::Paste("Paste"),
+            MenuEntry::SelectAll("Select All"),
+        ],
+    });
+    menus
+}
+
 /// Materializes one declarative menu into native items.
-fn build_submenu<R: Runtime>(app: &AppHandle<R>, spec: &MenuSpec) -> tauri::Result<Submenu<R>> {
+fn build_submenu<'a, R: Runtime>(
+    app: &AppHandle<R>,
+    spec: &MenuSpec<'a>,
+) -> tauri::Result<Submenu<R>> {
     let menu = Submenu::new(app, spec.title, true)?;
     for entry in &spec.items {
         match entry {
@@ -312,20 +398,34 @@ fn build_submenu<R: Runtime>(app: &AppHandle<R>, spec: &MenuSpec) -> tauri::Resu
                 *checked,
                 None::<&str>,
             )?)?,
+            MenuEntry::Submenu(spec) => menu.append(&build_submenu(app, spec)?)?,
         }
     }
     Ok(menu)
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    build_menu_for(app, menu_platform())
+    let layout = startup_layout(menu_platform());
+    build_menu_with_layout(app, &layout)
 }
 
+/// Builds the first localized menu from the frontend projection.
 fn build_menu_for<R: Runtime>(
     app: &AppHandle<R>,
     platform: MenuPlatform,
+    labels: &NativeShellLabels,
+    language: AppLanguage,
+    live_preview: bool,
 ) -> tauri::Result<Menu<R>> {
-    let menus = menu_layout(platform)
+    let layout = menu_layout(platform, labels, language, live_preview);
+    build_menu_with_layout(app, &layout)
+}
+
+fn build_menu_with_layout<'a, R: Runtime>(
+    app: &AppHandle<R>,
+    layout: &[MenuSpec<'a>],
+) -> tauri::Result<Menu<R>> {
+    let menus = layout
         .iter()
         .map(|spec| build_submenu(app, spec))
         .collect::<tauri::Result<Vec<_>>>()?;
@@ -405,6 +505,63 @@ fn command_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
                 .find(|window| window.label() != ABOUT_WINDOW_LABEL)
                 .cloned()
         })
+}
+
+/// The checkmark for "Live Preview" on the shared menu.
+///
+/// About can own keyboard focus while a locale projection arrives; using the
+/// command target keeps the last editable window's mode instead of resetting
+/// the toggle to the startup default.
+fn current_live_preview_checked<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.state::<state::FocusTracker>()
+        .get_command_target()
+        .and_then(|label| app.state::<state::PreviewModes>().get(&label))
+        .unwrap_or(true)
+}
+
+/// Resolves the title for one window from the current projection.
+///
+/// A token without a registry entry means the document is closing or being
+/// saved across a race: keep the current title instead of falling back to the
+/// application name.
+fn resolve_window_title(
+    label: &str,
+    labels: &NativeShellLabels,
+    sessions: &state::WindowSessions,
+    registry: &state::DocumentRegistry,
+) -> Option<String> {
+    if label == ABOUT_WINDOW_LABEL {
+        return Some(labels.about.clone());
+    }
+    if let Some(path) = sessions.pending_path(label) {
+        return Some(commands::document::window_title_for(
+            &path,
+            &labels.app_name,
+        ));
+    }
+    if let Some(token) = sessions.token_for(label) {
+        return registry.get(&token).ok().map(|record| {
+            commands::document::window_title_for(&record.canonical_target, &labels.app_name)
+        });
+    }
+    Some(labels.app_name.clone())
+}
+
+/// Applies the projected labels to every open native window title.
+fn apply_window_titles<R: Runtime>(app: &AppHandle<R>, labels: &NativeShellLabels) {
+    let sessions = app.state::<state::WindowSessions>();
+    let registry = app.state::<state::DocumentRegistry>();
+    for window in app.webview_windows().values() {
+        if let Some(title) = resolve_window_title(window.label(), labels, &sessions, &registry) {
+            if let Err(error) = window.set_title(&title) {
+                tracing::warn!(
+                    %error,
+                    label = window.label(),
+                    "failed to update the window title"
+                );
+            }
+        }
+    }
 }
 
 /// How long the launch waits for an OS open request before creating the blank
@@ -534,6 +691,7 @@ pub fn run() {
         .manage(state::FocusTracker::new())
         .manage(state::PreviewModes::new())
         .manage(state::StartupWindow::new())
+        .manage(state::ShellLocale::default())
         .setup(|app| {
             app.manage(app.handle().clone());
             let log_dir = app.path().app_log_dir().ok();
@@ -654,42 +812,100 @@ pub fn run() {
 mod menu_tests {
     use super::*;
 
-    fn titles(layout: &[MenuSpec]) -> Vec<&'static str> {
+    fn labels(prefix: &str) -> NativeShellLabels {
+        NativeShellLabels {
+            app_name: format!("{prefix}-app"),
+            about: format!("{prefix}-about"),
+            services: format!("{prefix}-services"),
+            hide_app: format!("{prefix}-hide"),
+            hide_others: format!("{prefix}-hide-others"),
+            show_all: format!("{prefix}-show-all"),
+            quit_app: format!("{prefix}-quit"),
+            file: format!("{prefix}-file"),
+            open: format!("{prefix}-open"),
+            save: format!("{prefix}-save"),
+            close_window: format!("{prefix}-close"),
+            edit: format!("{prefix}-edit"),
+            undo: format!("{prefix}-undo"),
+            redo: format!("{prefix}-redo"),
+            cut: format!("{prefix}-cut"),
+            copy: format!("{prefix}-copy"),
+            paste: format!("{prefix}-paste"),
+            select_all: format!("{prefix}-select-all"),
+            view: format!("{prefix}-view"),
+            live_preview: format!("{prefix}-live-preview"),
+            command_palette: format!("{prefix}-palette"),
+            toggle_theme: format!("{prefix}-toggle-theme"),
+            logs: format!("{prefix}-logs"),
+            fullscreen: format!("{prefix}-fullscreen"),
+            theme: format!("{prefix}-theme"),
+            theme_light: format!("{prefix}-light"),
+            theme_dark: format!("{prefix}-dark"),
+            theme_system: format!("{prefix}-system"),
+            language: format!("{prefix}-language"),
+            language_zh_cn: format!("{prefix}-zh"),
+            language_en: format!("{prefix}-en"),
+            window: format!("{prefix}-window"),
+            minimize: format!("{prefix}-minimize"),
+            zoom: format!("{prefix}-zoom"),
+            maximize: format!("{prefix}-maximize"),
+            bring_all_to_front: format!("{prefix}-bring-all"),
+            help: format!("{prefix}-help"),
+            untitled_file_name: format!("{prefix}.md"),
+        }
+    }
+
+    fn titles<'a>(layout: &'a [MenuSpec<'a>]) -> Vec<&'a str> {
         layout.iter().map(|menu| menu.title).collect()
     }
 
-    fn menu<'a>(layout: &'a [MenuSpec], title: &str) -> &'a MenuSpec {
+    fn menu<'a>(layout: &'a [MenuSpec<'a>], title: &str) -> &'a MenuSpec<'a> {
         layout
             .iter()
             .find(|menu| menu.title == title)
             .unwrap_or_else(|| panic!("menu {title} must exist"))
     }
 
-    fn action_ids(menu: &MenuSpec) -> Vec<&'static str> {
+    fn submenu<'a>(menu: &'a MenuSpec<'a>, title: &str) -> &'a MenuSpec<'a> {
         menu.items
             .iter()
-            .filter_map(|item| match item {
-                MenuEntry::Action { id, .. } | MenuEntry::Checked { id, .. } => Some(*id),
+            .find_map(|item| match item {
+                MenuEntry::Submenu(spec) if spec.title == title => Some(spec),
                 _ => None,
+            })
+            .unwrap_or_else(|| panic!("submenu {title} must exist"))
+    }
+
+    fn action_ids<'a>(menu: &'a MenuSpec<'a>) -> Vec<&'a str> {
+        menu.items
+            .iter()
+            .flat_map(|item| match item {
+                MenuEntry::Action { id, .. } | MenuEntry::Checked { id, .. } => vec![*id],
+                MenuEntry::Submenu(spec) => action_ids(spec),
+                _ => Vec::new(),
             })
             .collect()
     }
 
-    fn action<'a>(menu: &'a MenuSpec, id: &str) -> &'a MenuEntry {
+    fn layout_action_ids<'a>(layout: &'a [MenuSpec<'a>]) -> Vec<&'a str> {
+        layout.iter().flat_map(action_ids).collect()
+    }
+
+    fn action<'a>(menu: &'a MenuSpec<'a>, id: &str) -> &'a MenuEntry<'a> {
         menu.items
             .iter()
             .find(|item| matches!(item, MenuEntry::Action { id: item_id, .. } if *item_id == id))
             .unwrap_or_else(|| panic!("action {id} must exist"))
     }
 
-    fn action_label(entry: &MenuEntry) -> &'static str {
+    fn action_label<'a>(entry: &'a MenuEntry<'a>) -> &'a str {
         match entry {
             MenuEntry::Action { label, .. } => label,
             other => panic!("expected an action, got {other:?}"),
         }
     }
 
-    fn action_accelerator(entry: &MenuEntry) -> Option<&'static str> {
+    fn action_accelerator<'a>(entry: &'a MenuEntry<'a>) -> Option<&'a str> {
         match entry {
             MenuEntry::Action { accelerator, .. } => *accelerator,
             other => panic!("expected an action, got {other:?}"),
@@ -698,14 +914,14 @@ mod menu_tests {
 
     /// Every id used by a custom menu item must have a handler: either the
     /// webview dispatcher or one of the Rust-side window/quit actions.
-    fn assert_every_action_has_a_handler(layout: &[MenuSpec]) {
+    fn assert_every_action_has_a_handler(layout: &[MenuSpec<'_>]) {
         let rust_handled = [
             MENU_ABOUT,
             MENU_QUIT,
             MENU_CLOSE_WINDOW,
             MENU_TOGGLE_FULLSCREEN,
         ];
-        for id in layout.iter().flat_map(action_ids) {
+        for id in layout_action_ids(layout) {
             assert!(
                 MENU_ACTIONS.contains(&id) || rust_handled.contains(&id),
                 "menu action {id} has no handler"
@@ -714,78 +930,143 @@ mod menu_tests {
     }
 
     #[test]
-    fn macos_layout_keeps_the_application_submenu() {
-        let layout = menu_layout(MenuPlatform::Mac);
+    fn macos_layout_uses_the_projected_labels() {
+        let labels = labels("zh");
+        let layout = menu_layout(MenuPlatform::Mac, &labels, AppLanguage::ZhCn, true);
 
         assert_eq!(
             titles(&layout),
-            ["青墨", "文件", "编辑", "显示", "主题", "窗口"]
+            [
+                "zh-app",
+                "zh-file",
+                "zh-edit",
+                "zh-view",
+                "zh-theme",
+                "zh-window"
+            ]
         );
 
-        let app_menu = menu(&layout, "青墨");
-        assert!(action_ids(app_menu).contains(&MENU_ABOUT));
+        let app_menu = menu(&layout, "zh-app");
+        assert_eq!(action_label(action(app_menu, MENU_ABOUT)), "zh-about");
         assert!(action_ids(app_menu).contains(&MENU_QUIT));
-        assert_eq!(action_label(action(app_menu, MENU_ABOUT)), "关于青墨");
+        assert_eq!(
+            action_accelerator(action(app_menu, MENU_QUIT)),
+            Some("CmdOrCtrl+Q")
+        );
 
-        let file_menu = menu(&layout, "文件");
+        let file_menu = menu(&layout, "zh-file");
         let file_ids = action_ids(file_menu);
         assert!(file_ids.contains(&MENU_FILE_OPEN));
         assert!(file_ids.contains(&MENU_FILE_SAVE));
         assert!(file_ids.contains(&MENU_CLOSE_WINDOW));
         assert!(!file_ids.contains(&MENU_QUIT));
-        assert_eq!(action_label(action(file_menu, MENU_FILE_OPEN)), "打开…");
+        assert_eq!(action_label(action(file_menu, MENU_FILE_OPEN)), "zh-open");
 
         assert_eq!(
-            menu(&layout, "窗口").items.last(),
-            Some(&MenuEntry::BringAllToFront("前置全部窗口"))
+            menu(&layout, "zh-window").items.last(),
+            Some(&MenuEntry::BringAllToFront("zh-bring-all"))
         );
-        assert_eq!(menu(&layout, "窗口").items[1], MenuEntry::Maximize("缩放"));
+        assert_eq!(
+            menu(&layout, "zh-window").items[1],
+            MenuEntry::Maximize("zh-zoom")
+        );
 
-        let view_menu = menu(&layout, "显示");
+        let view_menu = menu(&layout, "zh-view");
         assert_eq!(
             action_accelerator(action(view_menu, MENU_TOGGLE_FULLSCREEN)),
             Some("Ctrl+Cmd+F")
         );
         assert!(view_menu.items.contains(&MenuEntry::Checked {
             id: MENU_VIEW_TOGGLE_LIVE_PREVIEW,
-            label: "实时预览",
+            label: "zh-live-preview",
             checked: true,
         }));
+
+        let language_menu = submenu(view_menu, "zh-language");
+        assert_eq!(
+            action_ids(language_menu),
+            [MENU_LANGUAGE_ZH_CN, MENU_LANGUAGE_EN]
+        );
+        assert_eq!(
+            language_menu.items[0],
+            MenuEntry::Checked {
+                id: MENU_LANGUAGE_ZH_CN,
+                label: "zh-zh",
+                checked: true,
+            }
+        );
+        assert_eq!(
+            language_menu.items[1],
+            MenuEntry::Checked {
+                id: MENU_LANGUAGE_EN,
+                label: "zh-en",
+                checked: false,
+            }
+        );
 
         assert_every_action_has_a_handler(&layout);
     }
 
     #[test]
-    fn windows_layout_puts_quit_in_file_and_adds_help() {
-        let layout = menu_layout(MenuPlatform::Other);
+    fn windows_layout_puts_quit_in_file_and_help_uses_the_labels() {
+        let labels = labels("en");
+        let layout = menu_layout(MenuPlatform::Other, &labels, AppLanguage::En, false);
 
         assert_eq!(
             titles(&layout),
-            ["文件", "编辑", "显示", "主题", "窗口", "帮助"]
+            [
+                "en-file",
+                "en-edit",
+                "en-view",
+                "en-theme",
+                "en-window",
+                "en-help"
+            ]
         );
 
-        let file_menu = menu(&layout, "文件");
+        let file_menu = menu(&layout, "en-file");
         let file_ids = action_ids(file_menu);
-        assert!(file_ids.contains(&MENU_FILE_OPEN));
-        assert!(file_ids.contains(&MENU_FILE_SAVE));
-        assert!(file_ids.contains(&MENU_CLOSE_WINDOW));
         assert!(file_ids.contains(&MENU_QUIT));
-        assert_eq!(action_label(action(file_menu, MENU_QUIT)), "退出青墨");
+        assert_eq!(action_label(action(file_menu, MENU_QUIT)), "en-quit");
+        assert_eq!(
+            action_accelerator(action(file_menu, MENU_QUIT)),
+            Some("CmdOrCtrl+Q")
+        );
 
-        let help_menu = menu(&layout, "帮助");
+        let help_menu = menu(&layout, "en-help");
         assert_eq!(action_ids(help_menu), [MENU_ABOUT]);
-        assert_eq!(action_label(action(help_menu, MENU_ABOUT)), "关于青墨");
+        assert_eq!(action_label(action(help_menu, MENU_ABOUT)), "en-about");
 
         assert_eq!(
-            menu(&layout, "窗口").items,
-            [MenuEntry::Minimize("最小化"), MenuEntry::Maximize("最大化")]
+            menu(&layout, "en-window").items,
+            [
+                MenuEntry::Minimize("en-minimize"),
+                MenuEntry::Maximize("en-maximize")
+            ]
         );
 
-        let view_menu = menu(&layout, "显示");
+        let view_menu = menu(&layout, "en-view");
         assert_eq!(
             action_accelerator(action(view_menu, MENU_TOGGLE_FULLSCREEN)),
             Some("F11")
         );
+        let language_menu = submenu(view_menu, "en-language");
+        assert_eq!(
+            language_menu.items[0],
+            MenuEntry::Checked {
+                id: MENU_LANGUAGE_ZH_CN,
+                label: "en-zh",
+                checked: false,
+            }
+        );
+        assert!(matches!(
+            language_menu.items[1],
+            MenuEntry::Checked {
+                id: MENU_LANGUAGE_EN,
+                checked: true,
+                ..
+            }
+        ));
 
         assert_every_action_has_a_handler(&layout);
     }
@@ -793,8 +1074,9 @@ mod menu_tests {
     #[test]
     fn both_layouts_expose_every_webview_action_once() {
         for platform in [MenuPlatform::Mac, MenuPlatform::Other] {
-            let layout = menu_layout(platform);
-            let ids: Vec<&str> = layout.iter().flat_map(action_ids).collect();
+            let labels = labels("test");
+            let layout = menu_layout(platform, &labels, AppLanguage::ZhCn, true);
+            let ids = layout_action_ids(&layout);
             for expected in MENU_ACTIONS {
                 assert_eq!(
                     ids.iter().filter(|id| *id == expected).count(),
@@ -803,5 +1085,95 @@ mod menu_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn startup_menu_keeps_quit_on_the_close_guard_path() {
+        for platform in [MenuPlatform::Mac, MenuPlatform::Other] {
+            let layout = startup_layout(platform);
+            let ids = layout_action_ids(&layout);
+            assert_eq!(
+                ids.iter().filter(|id| **id == MENU_QUIT).count(),
+                1,
+                "startup menu must expose exactly one custom Quit on {platform:?}"
+            );
+            assert!(ids.contains(&MENU_CLOSE_WINDOW));
+            assert!(!ids.contains(&MENU_ABOUT));
+            assert_every_action_has_a_handler(&layout);
+        }
+    }
+
+    #[test]
+    fn startup_quit_routes_through_the_close_guard() {
+        let source = include_str!("lib.rs");
+        let arm = source
+            .split("if id == MENU_QUIT")
+            .nth(1)
+            .expect("the menu handler must special-case MENU_QUIT");
+        assert!(
+            arm[..arm.len().min(400)].contains("commands::close::request_close"),
+            "MENU_QUIT must route through CloseGuard, not the platform default"
+        );
+    }
+
+    #[test]
+    fn window_titles_resolve_pending_tokens_and_missing_records() {
+        use crate::ipc::dto::{FilePayload, LineEnding, TextEncoding, TextFormat};
+
+        fn payload(path: &str, token: &str) -> FilePayload {
+            FilePayload {
+                doc_token: token.to_string(),
+                path: path.to_string(),
+                text: "hello\n".to_string(),
+                format: TextFormat {
+                    encoding: TextEncoding::Utf8,
+                    has_bom: false,
+                    eol: LineEnding::Lf,
+                },
+                mixed_eol: false,
+                hash: "a".repeat(64),
+                size: 6,
+                text_units: 6,
+                mtime_ms: 1_700_000_000_000,
+                read_only: false,
+                read_only_reason: None,
+            }
+        }
+
+        let labels = labels("zh");
+        let sessions = state::WindowSessions::new();
+        let registry = state::DocumentRegistry::new();
+
+        assert_eq!(
+            resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
+            Some("zh-app")
+        );
+        assert_eq!(
+            resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
+            Some("zh-about")
+        );
+
+        sessions.stage("doc-pending", payload("/docs/pending.md", "pending-token"));
+        assert_eq!(
+            resolve_window_title("doc-pending", &labels, &sessions, &registry).as_deref(),
+            Some("pending.md — zh-app")
+        );
+
+        sessions.set_token("doc-missing", "missing-token".to_string());
+        assert_eq!(
+            resolve_window_title("doc-missing", &labels, &sessions, &registry),
+            None,
+            "a token without a registry record must keep the current title"
+        );
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("note.md");
+        std::fs::write(&path, "hello\n").expect("fixture");
+        let opened = registry.open_path(path).expect("fixture must open");
+        sessions.set_token("doc-token", opened.doc_token.clone());
+        assert_eq!(
+            resolve_window_title("doc-token", &labels, &sessions, &registry).as_deref(),
+            Some("note.md — zh-app")
+        );
     }
 }

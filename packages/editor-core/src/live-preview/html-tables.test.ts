@@ -17,7 +17,9 @@ afterEach(() => {
 function stateFor(doc: string) {
   const state = createEditorState({ doc });
   ensureSyntaxTree(state, state.doc.length, 10_000);
-  return state;
+  // `ensureSyntaxTree` advances the parse context, not the state field; an
+  // empty transaction adopts the completed tree for `syntaxTree(state)`.
+  return state.update({}).state;
 }
 
 const TABLE = `<table>

@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import { renderInlineMarkdown } from "./inline-render";
@@ -101,6 +102,7 @@ function buildDefinitionLists(state: EditorState): DefinitionListState {
 
   const ranges: DefinitionRange[] = [];
   const decorations: ReturnType<Decoration["range"]>[] = [];
+  const copy = state.facet(editorUiCopy);
   const frontMatter = readFrontMatter(state.doc);
   const details = readDetailsBlocks(state);
 
@@ -132,7 +134,7 @@ function buildDefinitionLists(state: EditorState): DefinitionListState {
         decorations.push(
           Decoration.replace({
             block: true,
-            widget: new DefinitionListWidget(data, range.from),
+            widget: new DefinitionListWidget(copy, data, range.from),
           }).range(range.from, range.to),
         );
       }
@@ -150,6 +152,7 @@ function buildDefinitionLists(state: EditorState): DefinitionListState {
 
 class DefinitionListWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly data: DefinitionListData,
     private readonly from: number,
   ) {
@@ -159,6 +162,7 @@ class DefinitionListWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof DefinitionListWidget &&
+      other.copy.version === this.copy.version &&
       other.from === this.from &&
       JSON.stringify(other.data) === JSON.stringify(this.data)
     );
@@ -167,7 +171,7 @@ class DefinitionListWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const list = document.createElement("dl");
     list.className = "cm-md-definition-list";
-    list.title = "点击编辑定义列表源码";
+    list.title = this.copy.definitionList.editSource;
 
     list.addEventListener("mousedown", (event) => {
       if (event.button !== 0) {
@@ -184,13 +188,13 @@ class DefinitionListWidget extends WidgetType {
 
     const term = document.createElement("dt");
     term.className = "cm-md-definition-term";
-    renderInlineMarkdown(term, this.data.terms.join(" / "));
+    renderInlineMarkdown(term, this.data.terms.join(" / "), this.copy);
     item.append(term);
 
     for (const definition of this.data.definitions) {
       const description = document.createElement("dd");
       description.className = "cm-md-definition-desc";
-      renderInlineMarkdown(description, definition);
+      renderInlineMarkdown(description, definition, this.copy);
       item.append(description);
     }
 
@@ -207,7 +211,7 @@ export const definitionListPreview = StateField.define<DefinitionListState>({
   create: buildDefinitionLists,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildDefinitionLists(transaction.state);
     }
 

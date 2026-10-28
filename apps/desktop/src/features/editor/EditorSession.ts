@@ -4,10 +4,13 @@ import {
   createEditorState,
   LP_MAX_UNITS,
   livePreview,
+  setEditorUiCopyEffect,
   setModeEffect,
+  setPlaceholderEffect,
   setReadOnlyEffect,
   setThemeEffect,
   themeExtension,
+  type EditorUiCopy,
 } from "@qingmo/editor-core";
 import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
 
@@ -71,6 +74,8 @@ export interface EditorSessionOptions {
   placeholder?: string;
   /** Marks this session as an in-memory untitled document. */
   untitledTitle?: string;
+  /** Initial Widget/block copy; the locale hook replaces it on changes. */
+  uiCopy?: EditorUiCopy;
 }
 
 function fileNameOf(path: string): string {
@@ -137,7 +142,10 @@ export class EditorSession {
   private readonly docChangedListeners = new Set<() => void>();
   private readonly extraExtensions: readonly Extension[];
   private readonly statusThrottleMs: number;
-  private readonly placeholder: string | undefined;
+  private placeholder: string | undefined;
+  private pendingPlaceholder: string | null = null;
+  private uiCopy: EditorUiCopy | undefined;
+  private pendingUiCopy: EditorUiCopy | null = null;
   private metadata: EditorMetadataSnapshot;
   private state: EditorState;
   private snapshot: EditorSessionSnapshot;
@@ -146,6 +154,7 @@ export class EditorSession {
   private theme: "light" | "dark" = "light";
   private themeApplied = false;
   private view: EditorView | null = null;
+  private compositionCleanup: (() => void) | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
 
@@ -154,6 +163,7 @@ export class EditorSession {
     this.statusThrottleMs = options.statusThrottleMs ?? STATUS_THROTTLE_MS;
     this.extraExtensions = options.extensions ?? [];
     this.placeholder = options.placeholder;
+    this.uiCopy = options.uiCopy;
     this.untitled = options.untitledTitle !== undefined;
 
     this.state = createEditorState({
@@ -161,6 +171,7 @@ export class EditorSession {
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
+      ...(this.uiCopy !== undefined ? { uiCopy: this.uiCopy } : {}),
     });
 
     const selection = selectionOf(this.state);
@@ -318,6 +329,7 @@ export class EditorSession {
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
+      ...(this.uiCopy !== undefined ? { uiCopy: this.uiCopy } : {}),
     });
     if (this.themeApplied) {
       state = state.update({ effects: setThemeEffect(themeExtension(this.theme)) }).state;
@@ -364,6 +376,7 @@ export class EditorSession {
     if (this.view) {
       throw new Error("EditorSession already has an attached EditorView");
     }
+    this.attachCompositionListener(view);
     this.attachUpdateListener(view);
     return () => this.detach(view);
   }
@@ -372,6 +385,7 @@ export class EditorSession {
     if (view && this.view !== view) {
       return;
     }
+    this.compositionCleanup?.();
     this.view = null;
   }
 
@@ -435,6 +449,50 @@ export class EditorSession {
     }
   }
 
+  /**
+   * Reconfigures the placeholder compartment for an untitled draft. Named
+   * documents never show a hint, so they ignore this call. While an IME
+   * composition is active the effect is deferred to `compositionend`; the
+   * document, selection and undo history are untouched either way.
+   */
+  applyPlaceholder(text: string): void {
+    if (this.disposed || !this.untitled) {
+      return;
+    }
+    if (this.placeholder === text && this.pendingPlaceholder === null) {
+      return;
+    }
+    this.placeholder = text;
+    this.pendingPlaceholder = text;
+    this.flushPlaceholder();
+  }
+
+  /**
+   * Swaps the Widget/block copy in place. Like the placeholder, the effect is
+   * deferred while an IME composition is active, and the document, selection
+   * and undo history are untouched.
+   */
+  applyUiCopy(copy: EditorUiCopy): void {
+    if (this.disposed || this.uiCopy?.version === copy.version) {
+      return;
+    }
+    this.uiCopy = copy;
+    this.pendingUiCopy = copy;
+    this.flushUiCopy();
+  }
+
+  /**
+   * Renames the in-memory untitled draft without touching `docId`/`docToken`.
+   * The status bar reads `fileName` from the same immutable snapshot.
+   */
+  applyUntitledTitle(title: string): void {
+    if (this.disposed || !this.untitled || this.metadata.fileName === title) {
+      return;
+    }
+    this.metadata = Object.freeze({ ...this.metadata, fileName: title });
+    this.publish({ fileName: title });
+  }
+
   /** SaveCoordinator subscribes here; the session never imports it. */
   onDocChanged(listener: () => void): () => void {
     if (this.disposed) {
@@ -488,10 +546,59 @@ export class EditorSession {
       clearTimeout(this.statusTimer);
       this.statusTimer = null;
     }
+    this.compositionCleanup?.();
+    this.pendingPlaceholder = null;
+    this.pendingUiCopy = null;
     this.listeners.clear();
     this.statusListeners.clear();
     this.docChangedListeners.clear();
     this.view = null;
+  }
+
+  private attachCompositionListener(view: EditorView): void {
+    const onCompositionEnd = (): void => {
+      this.flushPlaceholder();
+      this.flushUiCopy();
+    };
+    view.contentDOM.addEventListener("compositionend", onCompositionEnd);
+    this.compositionCleanup = () => {
+      view.contentDOM.removeEventListener("compositionend", onCompositionEnd);
+      this.compositionCleanup = null;
+    };
+  }
+
+  private flushPlaceholder(): void {
+    if (this.disposed || !this.untitled || this.pendingPlaceholder === null) {
+      return;
+    }
+    if (this.view?.composing) {
+      return;
+    }
+    const text = this.pendingPlaceholder;
+    this.pendingPlaceholder = null;
+    const effect = setPlaceholderEffect(text);
+    if (this.view) {
+      this.view.dispatch({ effects: effect });
+    } else {
+      this.state = this.state.update({ effects: effect }).state;
+    }
+  }
+
+  private flushUiCopy(): void {
+    if (this.disposed || this.pendingUiCopy === null) {
+      return;
+    }
+    if (this.view?.composing) {
+      return;
+    }
+    const copy = this.pendingUiCopy;
+    this.pendingUiCopy = null;
+    const effect = setEditorUiCopyEffect(copy);
+    if (this.view) {
+      this.view.dispatch({ effects: effect });
+    } else {
+      this.state = this.state.update({ effects: effect }).state;
+    }
   }
 
   private attachUpdateListener(view: EditorView): void {
@@ -551,7 +658,7 @@ export class EditorSession {
     patch: Partial<
       Pick<
         EditorSessionSnapshot,
-        "saveState" | "selection" | "cursor" | "largeFile" | "livePreview"
+        "saveState" | "selection" | "cursor" | "largeFile" | "livePreview" | "fileName"
       >
     >,
     immediateStatus = false,
@@ -561,13 +668,15 @@ export class EditorSession {
     const cursor = patch.cursor ?? this.snapshot.cursor;
     const largeFile = patch.largeFile ?? this.snapshot.largeFile;
     const livePreview = patch.livePreview ?? this.snapshot.livePreview;
+    const fileName = patch.fileName ?? this.snapshot.fileName;
 
     if (
       saveState === this.snapshot.saveState &&
       sameSelection(selection, this.snapshot.selection) &&
       sameCursor(cursor, this.snapshot.cursor) &&
       largeFile === this.snapshot.largeFile &&
-      livePreview === this.snapshot.livePreview
+      livePreview === this.snapshot.livePreview &&
+      fileName === this.snapshot.fileName
     ) {
       return;
     }
@@ -578,6 +687,7 @@ export class EditorSession {
       dirty: saveState !== "clean" && saveState !== "readonly",
       largeFile,
       livePreview,
+      fileName,
       selection,
       cursor,
       version: this.snapshot.version + 1,

@@ -2,14 +2,28 @@ export {
   createEditorState,
   modeCompartment,
   normalizeLineEndings,
+  placeholderCompartment,
   readOnlyCompartment,
   readOnlyExtensions,
   setModeEffect,
+  setPlaceholderEffect,
   setReadOnlyEffect,
   setThemeEffect,
+  setEditorUiCopyEffect,
   themeCompartment,
+  uiCopyCompartment,
 } from "./createEditor";
 export type { CreateEditorStateOptions } from "./createEditor";
+export {
+  DEFAULT_EDITOR_UI_COPY,
+  EDITOR_COPY_SCHEMA_VERSION,
+  editorUiCopy,
+  localizeWidget,
+  CopyAwareWidget,
+  editorCopyChanged,
+  type EditorUiCopy,
+  type LocalizeWidgetOptions,
+} from "./i18n";
 export { basicExtensions, createBasicExtensions } from "./extensions/basic";
 export { codeLanguages, languageForFilename } from "./extensions/languages";
 export { markdownExtensions, qingmoHighlightStyle } from "./extensions/markdown";

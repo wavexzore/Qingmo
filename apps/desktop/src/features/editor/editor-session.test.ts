@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import type { FilePayload } from "@qingmo/shared";
 import { describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_EDITOR_UI_COPY, editorUiCopy, type EditorUiCopy } from "@qingmo/editor-core";
 import { EditorSession, UNTITLED_DOC_TOKEN } from "./EditorSession";
 
 function payload(overrides: Partial<FilePayload> = {}): FilePayload {
@@ -134,6 +135,133 @@ describe("EditorSession", () => {
     expect(session.editorState.doc.length).toBe(0);
     expect(session.editorState.facet(EditorState.readOnly)).toBe(false);
     expect(session.editorState.facet(EditorView.editable)).toBe(true);
+  });
+
+  it("swaps the untitled placeholder and name without touching document identity", () => {
+    const session = EditorSession.createUntitled("未命名", { placeholder: "开始写作…" });
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      expect(parent.querySelector(".cm-placeholder")?.textContent).toBe("开始写作…");
+      const listener = vi.fn();
+      session.subscribe(listener);
+      const before = session.getSnapshot();
+
+      session.applyPlaceholder("Start writing…");
+      session.applyUntitledTitle("Untitled");
+
+      expect(parent.querySelector(".cm-placeholder")?.textContent).toBe("Start writing…");
+      expect(session.readText()).toBe("");
+      expect(session.getSnapshot()).toMatchObject({
+        docId: "untitled",
+        docToken: UNTITLED_DOC_TOKEN,
+        fileName: "Untitled",
+      });
+      expect(session.getSnapshot().version).toBe(before.version + 1);
+      expect(listener).toHaveBeenCalled();
+
+      session.applyUntitledTitle("Untitled");
+      expect(session.getSnapshot().version).toBe(before.version + 1);
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+  });
+
+  it("ignores placeholder and title updates for a named document", () => {
+    const session = EditorSession.create(payload({ text: "" }));
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      session.applyPlaceholder("Start writing…");
+      session.applyUntitledTitle("Untitled");
+
+      expect(parent.querySelector(".cm-placeholder")).toBeNull();
+      expect(session.getSnapshot()).toMatchObject({
+        docId: "/docs/note.md",
+        fileName: "note.md",
+      });
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+  });
+
+  it("defers a placeholder swap until the IME composition ends", () => {
+    const session = EditorSession.createUntitled("未命名", { placeholder: "开始写作…" });
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      // jsdom cannot drive CM6's real IME bookkeeping, so pin the observable
+      // condition the session guards on and exercise its deferral path.
+      Object.defineProperty(view, "composing", {
+        configurable: true,
+        get: () => true,
+      });
+      expect(view.composing).toBe(true);
+
+      session.applyPlaceholder("Start writing…");
+      expect(parent.querySelector(".cm-placeholder")?.textContent).toBe("开始写作…");
+
+      Object.defineProperty(view, "composing", {
+        configurable: true,
+        get: () => false,
+      });
+      view.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { data: "a" }));
+      expect(view.composing).toBe(false);
+      expect(parent.querySelector(".cm-placeholder")?.textContent).toBe("Start writing…");
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+  });
+
+  it("defers a copy swap until the IME composition ends", () => {
+    const session = EditorSession.createUntitled("未命名");
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+    const zhCopy: EditorUiCopy = {
+      ...DEFAULT_EDITOR_UI_COPY,
+      version: "zh-CN:1",
+      language: "zh-CN",
+    };
+
+    try {
+      expect(view.state.facet(editorUiCopy)).toBe(DEFAULT_EDITOR_UI_COPY);
+
+      Object.defineProperty(view, "composing", {
+        configurable: true,
+        get: () => true,
+      });
+      session.applyUiCopy(zhCopy);
+      expect(view.state.facet(editorUiCopy)).toBe(DEFAULT_EDITOR_UI_COPY);
+
+      Object.defineProperty(view, "composing", {
+        configurable: true,
+        get: () => false,
+      });
+      view.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+      expect(view.state.facet(editorUiCopy)).toBe(zhCopy);
+      expect(session.readText()).toBe("");
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
   });
 
   it("adopts a saved path without replacing EditorState or undo history", () => {

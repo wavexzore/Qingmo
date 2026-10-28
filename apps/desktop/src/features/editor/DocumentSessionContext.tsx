@@ -12,6 +12,8 @@ import type { FilePayload } from "@qingmo/shared";
 
 import { useAppServices } from "../../app/AppServices";
 import i18n from "../../i18n";
+import { buildEditorUiCopy } from "../../i18n/editorCopy";
+import { normalizeLanguage } from "../../i18n/language";
 import type { IpcPort } from "../../lib/ipc/port";
 import { EditorSession } from "./EditorSession";
 import { SaveCoordinator } from "./save/SaveCoordinator";
@@ -76,6 +78,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
     startSession(
       EditorSession.createUntitled(i18n.t("editor:empty.title"), {
         placeholder: i18n.t("editor:empty.placeholder"),
+        uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
       }),
     );
   }, [startSession]);
@@ -99,7 +102,11 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
             return;
           }
           if (payload) {
-            startSession(EditorSession.create(payload));
+            startSession(
+              EditorSession.create(payload, {
+                uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
+              }),
+            );
           } else {
             // Only reachable after a manual reload, which already discards
             // the webview session; keep the window usable.

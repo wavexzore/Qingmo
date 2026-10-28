@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { readDetailsBlocks } from "./details";
 import { renderInlineMarkdown } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
@@ -96,6 +97,7 @@ export function readMediaBlocks(state: EditorState): readonly MediaBlock[] {
     return [];
   }
   const doc = state.doc;
+  const copy = state.facet(editorUiCopy);
   const root = syntaxTree(state).topNode as unknown as MarkdownNode;
   const details = readDetailsBlocks(state);
   const blocks: MediaBlock[] = [];
@@ -156,9 +158,9 @@ export function readMediaBlocks(state: EditorState): readonly MediaBlock[] {
     const src = imageLike ? safeUrl(imgAttributes.get("src")) : safeUrl(attributes.get("src"));
     const alt =
       (imgAttributes.get("alt") ?? attributes.get("alt") ?? "").trim() ||
-      (kind === "iframe" ? (src ?? "外部页面") : "") ||
+      (kind === "iframe" ? (src ?? copy.media.externalPage) : "") ||
       fileNameOf(src) ||
-      "媒体";
+      copy.media.image;
     const captionMatch = kind === "figure" ? FIGCAPTION.exec(raw) : null;
     const caption = captionMatch ? (captionMatch[1] ?? "").trim() || null : null;
 
@@ -214,13 +216,14 @@ function buildMedia(state: EditorState): MediaState {
     return emptyState();
   }
 
+  const copy = state.facet(editorUiCopy);
   const decorations: ReturnType<Decoration["range"]>[] = [];
   for (const range of ranges) {
     if (!selectionTouches(state, range)) {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new MediaWidget(range),
+          widget: new MediaWidget(copy, range),
         }).range(range.from, range.to),
       );
     }
@@ -234,26 +237,30 @@ function buildMedia(state: EditorState): MediaState {
   };
 }
 
-function mediaLabel(kind: MediaKind): string {
+function mediaLabel(kind: MediaKind, copy: EditorUiCopy): string {
   switch (kind) {
     case "video":
-      return "视频";
+      return copy.media.video;
     case "audio":
-      return "音频";
+      return copy.media.audio;
     case "picture":
-      return "图片组";
+      return copy.media.gallery;
     case "figure":
-      return "图片配文";
+      return copy.media.figure;
     case "img":
-      return "图片";
+      return copy.media.image;
     case "center":
-      return "居中图片";
+      return copy.media.centeredImage;
     default:
-      return "外部嵌入";
+      return copy.media.embed;
   }
 }
 
-function appendFallback(container: HTMLElement, block: MediaBlock): HTMLElement {
+function appendFallback(
+  container: HTMLElement,
+  block: MediaBlock,
+  copy: EditorUiCopy,
+): HTMLElement {
   const fallback = document.createElement("div");
   fallback.className = "cm-md-media-fallback";
 
@@ -263,8 +270,7 @@ function appendFallback(container: HTMLElement, block: MediaBlock): HTMLElement 
   icon.textContent = block.kind === "audio" ? "♪" : block.kind === "iframe" ? "↗" : "▧";
 
   const label = document.createElement("span");
-  label.textContent =
-    block.kind === "iframe" ? "出于安全考虑，外部页面不会在编辑器中加载" : block.alt;
+  label.textContent = block.kind === "iframe" ? copy.media.externalBlocked : block.alt;
   if (block.kind === "iframe") {
     label.title = block.alt;
   }
@@ -274,12 +280,12 @@ function appendFallback(container: HTMLElement, block: MediaBlock): HTMLElement 
   return fallback;
 }
 
-function sourceButton(view: EditorView, from: number): HTMLButtonElement {
+function sourceButton(view: EditorView, from: number, copy: EditorUiCopy): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cm-md-media-edit";
-  button.textContent = "源码";
-  button.title = "编辑媒体源码";
+  button.textContent = copy.media.source;
+  button.title = copy.media.editSource;
   button.addEventListener("mousedown", (event) => {
     if (event.button !== 0) {
       return;
@@ -417,7 +423,12 @@ function createMediaImage(block: MediaBlock): HTMLImageElement {
   return image;
 }
 
-function appendImage(container: HTMLElement, block: MediaBlock, fallback: HTMLElement): void {
+function appendImage(
+  container: HTMLElement,
+  block: MediaBlock,
+  fallback: HTMLElement,
+  copy: EditorUiCopy,
+): void {
   const image = createMediaImage(block);
   const showFallback = () => {
     image.remove();
@@ -436,7 +447,7 @@ function appendImage(container: HTMLElement, block: MediaBlock, fallback: HTMLEl
     figure.append(image);
     if (block.caption) {
       const caption = document.createElement("figcaption");
-      renderInlineMarkdown(caption, block.caption);
+      renderInlineMarkdown(caption, block.caption, copy);
       figure.append(caption);
     }
     container.append(figure);
@@ -455,12 +466,19 @@ function appendImage(container: HTMLElement, block: MediaBlock, fallback: HTMLEl
 }
 
 class MediaWidget extends WidgetType {
-  constructor(private readonly block: MediaBlock) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly block: MediaBlock,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
-    return other instanceof MediaWidget && other.block.raw === this.block.raw;
+    return (
+      other instanceof MediaWidget &&
+      other.copy.version === this.copy.version &&
+      other.block.raw === this.block.raw
+    );
   }
 
   override toDOM(view: EditorView): HTMLElement {
@@ -473,7 +491,7 @@ class MediaWidget extends WidgetType {
 
     const badge = document.createElement("span");
     badge.className = "cm-md-media-badge";
-    badge.textContent = mediaLabel(this.block.kind);
+    badge.textContent = mediaLabel(this.block.kind, this.copy);
 
     const name = document.createElement("span");
     name.className = "cm-md-media-name";
@@ -482,11 +500,11 @@ class MediaWidget extends WidgetType {
         ? (this.block.src ?? this.block.alt)
         : fileNameOf(this.block.src) || this.block.alt;
 
-    header.append(badge, name, sourceButton(view, this.block.from));
+    header.append(badge, name, sourceButton(view, this.block.from, this.copy));
 
     const body = document.createElement("div");
     body.className = "cm-md-media-body";
-    const fallback = appendFallback(body, this.block);
+    const fallback = appendFallback(body, this.block, this.copy);
     fallback.hidden = true;
 
     if (this.block.kind === "picture") {
@@ -500,7 +518,7 @@ class MediaWidget extends WidgetType {
       this.block.kind === "figure" ||
       this.block.kind === "center"
     ) {
-      appendImage(body, this.block, fallback);
+      appendImage(body, this.block, fallback, this.copy);
     } else {
       appendVideoOrAudio(body, this.block, fallback);
     }
@@ -521,7 +539,7 @@ export const mediaBlockPreview = StateField.define<MediaState>({
   create: buildMedia,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildMedia(transaction.state);
     }
     if (!transaction.newSelection.eq(transaction.startState.selection)) {

@@ -55,6 +55,8 @@ export async function emitMenuAction(
     | "theme.light"
     | "theme.dark"
     | "theme.system"
+    | "language.zh-CN"
+    | "language.en"
     | "app.openLogs",
 ): Promise<void> {
   await page.evaluate((next) => {
@@ -129,6 +131,17 @@ export async function getCloseConfirms(page: Page): Promise<Array<{ allow: boole
 /** Live Preview modes reported to the native menu, in call order. */
 export async function getLivePreviewMenuCalls(page: Page): Promise<boolean[]> {
   return page.evaluate(() => window.__QINGMO_E2E__?.getLivePreviewMenuCalls() ?? []);
+}
+
+/** Locale projections sent to the native shell, in call order. */
+export async function getLocaleCalls(
+  page: Page,
+): Promise<Array<{ language: string; labels: Record<string, string> }>> {
+  return page.evaluate(() => window.__QINGMO_E2E__?.getLocaleCalls() ?? []);
+}
+
+export async function setLogFileCount(page: Page, count: number): Promise<void> {
+  await page.evaluate((next) => window.__QINGMO_E2E__?.setLogFileCount(next), count);
 }
 
 export async function failSaveAlways(page: Page, code = "IO"): Promise<void> {

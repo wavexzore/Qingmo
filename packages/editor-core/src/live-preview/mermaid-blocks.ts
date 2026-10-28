@@ -2,7 +2,13 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
-import { currentMermaidTheme, renderMermaid } from "./mermaid-render";
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import {
+  currentMermaidTheme,
+  MermaidRenderError,
+  renderMermaid,
+  type MermaidRenderErrorCode,
+} from "./mermaid-render";
 import { sanitizeMermaidSvg } from "./mermaid-sanitize";
 import { diagramInfo } from "./mermaid-theme";
 import { readDetailsBlocks } from "./details";
@@ -14,6 +20,20 @@ import type { MarkdownNode } from "./markdown-node";
  * table and math previews.
  */
 export const MERMAID_BLOCK_MAX_UNITS = 200_000;
+
+const MERMAID_ERROR_COPY: Record<MermaidRenderErrorCode, keyof EditorUiCopy["mermaid"]> = {
+  unavailable: "unavailable",
+  "ready-timeout": "readyTimeout",
+  "render-timeout": "renderTimeout",
+  "render-failed": "renderFailed",
+  "unsafe-svg": "unsafeSvg",
+  "invalid-svg": "invalidSvg",
+};
+
+export function mermaidErrorMessage(copy: EditorUiCopy, error: unknown): string {
+  const code = error instanceof MermaidRenderError ? error.code : "render-failed";
+  return copy.mermaid[MERMAID_ERROR_COPY[code]];
+}
 
 interface MermaidRange {
   from: number;
@@ -86,6 +106,7 @@ function buildMermaidBlocks(state: EditorState): MermaidBlockState {
   const ranges: MermaidRange[] = [];
   const blocked: MermaidRange[] = [];
   const decorations: ReturnType<Decoration["range"]>[] = [];
+  const copy = state.facet(editorUiCopy);
   const frontMatter = readFrontMatter(state.doc);
   const details = readDetailsBlocks(state);
 
@@ -111,7 +132,7 @@ function buildMermaidBlocks(state: EditorState): MermaidBlockState {
         decorations.push(
           Decoration.replace({
             block: true,
-            widget: new MermaidBlockWidget(range.code, range.from, range.to),
+            widget: new MermaidBlockWidget(copy, range.code, range.from, range.to),
           }).range(range.from, range.to),
         );
       }
@@ -165,13 +186,13 @@ function createSkeleton(): HTMLElement {
   return skeleton;
 }
 
-function createError(message: string, onEdit: () => void): HTMLElement {
+function createError(message: string, copy: EditorUiCopy, onEdit: () => void): HTMLElement {
   const box = document.createElement("div");
   box.className = "cm-md-mermaid-error";
   const text = document.createElement("span");
   text.className = "cm-md-mermaid-error-message";
   text.textContent = message;
-  const edit = createTool("编辑源码", "编辑 Mermaid 源码", "cm-md-mermaid-edit");
+  const edit = createTool(copy.mermaid.edit, copy.mermaid.editTitle, "cm-md-mermaid-edit");
   edit.addEventListener("mousedown", (event) => event.stopPropagation());
   edit.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -201,6 +222,7 @@ class MermaidBlockWidget extends WidgetType {
   private readonly teardowns = new WeakMap<HTMLElement, () => void>();
 
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly code: string,
     private readonly from: number,
     private readonly to: number,
@@ -211,6 +233,7 @@ class MermaidBlockWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof MermaidBlockWidget &&
+      other.copy.version === this.copy.version &&
       other.code === this.code &&
       other.from === this.from &&
       other.to === this.to
@@ -218,7 +241,7 @@ class MermaidBlockWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
-    const info = diagramInfo(this.code);
+    const info = diagramInfo(this.code, this.copy);
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-mermaid";
     wrapper.tabIndex = 0;
@@ -255,15 +278,15 @@ class MermaidBlockWidget extends WidgetType {
     actions.className = "cm-md-mermaid-actions";
     const hint = document.createElement("span");
     hint.className = "cm-md-mermaid-hint";
-    hint.textContent = "点击「源码」编辑";
+    hint.textContent = this.copy.mermaid.hintEdit;
 
     const tools = document.createElement("div");
     tools.className = "cm-md-mermaid-tools";
-    const zoomOut = createTool("−", "缩小图表");
-    const zoomReset = createTool("100%", "恢复 100%");
-    const zoomIn = createTool("+", "放大图表");
-    const fitWidth = createTool("适应", "适应画布宽度");
-    const source = createTool("源码", "编辑 Mermaid 源码");
+    const zoomOut = createTool("−", this.copy.mermaid.zoomOut);
+    const zoomReset = createTool("100%", this.copy.mermaid.zoomReset);
+    const zoomIn = createTool("+", this.copy.mermaid.zoomIn);
+    const fitWidth = createTool(this.copy.mermaid.fitWidth, this.copy.mermaid.fitTitle);
+    const source = createTool(this.copy.mermaid.source, this.copy.mermaid.sourceTitle);
     tools.append(zoomOut, zoomReset, zoomIn, fitWidth, source);
     actions.append(hint, tools);
     head.append(title, actions);
@@ -384,7 +407,7 @@ class MermaidBlockWidget extends WidgetType {
       }
 
       const overflows = canvas.scrollWidth > canvas.clientWidth + 1;
-      hint.textContent = overflows ? "可横向滚动查看" : "点击「源码」编辑";
+      hint.textContent = overflows ? this.copy.mermaid.hintScroll : this.copy.mermaid.hintEdit;
     };
 
     /**
@@ -474,7 +497,7 @@ class MermaidBlockWidget extends WidgetType {
 
     const setKindState = (failed: boolean): void => {
       head.classList.toggle("is-error", failed);
-      kind.textContent = failed ? "渲染失败" : info.label;
+      kind.textContent = failed ? this.copy.mermaid.renderFailed : info.label;
     };
 
     const paint = async (): Promise<void> => {
@@ -497,14 +520,14 @@ class MermaidBlockWidget extends WidgetType {
         }
         const sanitized = sanitizeMermaidSvg(svg);
         if (!sanitized) {
-          throw new Error("图表内容未通过安全过滤");
+          throw new MermaidRenderError("unsafe-svg");
         }
         const parsed = new DOMParser().parseFromString(sanitized, "image/svg+xml");
         if (
           parsed.querySelector("parsererror") ||
           parsed.documentElement.localName.toLowerCase() !== "svg"
         ) {
-          throw new Error("图表 SVG 无效");
+          throw new MermaidRenderError("invalid-svg");
         }
         const imported = document.importNode(
           parsed.documentElement,
@@ -521,9 +544,9 @@ class MermaidBlockWidget extends WidgetType {
         if (!figure.isConnected || current !== generation) {
           return;
         }
-        const raw = error instanceof Error ? error.message : String(error);
-        const message = raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
-        figure.replaceChildren(createError(message, openSource));
+        figure.replaceChildren(
+          createError(mermaidErrorMessage(this.copy, error), this.copy, openSource),
+        );
         naturalWidth = 0;
         canvas.classList.remove("is-refreshing");
         delete wrapper.dataset.mermaidTheme;
@@ -566,7 +589,7 @@ class MermaidBlockWidget extends WidgetType {
     // The plate is a self-contained rendered artifact: clicking the diagram,
     // selecting its labels or dragging its zoomed scrollbar must not move the
     // editor selection into the fence and reveal the source. Only the explicit
-    // 源码 button (or the error-state edit button) dispatches `openSource`.
+    // “Source” button (or the error-state edit button) dispatches `openSource`.
     return true;
   }
 }
@@ -575,7 +598,7 @@ export const mermaidBlockPreview = StateField.define<MermaidBlockState>({
   create: buildMermaidBlocks,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildMermaidBlocks(transaction.state);
     }
 

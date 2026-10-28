@@ -9,6 +9,7 @@ import {
 } from "@codemirror/view";
 
 import { LP_MAX_UNITS, SYNTAX_TREE_BUDGET_MS } from "../limits";
+import { editorUiCopy, type EditorUiCopy } from "../i18n";
 import { commentBlockPreview } from "./comment-blocks";
 import { definitionListPreview } from "./definition-lists";
 import { detailsBlockPreview } from "./details";
@@ -29,6 +30,7 @@ interface CacheKey {
   tree: SyntaxTreeRef;
   viewport: string;
   selections: string;
+  uiCopy: string;
 }
 
 interface LivePreviewBuild {
@@ -46,6 +48,7 @@ function cacheKey(state: EditorState, ranges: readonly VisibleRange[]): CacheKey
     tree: syntaxTree(state),
     viewport: rangeKey(ranges),
     selections: rangeKey(state.selection.ranges),
+    uiCopy: state.facet(editorUiCopy).version,
   };
 }
 
@@ -54,7 +57,8 @@ function sameKey(left: CacheKey, right: CacheKey): boolean {
     left.doc === right.doc &&
     left.tree === right.tree &&
     left.viewport === right.viewport &&
-    left.selections === right.selections
+    left.selections === right.selections &&
+    left.uiCopy === right.uiCopy
   );
 }
 
@@ -67,7 +71,7 @@ function emptyBuild(): LivePreviewBuild {
  * collected separately as atomic ranges so arrow keys and selection cannot
  * land inside a bullet, checkbox, rule, image or language badge.
  */
-function buildFromSpecs(specs: readonly DecorationSpec[]): LivePreviewBuild {
+function buildFromSpecs(specs: readonly DecorationSpec[], copy: EditorUiCopy): LivePreviewBuild {
   const decorations: ReturnType<Decoration["range"]>[] = [];
   const atomic: ReturnType<Decoration["range"]>[] = [];
 
@@ -91,7 +95,7 @@ function buildFromSpecs(specs: readonly DecorationSpec[]): LivePreviewBuild {
       continue;
     }
 
-    const widget = createLivePreviewWidget(spec.widget, spec.from, spec.to);
+    const widget = createLivePreviewWidget(spec.widget, spec.from, spec.to, copy);
     const decoration = Decoration.replace({ widget }).range(spec.from, spec.to);
     decorations.push(decoration);
     atomic.push(decoration);
@@ -113,8 +117,10 @@ export function buildLivePreviewDecorations(
   selectionRanges: readonly VisibleRange[],
   blockedRanges: readonly VisibleRange[] = [],
 ): DecorationSet {
-  return buildFromSpecs(collectDecorationSpecs(state, ranges, selectionRanges, blockedRanges))
-    .decorations;
+  return buildFromSpecs(
+    collectDecorationSpecs(state, ranges, selectionRanges, blockedRanges),
+    state.facet(editorUiCopy),
+  ).decorations;
 }
 
 function buildForView(view: EditorView): LivePreviewBuild {
@@ -144,7 +150,10 @@ function buildForView(view: EditorView): LivePreviewBuild {
     ...(state.field(mathBlockPreview, false)?.blocked ?? []),
     ...(state.field(mermaidBlockPreview, false)?.blocked ?? []),
   ];
-  return buildFromSpecs(collectDecorationSpecs(state, ranges, state.selection.ranges, blocked));
+  return buildFromSpecs(
+    collectDecorationSpecs(state, ranges, state.selection.ranges, blocked),
+    state.facet(editorUiCopy),
+  );
 }
 
 class LivePreviewViewPlugin {

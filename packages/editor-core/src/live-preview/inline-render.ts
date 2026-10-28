@@ -1,3 +1,4 @@
+import { DEFAULT_EDITOR_UI_COPY, type EditorUiCopy } from "../i18n";
 import { emojiForName } from "./emoji";
 
 const ESCAPED_CHAR = /^\\([\\`*_{}[\]()#+\-.!|>~^=])/;
@@ -55,8 +56,12 @@ export function inlineHtmlElement(tag: string): HTMLElement | null {
   return element;
 }
 
-export function renderInlineMarkdown(parent: HTMLElement, raw: string): void {
-  renderInlineTokens(parent, raw.replace(/\\\|/g, "|"));
+export function renderInlineMarkdown(
+  parent: HTMLElement,
+  raw: string,
+  copy: EditorUiCopy = DEFAULT_EDITOR_UI_COPY,
+): void {
+  renderInlineTokens(parent, raw.replace(/\\\|/g, "|"), copy);
 }
 
 function appendElement(
@@ -64,12 +69,13 @@ function appendElement(
   tag: string,
   className: string | null,
   content: string,
+  copy: EditorUiCopy,
 ): void {
   const element = document.createElement(tag);
   if (className) {
     element.className = className;
   }
-  renderInlineTokens(element, content);
+  renderInlineTokens(element, content, copy);
   parent.append(element);
 }
 
@@ -84,7 +90,12 @@ function appendText(parent: HTMLElement, className: string, text: string): void 
   parent.append(element);
 }
 
-function appendWikiLink(parent: HTMLElement, inner: string, embed: boolean): boolean {
+function appendWikiLink(
+  parent: HTMLElement,
+  inner: string,
+  embed: boolean,
+  copy: EditorUiCopy,
+): boolean {
   const [targetPart, alias] = inner.split("|", 2);
   const target = (targetPart ?? "").trim();
   if (!target) {
@@ -92,7 +103,7 @@ function appendWikiLink(parent: HTMLElement, inner: string, embed: boolean): boo
   }
   const wrapper = document.createElement("span");
   wrapper.className = embed ? "cm-md-wiki-link cm-md-wiki-embed" : "cm-md-wiki-link";
-  wrapper.title = embed ? `嵌入：${target}（不展开笔记内容）` : `双链：${target}`;
+  wrapper.title = embed ? copy.widgets.wikiEmbed(target) : copy.widgets.wikiLink(target);
 
   const icon = document.createElement("span");
   icon.className = "cm-md-wiki-icon";
@@ -114,7 +125,7 @@ function appendWikiLink(parent: HTMLElement, inner: string, embed: boolean): boo
  * Inline HTML is limited to a small tag whitelist without attributes;
  * everything else stays text.
  */
-function renderInlineTokens(parent: HTMLElement, text: string): void {
+function renderInlineTokens(parent: HTMLElement, text: string, copy: EditorUiCopy): void {
   let index = 0;
   let pending = "";
 
@@ -157,7 +168,7 @@ function renderInlineTokens(parent: HTMLElement, text: string): void {
 
     if ((match = WIKI_EMBED.exec(rest))) {
       flush();
-      if (appendWikiLink(parent, capture(match, 1), true)) {
+      if (appendWikiLink(parent, capture(match, 1), true, copy)) {
         index += match[0].length;
         continue;
       }
@@ -165,7 +176,7 @@ function renderInlineTokens(parent: HTMLElement, text: string): void {
 
     if ((match = WIKI_LINK.exec(rest))) {
       flush();
-      if (appendWikiLink(parent, capture(match, 1), false)) {
+      if (appendWikiLink(parent, capture(match, 1), false, copy)) {
         index += match[0].length;
         continue;
       }
@@ -176,7 +187,7 @@ function renderInlineTokens(parent: HTMLElement, text: string): void {
       const link = document.createElement("span");
       link.className = "cm-md-link";
       link.title = capture(match, 2);
-      renderInlineTokens(link, capture(match, 1));
+      renderInlineTokens(link, capture(match, 1), copy);
       parent.append(link);
       index += match[0].length;
       continue;
@@ -186,7 +197,7 @@ function renderInlineTokens(parent: HTMLElement, text: string): void {
       flush();
       const strong = document.createElement("strong");
       strong.className = "cm-md-strong";
-      appendElement(strong, "em", "cm-md-em", capture(match, 1));
+      appendElement(strong, "em", "cm-md-em", capture(match, 1), copy);
       parent.append(strong);
       index += match[0].length;
       continue;
@@ -194,42 +205,42 @@ function renderInlineTokens(parent: HTMLElement, text: string): void {
 
     if ((match = STRONG_STAR.exec(rest)) || (match = STRONG_UNDER.exec(rest))) {
       flush();
-      appendElement(parent, "strong", "cm-md-strong", capture(match, 1));
+      appendElement(parent, "strong", "cm-md-strong", capture(match, 1), copy);
       index += match[0].length;
       continue;
     }
 
     if ((match = STRIKE.exec(rest))) {
       flush();
-      appendElement(parent, "span", "cm-md-strike", capture(match, 1));
+      appendElement(parent, "span", "cm-md-strike", capture(match, 1), copy);
       index += match[0].length;
       continue;
     }
 
     if ((match = HIGHLIGHT.exec(rest))) {
       flush();
-      appendElement(parent, "mark", "cm-md-highlight", capture(match, 1));
+      appendElement(parent, "mark", "cm-md-highlight", capture(match, 1), copy);
       index += match[0].length;
       continue;
     }
 
     if ((match = EM_STAR.exec(rest)) || (match = EM_UNDER.exec(rest))) {
       flush();
-      appendElement(parent, "em", "cm-md-em", capture(match, 1));
+      appendElement(parent, "em", "cm-md-em", capture(match, 1), copy);
       index += match[0].length;
       continue;
     }
 
     if ((match = SUBSCRIPT.exec(rest))) {
       flush();
-      appendElement(parent, "sub", "cm-md-sub", capture(match, 1));
+      appendElement(parent, "sub", "cm-md-sub", capture(match, 1), copy);
       index += match[0].length;
       continue;
     }
 
     if ((match = SUPERSCRIPT.exec(rest))) {
       flush();
-      appendElement(parent, "sup", "cm-md-sup", capture(match, 1));
+      appendElement(parent, "sup", "cm-md-sup", capture(match, 1), copy);
       index += match[0].length;
       continue;
     }
@@ -238,7 +249,7 @@ function renderInlineTokens(parent: HTMLElement, text: string): void {
       flush();
       const element = inlineHtmlElement(capture(match, 1).toLowerCase());
       if (element) {
-        renderInlineTokens(element, capture(match, 2));
+        renderInlineTokens(element, capture(match, 2), copy);
         parent.append(element);
         index += match[0].length;
         continue;

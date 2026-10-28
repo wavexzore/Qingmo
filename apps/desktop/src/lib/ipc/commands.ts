@@ -2,6 +2,7 @@ import type {
   AboutInfo,
   AboutLink,
   AppError,
+  ApplyLocaleRequest,
   CloseRequestedPayload,
   FilePayload,
   LogEntry,
@@ -38,6 +39,7 @@ export const COMMANDS = {
   appLogsExport: "app_logs_export",
   appLogsOpenDir: "app_logs_open_dir",
   appLogsClear: "app_logs_clear",
+  appApplyLocale: "app_apply_locale",
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -62,6 +64,7 @@ export const COMMAND_NAMES = [
   COMMANDS.appLogsExport,
   COMMANDS.appLogsOpenDir,
   COMMANDS.appLogsClear,
+  COMMANDS.appApplyLocale,
 ] as const satisfies readonly CommandName[];
 
 export const EVENTS = {
@@ -96,6 +99,8 @@ export const MENU_ACTIONS = {
   themeDark: "theme.dark",
   themeSystem: "theme.system",
   logs: "app.openLogs",
+  languageZhCN: "language.zh-CN",
+  languageEn: "language.en",
 } as const;
 
 export type MenuAction = (typeof MENU_ACTIONS)[keyof typeof MENU_ACTIONS];
@@ -110,6 +115,8 @@ export const MENU_ACTION_NAMES = [
   MENU_ACTIONS.themeDark,
   MENU_ACTIONS.themeSystem,
   MENU_ACTIONS.logs,
+  MENU_ACTIONS.languageZhCN,
+  MENU_ACTIONS.languageEn,
 ] as const satisfies readonly MenuAction[];
 
 export interface CommandRequestMap {
@@ -132,6 +139,7 @@ export interface CommandRequestMap {
   [COMMANDS.appLogsExport]: { level?: LogLevel | null };
   [COMMANDS.appLogsOpenDir]: Record<string, never>;
   [COMMANDS.appLogsClear]: { keepDays?: number };
+  [COMMANDS.appApplyLocale]: { request: ApplyLocaleRequest };
 }
 
 export interface CommandResponseMap {
@@ -154,6 +162,7 @@ export interface CommandResponseMap {
   [COMMANDS.appLogsExport]: string;
   [COMMANDS.appLogsOpenDir]: null;
   [COMMANDS.appLogsClear]: number;
+  [COMMANDS.appApplyLocale]: null;
 }
 
 export type CommandError = AppError;
@@ -186,6 +195,7 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.appLogsExport]: commandPermission(COMMANDS.appLogsExport),
   [COMMANDS.appLogsOpenDir]: commandPermission(COMMANDS.appLogsOpenDir),
   [COMMANDS.appLogsClear]: commandPermission(COMMANDS.appLogsClear),
+  [COMMANDS.appApplyLocale]: commandPermission(COMMANDS.appApplyLocale),
 } as const satisfies Record<CommandName, string>;
 
 export type IpcInvoker = <K extends CommandName>(
