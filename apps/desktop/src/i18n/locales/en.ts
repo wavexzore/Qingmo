@@ -136,14 +136,19 @@ export const errors = {
 export const update = {
   banner: {
     kicker: "App update",
-    available: "Version {{version}} is available",
-    downloading: "Downloading the update…",
-    ready: "The update is downloaded and ready to install",
-    installing: "Installing the update…",
-    view: "View",
+    badge: "Universal",
+    availableTitle: "Qingmo {{version}} has been released",
+    availableHint: "Download it to install · writing is never interrupted",
+    downloadingTitle: "Downloading Qingmo {{version}}",
+    downloadingHint: "Downloaded {{percent}}%",
+    downloadingPreparing: "Preparing the download…",
+    readyTitle: "The update is ready",
+    readyHint: "Qingmo {{version}} is downloaded and verified · restart to finish",
+    installingTitle: "Installing the update…",
+    installingHint: "Keep Qingmo open",
+    view: "View update",
     later: "Later",
     install: "Install and restart",
-    progress: "Downloaded {{percent}}%",
     keepOpen: "Keep Qingmo open",
   },
   dialog: {
@@ -234,6 +239,9 @@ export const commandLabels = {
   update: {
     checkForUpdates: "Check for updates",
   },
+  app: {
+    openLogs: "View runtime logs",
+  },
   category: {
     file: "File",
     view: "View",
@@ -247,4 +255,48 @@ export const commandLabels = {
   },
 } as const;
 
-export const en = { common, editor, errors, update, commands: commandLabels, about };
+export const logs = {
+  kicker: "Diagnostics · Log",
+  title: "Runtime logs",
+  description:
+    "A record of what happens behind the page. Local only, rotated daily, kept for seven days.",
+  filter: "Level",
+  all: "All",
+  level: {
+    trace: "Trace",
+    debug: "Debug",
+    info: "Info",
+    warn: "Warn",
+    error: "Error",
+  },
+  stats: "{{total}} entries · {{errors}} errors · {{warns}} warnings",
+  unitEntries: "entries",
+  unitErrors: "errors",
+  unitWarns: "warnings",
+  files: "{{count}} files · {{size}}",
+  refresh: "Refresh",
+  loadingShort: "Loading…",
+  loading: "Reading logs…",
+  emptyTitle: "This page is empty",
+  empty: "Nothing at this level yet. Switch levels or wait for the next action.",
+  autoRefresh: "Auto refresh",
+  openShort: "Open",
+  openDir: "Open folder",
+  export: "Export",
+  clear: "Clear old logs",
+  confirmTitle: "Delete logs older than 7 days?",
+  confirm: "Delete",
+  cancel: "Cancel",
+  close: "Close",
+  toast: {
+    exported: "Logs exported to {{path}}",
+    exportFailed: "Could not export logs. Try again later.",
+    cleared: "Deleted {{count}} old log files",
+    clearFailed: "Could not clear logs. Try again later.",
+    openFailed: "Could not open the log folder. Try again later.",
+    loadFailed: "Could not read logs. Try again later.",
+    copied: "Copied this entry",
+  },
+} as const;
+
+export const en = { common, editor, errors, update, commands: commandLabels, about, logs };

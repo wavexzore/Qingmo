@@ -9,6 +9,7 @@ import type {
 import { COMMANDS, type MenuAction } from "../lib/ipc/commands";
 import { AppError as AppErrorClass } from "../lib/ipc/errors";
 import { FakeIpc, type FakeFileSnapshot } from "../lib/ipc/fake";
+import { FakeLogPort } from "../lib/log/fake";
 import type { CloseConfirmRequest } from "../lib/ipc/port";
 import { FakePlatform } from "../lib/platform/fake";
 import { FakeUpdatePort, type FakeUpdateCalls } from "../lib/update/fake";
@@ -71,11 +72,13 @@ export function createE2eServices(): {
   ipc: FakeIpc;
   platform: FakePlatform;
   updates: FakeUpdatePort;
+  logs: FakeLogPort;
 } {
   const files = window.__QINGMO_E2E_SEED__ ?? [];
   const ipc = new FakeIpc({ files });
   const platform = new FakePlatform();
   const updates = new FakeUpdatePort();
+  const logs = new FakeLogPort();
 
   window.__QINGMO_E2E__ = {
     setDiskText: (path, text) => {
@@ -138,5 +141,5 @@ export function createE2eServices(): {
     getUpdateSnapshot: () => updates.currentSnapshot,
   };
 
-  return { ipc, platform, updates };
+  return { ipc, platform, updates, logs };
 }

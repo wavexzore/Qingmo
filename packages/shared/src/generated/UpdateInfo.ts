@@ -11,4 +11,9 @@ date: string | null,
 /**
  * Plain text, truncated by the Rust side before it reaches the webview.
  */
-body: string | null, };
+body: string | null, 
+/**
+ * Per-language notes from the manifest's custom `notesByLocale` field.
+ * Absent on manifests published before the field existed.
+ */
+notesByLocale?: { [key in string]: string }, };

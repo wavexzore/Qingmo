@@ -53,6 +53,11 @@ fn capability_contains_only_expected_permissions() {
             "allow-app-update-check",
             "allow-app-update-download",
             "allow-app-update-install",
+            "allow-app-logs-list",
+            "allow-app-logs-stats",
+            "allow-app-logs-export",
+            "allow-app-logs-open-dir",
+            "allow-app-logs-clear",
         ]
     );
 

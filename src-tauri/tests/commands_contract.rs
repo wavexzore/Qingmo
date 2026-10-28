@@ -52,7 +52,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 14);
+    assert_eq!(COMMANDS.len(), 19);
     assert_eq!(
         EVENTS,
         &[
@@ -161,11 +161,12 @@ fn dto_wire_names_are_camel_case_and_stable() {
     let snapshot = UpdateSnapshot {
         phase: UpdatePhase::Available,
         generation: 2,
-        current_version: "0.1.0".to_string(),
+        current_version: env!("CARGO_PKG_VERSION").to_string(),
         update: Some(UpdateInfo {
             version: "0.2.0".to_string(),
             date: Some("2026-10-27T12:00:00Z".to_string()),
             body: Some("Notes".to_string()),
+            notes_by_locale: None,
         }),
         progress: None,
     };
@@ -175,25 +176,29 @@ fn dto_wire_names_are_camel_case_and_stable() {
         json!({
             "phase": "available",
             "generation": 2,
-            "currentVersion": "0.1.0",
+            "currentVersion": env!("CARGO_PKG_VERSION"),
             "update": {
                 "version": "0.2.0",
                 "date": "2026-10-27T12:00:00Z",
-                "body": "Notes"
+                "body": "Notes",
+                "notesByLocale": null
             },
             "progress": null
         })
     );
 
     let about = qingmo_lib::ipc::dto::AboutInfo {
-        version: "0.1.0".to_string(),
-        build: "0.1.0 · arm64".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        build: format!("{} · arm64", env!("CARGO_PKG_VERSION")),
         platform: "macOS".to_string(),
         license: "Apache-2.0".to_string(),
         copyright: "© 2026 Qingmo Contributors".to_string(),
     };
     let value = serde_json::to_value(&about).expect("AboutInfo must serialize");
-    assert_eq!(value["build"], "0.1.0 · arm64");
+    assert_eq!(
+        value["build"],
+        format!("{} · arm64", env!("CARGO_PKG_VERSION"))
+    );
     assert_eq!(value["copyright"], "© 2026 Qingmo Contributors");
     assert_eq!(serde_json::to_value(AboutLink::Github).unwrap(), "github");
 }
@@ -250,7 +255,9 @@ fn invoke_handler_registers_every_contract_command() {
         .manage(qingmo_lib::state::DocumentRegistry::new())
         .manage(qingmo_lib::state::WindowSessions::new())
         .manage(CloseGuard::new())
-        .manage(qingmo_lib::state::UpdateManager::new("0.1.0"))
+        .manage(qingmo_lib::state::UpdateManager::new(env!(
+            "CARGO_PKG_VERSION"
+        )))
         .invoke_handler(qingmo_lib::commands::handler())
         .build(tauri::generate_context!())
         .expect("mock app must build");
@@ -274,6 +281,11 @@ fn invoke_handler_registers_every_contract_command() {
     assert!(handler_source.contains("update::app_update_check"));
     assert!(handler_source.contains("update::app_update_download"));
     assert!(handler_source.contains("update::app_update_install"));
+    assert!(handler_source.contains("logs::app_logs_list"));
+    assert!(handler_source.contains("logs::app_logs_stats"));
+    assert!(handler_source.contains("logs::app_logs_export"));
+    assert!(handler_source.contains("logs::app_logs_open_dir"));
+    assert!(handler_source.contains("logs::app_logs_clear"));
 
     let error = invoke(&webview, "document_reload", json!({"docToken": "fake"}))
         .expect_err("reload with a fake token must fail");
@@ -315,15 +327,27 @@ fn invoke_handler_registers_every_contract_command() {
         .expect("mock About webview must build");
     let info = invoke(&about, "app_about_info", json!({}))
         .expect("the About window must read build metadata");
-    assert_eq!(info["version"], "0.1.0");
+    assert_eq!(info["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(info["license"], "Apache-2.0");
     assert!(
         info["build"]
             .as_str()
             .expect("build must be a string")
-            .starts_with("0.1.0 · "),
+            .starts_with(&format!("{} · ", env!("CARGO_PKG_VERSION"))),
         "unexpected build metadata: {info}"
     );
+
+    let stats = invoke(&webview, "app_logs_stats", json!({}))
+        .expect("log stats must work without the plugin");
+    assert!(stats["totalEntries"].is_number());
+    assert!(stats["fileCount"].is_number());
+    let entries = invoke(
+        &webview,
+        "app_logs_list",
+        json!({"level": null, "limit": 10}),
+    )
+    .expect("log listing must work without the plugin");
+    assert!(entries.is_array());
 
     let error = invoke(&webview, "app_close_confirm", json!({"allow": false}))
         .expect_err("a confirmation without a pending close request must fail");
@@ -344,7 +368,7 @@ fn invoke_handler_registers_every_contract_command() {
     let status = invoke(&webview, "app_update_status", json!({}))
         .expect("status must be available without the plugin");
     assert_eq!(status["phase"], "idle");
-    assert_eq!(status["currentVersion"], "0.1.0");
+    assert_eq!(status["currentVersion"], env!("CARGO_PKG_VERSION"));
 
     for command in ["app_update_download", "app_update_install"] {
         let error = invoke(&webview, command, json!({}))

@@ -74,6 +74,28 @@ node "$check_script" \
   --artifacts "$tmp" >/dev/null
 echo "PASS: generated manifest verifies"
 
+printf '中文说明\n' >"$tmp/notes-zh.txt"
+printf 'English note\n' >"$tmp/notes-en.txt"
+node "$make_script" \
+  --version 0.1.0 \
+  --artifacts "$tmp" \
+  --out "$tmp/latest-locale.json" \
+  --base-url "$base_url" \
+  --notes-zh-file "$tmp/notes-zh.txt" \
+  --notes-en-file "$tmp/notes-en.txt" >/dev/null
+node -e '
+const fs = require("fs");
+const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (manifest.notesByLocale["zh-CN"].trim() !== "中文说明") throw new Error("wrong zh notes");
+if (manifest.notesByLocale["en-US"].trim() !== "English note") throw new Error("wrong en notes");
+if (!manifest.notes.includes("[zh-CN]")) throw new Error("bilingual notes missing marker");
+' "$tmp/latest-locale.json"
+echo "PASS: per-language notes"
+
+expect_fail "one language file only" "must be provided together" \
+  node "$make_script" --version 0.1.0 --artifacts "$tmp" --out "$tmp/bad.json" --base-url "$base_url" \
+  --notes-zh-file "$tmp/notes-zh.txt"
+
 expect_fail "version mismatch" "does not match signature version" \
   node "$make_script" --version 0.2.0 --artifacts "$tmp" --out "$tmp/bad.json" --base-url "$base_url"
 

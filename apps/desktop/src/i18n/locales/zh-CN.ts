@@ -131,14 +131,19 @@ export const errors = {
 export const update = {
   banner: {
     kicker: "应用更新",
-    available: "新版本 {{version}} 可用",
-    downloading: "正在下载更新…",
-    ready: "更新已下载，可以安装",
-    installing: "正在安装更新…",
-    view: "查看",
+    badge: "通用版",
+    availableTitle: "青墨 {{version}} 已发布",
+    availableHint: "下载后即可安装 · 不会打断写作",
+    downloadingTitle: "正在下载青墨 {{version}}",
+    downloadingHint: "已下载 {{percent}}%",
+    downloadingPreparing: "正在准备下载…",
+    readyTitle: "更新已就绪",
+    readyHint: "青墨 {{version}} 已下载并验签 · 重启后完成安装",
+    installingTitle: "正在安装更新…",
+    installingHint: "请不要关闭青墨",
+    view: "查看更新",
     later: "稍后",
     install: "安装并重启",
-    progress: "已下载 {{percent}}%",
     keepOpen: "请保持青墨打开",
   },
   dialog: {
@@ -228,6 +233,9 @@ export const commandLabels = {
   update: {
     checkForUpdates: "检查更新",
   },
+  app: {
+    openLogs: "查看运行日志",
+  },
   category: {
     file: "文件",
     view: "视图",
@@ -241,4 +249,47 @@ export const commandLabels = {
   },
 } as const;
 
-export const zhCN = { common, editor, errors, update, commands: commandLabels, about };
+export const logs = {
+  kicker: "诊断 · Log",
+  title: "运行日志",
+  description: "记录发生在纸背面的动作。只写入本机，按天归档，最多保留 7 天。",
+  filter: "级别",
+  all: "全部",
+  level: {
+    trace: "跟踪",
+    debug: "调试",
+    info: "信息",
+    warn: "警告",
+    error: "错误",
+  },
+  stats: "{{total}} 条 · {{errors}} 错误 · {{warns}} 警告",
+  unitEntries: "条",
+  unitErrors: "错误",
+  unitWarns: "警告",
+  files: "{{count}} 个文件 · {{size}}",
+  refresh: "刷新",
+  loadingShort: "读取中…",
+  loading: "正在读取日志…",
+  emptyTitle: "这一页是空的",
+  empty: "当前级别还没有记录。切换级别或等待下一次动作。",
+  autoRefresh: "自动刷新",
+  openShort: "打开",
+  openDir: "打开目录",
+  export: "导出",
+  clear: "清理旧日志",
+  confirmTitle: "删除 7 天前的日志？",
+  confirm: "删除",
+  cancel: "取消",
+  close: "关闭",
+  toast: {
+    exported: "日志已导出到 {{path}}",
+    exportFailed: "导出日志失败，请稍后重试。",
+    cleared: "已删除 {{count}} 个旧日志文件",
+    clearFailed: "清理日志失败，请稍后重试。",
+    openFailed: "无法打开日志目录，请稍后重试。",
+    loadFailed: "读取日志失败，请稍后重试。",
+    copied: "已复制这一条",
+  },
+} as const;
+
+export const zhCN = { common, editor, errors, update, commands: commandLabels, about, logs };

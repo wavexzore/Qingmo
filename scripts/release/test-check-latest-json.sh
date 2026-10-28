@@ -47,6 +47,13 @@ const manifest = {
   pub_date: "2026-10-27T12:00:00Z",
   platforms,
 };
+if (variant === "locale") {
+  manifest.notesByLocale = { "zh-CN": "中文", "en-US": "English" };
+} else if (variant === "locale-empty") {
+  manifest.notesByLocale = { "zh-CN": "" };
+} else if (variant === "locale-key") {
+  manifest.notesByLocale = { fr: "French" };
+}
 fs.writeFileSync(process.env.OUT, JSON.stringify(manifest, null, 2));
 NODE
 }
@@ -100,6 +107,19 @@ expect_fail "AppleDouble URL" "AppleDouble" \
 
 write_manifest notes
 expect_fail "notes byte limit" "exceeds the" \
+  --latest-json "$tmp/latest.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp"
+
+write_manifest locale
+node "$script" \
+  --latest-json "$tmp/latest.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp" >/dev/null
+echo "PASS: structured per-language notes"
+
+write_manifest locale-empty
+expect_fail "empty locale note" "must be a non-empty" \
+  --latest-json "$tmp/latest.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp"
+
+write_manifest locale-key
+expect_fail "unsupported locale key" "unsupported notesByLocale" \
   --latest-json "$tmp/latest.json" --tag v0.1.0 --pubkey "$tmp/test.pub" --artifacts "$tmp"
 
 write_manifest ok

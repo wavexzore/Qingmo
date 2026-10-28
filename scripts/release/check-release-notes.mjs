@@ -174,7 +174,7 @@ function render(entry, lang) {
   const languages = lang === "all" ? LANGUAGES : [lang];
   for (const language of languages) {
     const heading = language === "zh-CN" ? "中文" : "English";
-    lines.push("", heading);
+    lines.push("", `[${language}]`, heading);
     for (const note of entry.notes[language]) lines.push(`- ${note.trim()}`);
   }
   return `${lines.join("\n")}\n`;

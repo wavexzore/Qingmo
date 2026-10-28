@@ -4,6 +4,9 @@ import type {
   AppError,
   CloseRequestedPayload,
   FilePayload,
+  LogEntry,
+  LogLevel,
+  LogStats,
   SaveRequest,
   SaveResult,
   UpdateProgressPayload,
@@ -30,6 +33,11 @@ export const COMMANDS = {
   appUpdateCheck: "app_update_check",
   appUpdateDownload: "app_update_download",
   appUpdateInstall: "app_update_install",
+  appLogsList: "app_logs_list",
+  appLogsStats: "app_logs_stats",
+  appLogsExport: "app_logs_export",
+  appLogsOpenDir: "app_logs_open_dir",
+  appLogsClear: "app_logs_clear",
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -49,6 +57,11 @@ export const COMMAND_NAMES = [
   COMMANDS.appUpdateCheck,
   COMMANDS.appUpdateDownload,
   COMMANDS.appUpdateInstall,
+  COMMANDS.appLogsList,
+  COMMANDS.appLogsStats,
+  COMMANDS.appLogsExport,
+  COMMANDS.appLogsOpenDir,
+  COMMANDS.appLogsClear,
 ] as const satisfies readonly CommandName[];
 
 export const EVENTS = {
@@ -82,6 +95,7 @@ export const MENU_ACTIONS = {
   themeLight: "theme.light",
   themeDark: "theme.dark",
   themeSystem: "theme.system",
+  logs: "app.openLogs",
 } as const;
 
 export type MenuAction = (typeof MENU_ACTIONS)[keyof typeof MENU_ACTIONS];
@@ -95,6 +109,7 @@ export const MENU_ACTION_NAMES = [
   MENU_ACTIONS.themeLight,
   MENU_ACTIONS.themeDark,
   MENU_ACTIONS.themeSystem,
+  MENU_ACTIONS.logs,
 ] as const satisfies readonly MenuAction[];
 
 export interface CommandRequestMap {
@@ -112,6 +127,11 @@ export interface CommandRequestMap {
   [COMMANDS.appUpdateCheck]: Record<string, never>;
   [COMMANDS.appUpdateDownload]: Record<string, never>;
   [COMMANDS.appUpdateInstall]: Record<string, never>;
+  [COMMANDS.appLogsList]: { level?: LogLevel | null; limit?: number; offset?: number };
+  [COMMANDS.appLogsStats]: Record<string, never>;
+  [COMMANDS.appLogsExport]: { level?: LogLevel | null };
+  [COMMANDS.appLogsOpenDir]: Record<string, never>;
+  [COMMANDS.appLogsClear]: { keepDays?: number };
 }
 
 export interface CommandResponseMap {
@@ -129,6 +149,11 @@ export interface CommandResponseMap {
   [COMMANDS.appUpdateCheck]: UpdateSnapshot;
   [COMMANDS.appUpdateDownload]: UpdateSnapshot;
   [COMMANDS.appUpdateInstall]: null;
+  [COMMANDS.appLogsList]: LogEntry[];
+  [COMMANDS.appLogsStats]: LogStats;
+  [COMMANDS.appLogsExport]: string;
+  [COMMANDS.appLogsOpenDir]: null;
+  [COMMANDS.appLogsClear]: number;
 }
 
 export type CommandError = AppError;
@@ -156,6 +181,11 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.appUpdateCheck]: commandPermission(COMMANDS.appUpdateCheck),
   [COMMANDS.appUpdateDownload]: commandPermission(COMMANDS.appUpdateDownload),
   [COMMANDS.appUpdateInstall]: commandPermission(COMMANDS.appUpdateInstall),
+  [COMMANDS.appLogsList]: commandPermission(COMMANDS.appLogsList),
+  [COMMANDS.appLogsStats]: commandPermission(COMMANDS.appLogsStats),
+  [COMMANDS.appLogsExport]: commandPermission(COMMANDS.appLogsExport),
+  [COMMANDS.appLogsOpenDir]: commandPermission(COMMANDS.appLogsOpenDir),
+  [COMMANDS.appLogsClear]: commandPermission(COMMANDS.appLogsClear),
 } as const satisfies Record<CommandName, string>;
 
 export type IpcInvoker = <K extends CommandName>(

@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use tauri::menu::{
@@ -7,6 +8,9 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 pub mod commands;
@@ -25,16 +29,56 @@ use ipc::dto::MenuActionPayload;
 
 /// Menu ids handled in Rust instead of being forwarded to the webview.
 const MENU_ABOUT: &str = "app.about";
+const MENU_LOGS: &str = "app.openLogs";
 const MENU_QUIT: &str = "app.quit";
 const MENU_CLOSE_WINDOW: &str = "window.close";
 const MENU_TOGGLE_FULLSCREEN: &str = "window.toggleFullscreen";
 
-fn init_tracing() {
+fn file_appender(dir: &PathBuf) -> Option<RollingFileAppender> {
+    match tracing_appender::rolling::Builder::new()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("qingmo")
+        .filename_suffix("log")
+        .max_log_files(services::logging::RETENTION_DAYS as usize)
+        .build(dir)
+    {
+        Ok(appender) => Some(appender),
+        Err(error) => {
+            eprintln!("failed to open the log file appender: {error}");
+            None
+        }
+    }
+}
+
+/// Console plus a daily rolling file. The file layer never uses ANSI colours
+/// so exported logs stay readable, and keeps at most seven days.
+fn init_tracing(log_dir: Option<&PathBuf>) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .try_init();
+
+    let init = |appender: Option<RollingFileAppender>| {
+        let console = tracing_subscriber::fmt::layer().with_target(false);
+        match appender {
+            Some(appender) => {
+                let _ = tracing_subscriber::registry()
+                    .with(filter)
+                    .with(console)
+                    .with(
+                        tracing_subscriber::fmt::layer()
+                            .with_ansi(false)
+                            .with_writer(appender),
+                    )
+                    .try_init();
+            }
+            None => {
+                let _ = tracing_subscriber::registry()
+                    .with(filter)
+                    .with(console)
+                    .try_init();
+            }
+        }
+    };
+
+    init(log_dir.and_then(file_appender));
 }
 
 const ABOUT_LABEL: &str = "关于青墨";
@@ -144,6 +188,7 @@ fn menu_layout(platform: MenuPlatform) -> Vec<MenuSpec> {
     }
 
     let fullscreen_accel = if macos { "Ctrl+Cmd+F" } else { "F11" };
+    let logs_accel = if macos { "Cmd+Alt+L" } else { "Ctrl+Alt+L" };
 
     let mut menus = Vec::new();
     if macos {
@@ -193,6 +238,7 @@ fn menu_layout(platform: MenuPlatform) -> Vec<MenuSpec> {
                 Some("CmdOrCtrl+Shift+L"),
             ),
             MenuEntry::Separator,
+            action(MENU_LOGS, "日志…", Some(logs_accel)),
             action(MENU_TOGGLE_FULLSCREEN, "全屏", Some(fullscreen_accel)),
         ],
     });
@@ -411,8 +457,6 @@ fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    init_tracing();
-
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -492,6 +536,19 @@ pub fn run() {
         .manage(state::StartupWindow::new())
         .setup(|app| {
             app.manage(app.handle().clone());
+            let log_dir = app.path().app_log_dir().ok();
+            if let Some(dir) = log_dir.as_ref() {
+                if let Err(error) = services::logging::init(dir.clone()) {
+                    eprintln!("failed to initialize the log directory: {error}");
+                }
+            }
+            services::logging::install_panic_hook();
+            init_tracing(log_dir.as_ref());
+            tracing::info!(
+                version = %app.package_info().version,
+                log_dir = %services::logging::dir().display(),
+                "Qingmo started"
+            );
             app.manage(state::UpdateManager::new(
                 app.package_info().version.to_string(),
             ));

@@ -44,7 +44,7 @@ function DocumentEditor() {
   return (
     <main
       data-testid={untitled ? "untitled-editor" : "document-session"}
-      className="flex h-dvh flex-col bg-paper text-ink"
+      className="flex h-full flex-col bg-paper text-ink"
     >
       {showConflict && conflict ? (
         <ConflictBanner

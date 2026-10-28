@@ -73,7 +73,7 @@ describe("UpdateHost", () => {
     await commandRegistry.execute("app.checkForUpdates");
 
     const banner = await screen.findByTestId("update-banner");
-    expect(banner).toHaveTextContent("新版本 0.2.0 可用");
+    expect(banner).toHaveTextContent("青墨 0.2.0 已发布");
     expect(commandRegistry.list().filter((item) => item.id === "app.checkForUpdates")).toHaveLength(
       1,
     );

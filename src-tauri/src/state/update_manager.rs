@@ -289,7 +289,23 @@ fn info_from_update(update: &Update) -> UpdateInfo {
         version: update.version.clone(),
         date: update.date.and_then(format_date),
         body: update.body.as_deref().map(truncate_notes),
+        notes_by_locale: notes_by_locale(&update.raw_json),
     }
+}
+
+/// Reads the optional structured `notesByLocale` manifest field. Unknown
+/// languages are kept; every value is truncated like the legacy body.
+fn notes_by_locale(raw: &serde_json::Value) -> Option<std::collections::BTreeMap<String, String>> {
+    let locales = raw.get("notesByLocale")?.as_object()?;
+    let notes: std::collections::BTreeMap<String, String> = locales
+        .iter()
+        .filter_map(|(language, value)| {
+            value
+                .as_str()
+                .map(|text| (language.clone(), truncate_notes(text)))
+        })
+        .collect();
+    (!notes.is_empty()).then_some(notes)
 }
 
 fn format_date(date: time::OffsetDateTime) -> Option<String> {
@@ -316,6 +332,7 @@ mod tests {
             version: "0.2.0".to_string(),
             date: Some("2026-10-27T12:00:00Z".to_string()),
             body: Some("Notes".to_string()),
+            notes_by_locale: None,
         }
     }
 
@@ -484,6 +501,28 @@ mod tests {
         assert_eq!(busy.code, AppErrorCode::Busy);
         assert_eq!(manager.snapshot().phase, UpdatePhase::Idle);
         assert_eq!(manager.snapshot().generation, 2);
+    }
+
+    #[test]
+    fn structured_notes_are_read_and_truncated_per_language() {
+        let raw = serde_json::json!({
+            "notesByLocale": {
+                "zh-CN": "中文说明",
+                "en-US": "x".repeat(MAX_NOTES_BYTES + 10),
+            }
+        });
+
+        let notes = notes_by_locale(&raw).expect("structured notes");
+        assert_eq!(notes.get("zh-CN").map(String::as_str), Some("中文说明"));
+        assert!(notes["en-US"].ends_with('…'));
+        assert!(notes["en-US"].len() <= MAX_NOTES_BYTES + '…'.len_utf8());
+    }
+
+    #[test]
+    fn absent_or_invalid_structured_notes_are_ignored() {
+        assert!(notes_by_locale(&serde_json::json!({})).is_none());
+        assert!(notes_by_locale(&serde_json::json!({"notesByLocale": []})).is_none());
+        assert!(notes_by_locale(&serde_json::json!({"notesByLocale": {"zh-CN": 1}})).is_none());
     }
 
     #[test]

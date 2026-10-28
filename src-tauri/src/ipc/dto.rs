@@ -120,6 +120,42 @@ pub struct AboutInfo {
     pub copyright: String,
 }
 
+/// Severity of a persisted log line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+/// One persisted log line, parsed for the log viewer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: LogLevel,
+    pub target: String,
+    pub message: String,
+}
+
+/// Aggregate counters for the log directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LogStats {
+    pub total_entries: u64,
+    pub error_count: u64,
+    pub warn_count: u64,
+    pub info_count: u64,
+    pub debug_count: u64,
+    pub total_size_bytes: u64,
+    pub file_count: u64,
+    pub oldest_entry: Option<String>,
+    pub newest_entry: Option<String>,
+}
+
 /// External destinations linked from the About window.
 ///
 /// The webview sends an enum, never a URL: Rust owns the allowlist.
@@ -153,6 +189,10 @@ pub struct UpdateInfo {
     pub date: Option<String>,
     /// Plain text, truncated by the Rust side before it reaches the webview.
     pub body: Option<String>,
+    /// Per-language notes from the manifest's custom `notesByLocale` field.
+    /// Absent on manifests published before the field existed.
+    #[ts(optional)]
+    pub notes_by_locale: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

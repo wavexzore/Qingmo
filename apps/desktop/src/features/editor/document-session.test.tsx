@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppServicesProvider } from "../../app/AppServices";
 import { FakeIpc } from "../../lib/ipc/fake";
 import { FakePlatform } from "../../lib/platform/fake";
+import { FakeLogPort } from "../../lib/log/fake";
 import { FakeUpdatePort } from "../../lib/update/fake";
 import {
   DocumentSessionProvider,
@@ -55,7 +56,12 @@ describe("DocumentSessionProvider", () => {
     const { unmount } = render(
       <StrictMode>
         <AppServicesProvider
-          services={{ ipc, platform: new FakePlatform(), updates: new FakeUpdatePort() }}
+          services={{
+            ipc,
+            platform: new FakePlatform(),
+            updates: new FakeUpdatePort(),
+            logs: new FakeLogPort(),
+          }}
         >
           <DocumentSessionProvider>
             <Probe
@@ -119,7 +125,12 @@ describe("DocumentSessionProvider", () => {
     render(
       <StrictMode>
         <AppServicesProvider
-          services={{ ipc, platform: new FakePlatform(), updates: new FakeUpdatePort() }}
+          services={{
+            ipc,
+            platform: new FakePlatform(),
+            updates: new FakeUpdatePort(),
+            logs: new FakeLogPort(),
+          }}
         >
           <DocumentSessionProvider>
             <Probe
@@ -146,7 +157,12 @@ describe("DocumentSessionProvider", () => {
 
     render(
       <AppServicesProvider
-        services={{ ipc, platform: new FakePlatform(), updates: new FakeUpdatePort() }}
+        services={{
+          ipc,
+          platform: new FakePlatform(),
+          updates: new FakeUpdatePort(),
+          logs: new FakeLogPort(),
+        }}
       >
         <DocumentSessionProvider>
           <Probe

@@ -19,7 +19,7 @@ const UpdateContext = createContext<UpdateController | null>(null);
 export interface UpdateProviderProps {
   children: ReactNode;
   controller?: UpdateController;
-  /** Production Tauri enables the delayed silent check; tests/E2E pass false. */
+  /** Tauri enables the delayed silent check in dev too; tests/E2E pass false. */
   autoCheck?: boolean;
 }
 
@@ -54,7 +54,7 @@ function DefaultUpdateProvider({
   const [controller] = useState(
     () =>
       new UpdateController(services.updates, {
-        autoCheck: autoCheck ?? (isTauriRuntime() && !import.meta.env.DEV),
+        autoCheck: autoCheck ?? isTauriRuntime(),
       }),
   );
   useControllerLifecycle(controller);
