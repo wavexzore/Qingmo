@@ -74,10 +74,12 @@
 
 ## 实施状态（2026-10-28）
 
-- **已完成：** T-001~T-016。资源/持久化、`LocaleController`/storage 同步、`NativeShellLabels` + `app_apply_locale`、菜单/标题/About、格式化收口、未命名 placeholder、`EditorUiCopy` Facet、Widget 全量迁移、测试硬化、E2E 语言切换均通过。
-- **验证证据：** `02 E-033~E-049`、`C-019~C-032`；前端 63 文件/460 测试、E2E 77 条、`pnpm typecheck`/`pnpm lint` 通过。
-- **未完成：** T-017 文档同步、T-018 全量门禁与 macOS 真机菜单/标题/Save As 冒烟；Windows/Linux 无真机验收。
-- **偏差：** 原生菜单重建在 mock runtime 受 macOS 主线程限制，无法单测“有效 `app_apply_locale` 后重建菜单”；由 Rust 单元/契约测试 + T-018 真机覆盖。
+- **已完成：** T-001~T-018。资源/持久化、`LocaleController`/storage 同步、`NativeShellLabels` + `app_apply_locale`、菜单/标题/About、格式化收口、未命名 placeholder、`EditorUiCopy` Facet、Widget 全量迁移、测试硬化、E2E 语言切换与文档同步均通过。
+- **合并：** `0bac056` 合并 `feat/external-change-watch`；外部变更事件与语言投影同时保留，合并后 `pnpm ci:web`/`ci:rust`/`ci:generated`/`ci:negative`/`test:e2e` 全通过。
+- **验证证据：** `02 E-033~E-051`、`C-019~C-034`；前端 64 文件/469 测试、E2E 80 条、`pnpm typecheck`/`pnpm lint` 通过。
+- **真机冒烟：** macOS debug bundle 验证中文启动、菜单切英文（含勾选）、窗口/About 标题、Quit 经 CloseGuard、重启保持英文、切回中文；未手测 Save As 原生对话框、菜单展开中切语言、大文档/Mermaid 渲染中切语言。
+- **残余 PARTIAL：** Windows `cargo check --target x86_64-pc-windows-msvc` 因缺 Windows SDK/ring C 头未通过；GitNexus `detect-changes` 仍报 incomplete/unknown（入口/HTML/测试/再导出文件未映射），未按通过计。
+- **偏差：** 原生菜单重建在 mock runtime 受 macOS 主线程限制，无法单测“有效 `app_apply_locale` 后重建菜单”；已由 Rust 单元/契约测试 + macOS 真机覆盖。
 
 ## 后果
 

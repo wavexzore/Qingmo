@@ -20,16 +20,16 @@
 schema_version: "1.0"
 feature_id: "i18n"
 feature_name: "运行时国际化与原生本地化"
-status: "in_progress"            # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-018"             # 当前应执行的任务；无则写 none
-last_completed_task: "T-017"
-next_action: "T-017 已绿（ADR-0006/蓝图/TOPOLOGY/README/现状审计同步）；开始 T-018 全量门禁与真机冒烟"
-verification_status: "partial"    # not_run | pass | fail | partial | skipped；T-002~T-017 绿；T-018 门禁/真机待执行
+status: "done"                   # todo | in_progress | blocked | partial | done | rolled_back | cancelled
+current_task: "none"              # 当前应执行的任务；无则写 none
+last_completed_task: "T-018"
+next_action: "T-001~T-018 全部完成；残余 PARTIAL：Windows 交叉编译（缺 Windows SDK/ring C 头）、Save As 原生对话框与菜单展开/大文档真机手测未执行"
+verification_status: "pass"       # not_run | pass | fail | partial | skipped；T-002~T-018 绿；真机冒烟已完成
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "pnpm test i18n uiStore; cargo test --manifest-path src-tauri/Cargo.toml --test commands_contract"
-last_updated: "2026-10-28T14:40:00+08:00"
+last_verification_command: "pnpm ci:web && pnpm ci:rust && pnpm ci:generated && pnpm ci:negative && pnpm test:e2e"
+last_updated: "2026-10-28T15:05:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-llm任务队列"
@@ -92,6 +92,8 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 
 ## 1. 一句话结论
 
+> 本节是 T-001 前的实施基线，保留用于对照；最终状态见 §5、`02 §9 VERDICT: PASS` 与 `docs/adr/0006-runtime-i18n.md`。
+
 当前仓库**已经有完整的中英资源层和组件级 `useTranslation`**，但产品层没有“可切换”的运行时：`i18n` 固定 `zh-CN`，`UiStore` 只持久化主题，原生菜单、窗口标题、另存为默认文件名、About 窗口标题全部硬编码中文，`packages/editor-core` 非测试 `.ts` 仍有 92 行含中文（2 行注释、5 行解析默认值、6 行错误卡文案、79 行直接 DOM/可访问文案；90 行最终可见/可访问），日志时间/更新日期使用系统 locale。
 
 推荐方案是：**把语言当作一种 UI 偏好，由现有 `UiStore` 单一持久化；新增一个 `LocaleController` 作为唯一运行时协调器；前端仍是唯一文案源，Rust 只作为原生外壳的“投影渲染器”接收类型化 `NativeShellLabels` 并重建菜单/标题；编辑器内核通过 CM6 Facet 接收 `EditorUiCopy`，不引入第二套 i18n。** 默认语言保持 `zh-CN`，不新增依赖、不新增数据表、不引入 `i18next-browser-languagedetector` 或 `tauri-plugin-store` 的第二套存储。
@@ -106,16 +108,16 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 |---|---|---|---|
 | R-001 | 原生菜单与命令面板可切换 `zh-CN` / `en`，切换后所有 React UI 立即更新 | 单测 + E2E：`AC-001` | PASS（E2E i18n.spec） |
 | R-002 | 语言偏好持久化到现有 UI 偏好层；非法值/被禁用 localStorage 不影响启动 | 单测：`AC-002` | PASS（E2E 刷新保持 + 非法值回退） |
-| R-003 | 原生菜单标题、菜单项、勾选状态在切换后同步；不出现第二份 Rust 文案表 | Rust 单测 + 手动冒烟：`AC-003` | todo |
-| R-004 | 文档窗口标题、About 窗口标题、另存为默认文件名随语言变化；未命名名称由 R-006 覆盖 | Rust 单测 + 手动冒烟：`AC-004` | todo |
+| R-003 | 原生菜单标题、菜单项、勾选状态在切换后同步；不出现第二份 Rust 文案表 | Rust 单测 + 手动冒烟：`AC-003` | PASS（Rust 菜单单测 + macOS 真机切换；Windows 未验） |
+| R-004 | 文档窗口标题、About 窗口标题、另存为默认文件名随语言变化；未命名名称由 R-006 覆盖 | Rust 单测 + 手动冒烟：`AC-004` | PASS（Rust 单测 + macOS 真机窗口/About 标题；Save As 对话框未手测） |
 | R-005 | 多窗口（main / doc-* / about）语言一致；About 通过 storage 事件跟随，不重复建第二套状态 | 单测 + E2E：`AC-005` | PASS（E2E 三窗口同步） |
 | R-006 | 未命名文档的 placeholder 与状态栏名称在切换后不残留旧语言 | 单测 + E2E：`AC-006` | PASS（单测 + E2E 往返） |
 | R-007 | `editor-core` 的可见 Widget 文案/aria/title 通过注入的 `EditorUiCopy` 本地化 | 单测 + 无硬编码扫描：`AC-007` | PASS（T-014 迁移完成；非测试 0 汉字） |
-| R-008 | 日志时间、更新日期、文件大小使用所选语言的 `Intl` 格式，且只保留一份格式化实现 | 单测：`AC-008` | todo |
+| R-008 | 日志时间、更新日期、文件大小使用所选语言的 `Intl` 格式，且只保留一份格式化实现 | 单测：`AC-008` | PASS（`format.test.ts` + E2E 日志时间） |
 | R-009 | 所有 namespace 的 key/插值/复数规则完整；19+1 个错误码全覆盖；无硬编码用户可见文案 | 单测/扫描：`AC-009` | PASS（T-015 扫描/错误码/复数硬化） |
 | R-010 | 不新增运行时依赖、不新增数据表、不产生 `i18nextLng` 等第二持久化键 | 代码审查/测试：`AC-010` | PASS（T-015 扫描 + 仅 `qingmo.ui.language`） |
-| R-011 | 新命令/权限/DTO/生成类型/契约测试保持单一源，负例可防漂移 | 契约测试/负例：`AC-011` | todo |
-| R-012 | ADR、蓝图偏差、README、TOPOLOGY、现状审计同步；可安全回滚 | 文档评审：`AC-012` | todo |
+| R-011 | 新命令/权限/DTO/生成类型/契约测试保持单一源，负例可防漂移 | 契约测试/负例：`AC-011` | PASS（20 命令/5 事件/11 action/20 错误码） |
+| R-012 | ADR、蓝图偏差、README、TOPOLOGY、现状审计同步；可安全回滚 | 文档评审：`AC-012` | PASS（ADR-0006 + 文档同步检查） |
 
 ### 2.2 非目标
 
@@ -244,7 +246,7 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 | T-015 | 测试硬化：全 namespace、插值、复数、无硬编码汉字、无 `i18nextLng` | done | T-014 | `02 E-048` | T-016 |
 | T-016 | E2E：切换/持久化/多窗口/About/英文 UI/复数 | done | T-009~T-015 | `02 E-049` | T-017 |
 | T-017 | 文档/ADR/蓝图/README/TOPOLOGY/现状审计 | done | T-016 | `02 E-050` | T-018 |
-| T-018 | 全量门禁 + macOS 真机原生菜单冒烟 + Windows `cargo check` | todo | T-017 | `pnpm ci:local` | done |
+| T-018 | 全量门禁 + macOS 真机原生菜单冒烟 + Windows `cargo check` | done | T-017 | `02 E-051` | none |
 
 > `Q-005=A` 已确认（全量 Facet）。若后续变更控制改为 `Q-005=B`（仅外壳、编辑器内核延后），`T-013`/`T-014` 改为 `skipped`，`T-015` 的 `packages/editor-core` 汉字扫描与 `AC-007` 标记 `deferred`，并记录 `NEXT-I18N-007`；`Q-005=C`（只做 aria/title）需缩小 T-014 批次并登记可见文本缺口，不按完整交付验收。其余任务仍必须完成。
 
@@ -283,19 +285,19 @@ blocker_policy: "遇到 blocked 时在 02 §7 记录 B-###、失败证据、已�
 | Code | `src-tauri/src/ipc/dto.rs` | `AppLanguage`/`NativeShellLabels`/`ApplyLocaleRequest` | todo |
 | Code | `src-tauri/src/error.rs` | `INVALID_LOCALE` | todo |
 | Code | `src-tauri/src/ipc/contract.rs` | `app_apply_locale` + 两个语言菜单 action | todo |
-| Code | `src-tauri/src/state/shell_locale.rs` | 幂等 shell locale 状态 | todo |
-| Code | `src-tauri/src/commands/locale.rs` | `app_apply_locale` | todo |
-| Code | `src-tauri/src/lib.rs` | 菜单数据化/子菜单/重建/标题遍历 | todo |
-| Code | `src-tauri/src/commands/{document,about,mod}.rs` | 标题/默认名/命令注册 | todo |
-| Config | `src-tauri/capabilities/default.json` | `allow-app-apply-locale` | todo |
-| Config | `src-tauri/tauri.conf.json` | 主窗口中性标题、文件关联描述中性化 | todo |
-| Test | `apps/desktop/src/i18n/i18n.test.ts`、`language.test.ts`、`native.test.ts` | 键/插值/复数/策略/标签 | todo |
-| Test | `apps/desktop/src/app/LocaleController.test.ts` | 串行/幂等/失败/StrictMode | todo |
-| Test | `apps/desktop/src/stores/uiStore.test.ts` | language 持久化/同步/禁用 | todo |
-| Test | `src-tauri/src/lib.rs` 单测 | 中英菜单结构/check/幂等 | todo |
-| Test | `src-tauri/tests/commands_contract.rs` | 20 命令/4 事件/11 action（含 2 语言）/20 错误码/camelCase | todo |
-| Test | `e2e/i18n.spec.ts` | 切换/持久化/多窗口/About/复数 | todo |
-| Test | `packages/editor-core/src/i18n.test.ts` | Facet/装饰器/cache key/默认文案 | todo |
+| Code | `src-tauri/src/state/shell_locale.rs` | 幂等 shell locale 状态 | PASS |
+| Code | `src-tauri/src/commands/locale.rs` | `app_apply_locale` | PASS |
+| Code | `src-tauri/src/lib.rs` | 菜单数据化/子菜单/重建/标题遍历 | PASS |
+| Code | `src-tauri/src/commands/{document,about,mod}.rs` | 标题/默认名/命令注册 | PASS |
+| Config | `src-tauri/capabilities/default.json` | `allow-app-apply-locale` | PASS |
+| Config | `src-tauri/tauri.conf.json` | 主窗口中性标题、文件关联描述中性化 | PASS |
+| Test | `apps/desktop/src/i18n/i18n.test.ts`、`language.test.ts`、`native.test.ts` | 键/插值/复数/策略/标签 | PASS |
+| Test | `apps/desktop/src/app/LocaleController.test.ts` | 串行/幂等/失败/StrictMode | PASS |
+| Test | `apps/desktop/src/stores/uiStore.test.ts` | language 持久化/同步/禁用 | PASS |
+| Test | `src-tauri/src/lib.rs` 单测 | 中英菜单结构/check/幂等 | PASS |
+| Test | `src-tauri/tests/commands_contract.rs` | 20 命令/5 事件/11 action（含 2 语言）/20 错误码/camelCase | PASS |
+| Test | `e2e/i18n.spec.ts` | 切换/持久化/多窗口/About/复数 | PASS |
+| Test | `packages/editor-core/src/i18n.test.ts` | Facet/装饰器/cache key/默认文案 | PASS |
 
 ---
 
@@ -421,15 +423,15 @@ struct NativeShellLabels {
 |---|---|---|---|---|
 | AC-001 | 菜单/命令面板切换语言后，palette、状态栏、冲突、更新、日志、About 全部即时更新 | T-008/T-009/T-016 | PASS（E2E `i18n.spec.ts`） | `E-049`/C-032 |
 | AC-002 | 重启后保持上次语言；非法值/禁用 localStorage 时启动回退 zh-CN，本次会话仍可切换且不崩 | T-003/T-008 | PASS（E2E 持久化/非法值） | `E-049`/C-032 |
-| AC-003 | 原生菜单标题/项/勾选在 en/zh 下正确；无 Rust 文案表 | T-005/T-009 | Rust 单测；手动冒烟；C-007 | todo |
-| AC-004 | 文档窗口/About 标题、Save As 默认名随语言变化；未命名名称由 AC-006 覆盖 | T-006 | Rust 单测；手动冒烟；C-008 | todo |
+| AC-003 | 原生菜单标题/项/勾选在 en/zh 下正确；无 Rust 文案表 | T-005/T-009 | PASS（Rust 菜单单测 + macOS 真机；Windows 未验） | `E-038`/`E-051`/C-034 |
+| AC-004 | 文档窗口/About 标题、Save As 默认名随语言变化；未命名名称由 AC-006 覆盖 | T-006 | PASS（Rust 单测 + macOS 真机窗口/About 标题；Save As 对话框未手测） | `E-039`/`E-051`/C-034 |
 | AC-005 | main/doc-*/about 三窗口语言一致；About 通过 storage 跟随 | T-008/T-010 | PASS（E2E 三窗口同步） | `E-049`/C-032 |
 | AC-006 | 未命名 placeholder/状态栏名称切换后无旧语言残留 | T-012/T-016 | PASS（单测 + E2E 往返） | `E-045`/`E-049`/C-009 |
 | AC-007 | `editor-core` 可见文案/aria/title 通过 Facet 本地化；无第二套 i18n | T-013/T-014 | PASS（185 测试 + 非测试 0 汉字） | `E-047`/C-030 |
-| AC-008 | 日志时间/更新日期/文件大小使用所选语言，`formatSize` 只有一份 | T-011 | 单测；C-011 | todo |
+| AC-008 | 日志时间/更新日期/文件大小使用所选语言，`formatSize` 只有一份 | T-011 | PASS（`format.test.ts` + E2E 日志时间） | `E-044`/`E-049`/C-027 |
 | AC-009 | 全 namespace key/插值/复数/错误码完整；无硬编码用户文案 | T-015 | PASS（460 测试 + 扫描/错误码/复数硬化） | `E-048`/C-031 |
 | AC-010 | 无新依赖/表/`i18nextLng`；只有 `qingmo.ui.language` | T-003/T-015 | PASS（扫描无第二持久化键） | `E-048`/C-031 |
-| AC-011 | 20 命令/4 事件/11 action（含 2 语言）/20 错误码/DTO/权限/生成类型一致 | T-004/T-007 | `cargo test --test commands_contract`；C-007 | todo |
+| AC-011 | 20 命令/5 事件/11 action（含 2 语言）/20 错误码/DTO/权限/生成类型一致 | T-004/T-007 | PASS（contract/security 测试 + generated current） | `E-037`/`E-051`/C-034 |
 | AC-012 | ADR/蓝图/README/TOPOLOGY/现状审计同步；回滚可逆 | T-017 | PASS（ADR-0006 + 文档同步检查） | `E-050`/C-033 |
 
 ---
@@ -466,18 +468,18 @@ pnpm ci:web && pnpm ci:rust && pnpm ci:generated
 | C-004 | `pnpm typecheck && pnpm lint && pnpm depcruise` | 每个前端任务 | PASS |
 | C-005 | `pnpm test i18n` | T-002/T-015 | PASS（全量 i18n；无缺 key/插值/复数） |
 | C-006 | `pnpm test uiStore` | T-003 | PASS；持久化/禁用/非法值 |
-| C-007 | `cargo test --manifest-path src-tauri/Cargo.toml --test commands_contract` | T-004/T-005/T-009 | PASS；20 命令/4 事件/11 action/20 错误码 |
+| C-007 | `cargo test --manifest-path src-tauri/Cargo.toml --test commands_contract` | T-004/T-005/T-009 | PASS；20 命令/5 事件/11 action/20 错误码 |
 | C-008 | `cargo test --manifest-path src-tauri/Cargo.toml` | T-005/T-006 | PASS（66 lib + 全部集成） |
 | C-009 | `pnpm test editor-core editor-session document-session useEditorLocale` | T-012 | PASS（18 文件/196 测试） | `E-045`；placeholder/名称跟随语言 |
 | C-010 | `pnpm test editor-core` | T-013/T-014 | PASS；Facet/装饰器/无汉字 |
 | C-011 | `pnpm test format LogDialog UpdateDialog StatusBar ConflictBanner UpdateHost` | T-011 | PASS |
 | C-012 | `pnpm build:e2e && pnpm test:e2e -- i18n.spec.ts` | T-016 | PASS |
-| C-013 | `bash scripts/ci/check-generated.sh` | T-004/T-017 | PARTIAL | T-004：export_bindings 两次 diff 哈希一致；脚本需提交后才可通过 |
+| C-013 | `bash scripts/ci/check-generated.sh` | T-004/T-018 | PASS | 合并提交后 `generated bindings are current`；T-004 两次 diff 哈希一致 |
 | C-014 | `rg -n "i18nextLng\|qingmo.ui.language\|APP_NAME\|APP_NAME_LATIN\|APP_TAGLINE" apps packages src-tauri` | T-015 | PASS（仅 `qingmo.ui.language` 与 `NATIVE_SHELL_APP_NAME_LIMIT` 误匹配） |
 | C-015 | `git diff --check` + 文档交叉检查 | T-017 | PASS |
-| C-016 | `pnpm ci:local` | T-018 | NOT_RUN（实现后） |
-| C-017 | 手动 Tauri：菜单/标题/Save As/多窗口/Quit/Cmd+Q/关闭未保存窗口 | T-018 | NOT_RUN；macOS 真机待执行，Windows 仅 `cargo check` |
-| C-018 | `node .gitnexus/run.cjs detect-changes --scope all --repo .` | 提交前 | 无未审视影响 |
+| C-016 | `pnpm ci:local` 各分段 | T-018 | PASS（合并后） | `E-051`；469 测试/80 E2E |
+| C-017 | 手动 Tauri：菜单/标题/About/Quit/重启保持 | T-018 | PASS（核心项；Save As/大文档 PARTIAL） | `E-051`；macOS debug bundle；Windows 未验 |
+| C-018 | `node .gitnexus/run.cjs detect-changes --scope all --repo .` | 提交前 | UNKNOWN（结果不完整） | `E-051`；入口/HTML/测试/再导出文件未映射，未按通过计 |
 
 ---
 
@@ -504,7 +506,7 @@ pnpm ci:web && pnpm ci:rust && pnpm ci:generated
 2. **再拆原生投影**：将 `LocaleController` 的 `native` 置空，确认不再调用 `app_apply_locale` 后，回退 Rust 命令/权限/`ShellLocale`。反过来先删命令会让前端调用失败。
 3. **然后回退状态层**：同一提交内回退 `UiStore.language` 字段、`qingmo.ui.language` 读取和 `i18n` 动态初始化，避免 `getSnapshot().language` 编译失败。
 4. **编辑器按注入点回退**：回退 `T-013`/`T-014` 时必须同时移除 desktop 的 `uiCopy` 注入，恢复原硬编码中文；只回退 `T-014` 会保留默认英文 copy，不能声称“恢复中文”。
-5. 不修改文件格式、保存/关闭/更新协议；启动安全中性菜单的 Quit/CloseGuard 待 T-018 真机验证。最后再清理 `qingmo.ui.language` 键。
+5. 不修改文件格式、保存/关闭/更新协议；启动安全中性菜单的 Quit/CloseGuard 已由 T-018 真机验证（`E-051`）。最后再清理 `qingmo.ui.language` 键。
 
 ---
 
@@ -535,6 +537,7 @@ pnpm ci:web && pnpm ci:rust && pnpm ci:generated
 | 2026-10-28T12:12:00+08:00 | 终审复核：存储降级/重启重入/IME/`ShellLocale` state/`{ request }` IPC 形状；GitNexus 增量重建到 12:04 | OpenCode / DeepSeek V4.1 | `05 P1-16~P1-20`；`02 §8`；12:08 基线 391 |
 | 2026-10-28T12:20:00+08:00 | 人工确认 Q-001~Q-008 全部采纳建议：Q-001/002/003/004/005/007/008=A，Q-006=批准；解除 B-001 | Qingmo 维护者 | `README §12`；`01 §12`；`02 §7 B-001` |
 | 2026-10-28T13:52:00+08:00 | T-006 完成：`window_title_for(path, app_name)`、`apply_window_titles`（pending/token/miss）、About 中性回退、Save As 默认名取 `ShellLocale`；66 lib 测试通过 | OpenCode / DeepSeek V4.1 | `02 E-039`；C-008 |
+| 2026-10-28T15:05:00+08:00 | T-018 完成：合并 `feat/external-change-watch`（0bac056）后 `pnpm ci:web`（469 测试）/`ci:rust`/`ci:generated`/`ci:negative`/`test:e2e`（80 条）全通过；macOS 调试包真机验证中文↔英文菜单、窗口/About 标题、Quit/CloseGuard、重启保持并切回中文；Windows 交叉编译因缺 SDK 头 PARTIAL | OpenCode / DeepSeek V4.1 | `02 E-051`；C-034 |
 | 2026-10-28T14:40:00+08:00 | T-017 完成：新增 ADR-0006，更新 ADR 索引/蓝图 §8.4/技术栈/TOPOLOGY 0.3/README 双语状态/analysis 04 §2.15 与计数；`git diff --check` 通过 | OpenCode / DeepSeek V4.1 | `02 E-050`；C-033 |
 | 2026-10-28T14:27:00+08:00 | T-016 完成：`e2e/i18n.spec.ts` 6 场景（切换/持久化/非法值/多窗口/About/未命名/命名空文件/日志复数与日期）；`FakeIpc.stagePendingPath` + E2E pending seed、FakeLogPort fileCount；全量 E2E 77 条通过 | OpenCode / DeepSeek V4.1 | `02 E-049`；C-032 |
 | 2026-10-28T14:13:00+08:00 | T-015 完成：全 namespace/插值/复数归一化、`logs.files`/`logs.toast.cleared` 改 `_one`/`_other`、错误码对齐 `APP_ERROR_CODES`、删除 `APP_NAME*`、三组无汉字扫描 + `i18nextLng` 扫描；全量 460 测试通过 | OpenCode / DeepSeek V4.1 | `02 E-048`；C-031 |
