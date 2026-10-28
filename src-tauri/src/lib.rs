@@ -730,7 +730,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Qingmo");
 
-    app.run(|app_handle, event| match event {
+    // Windows passes a file association as a command-line argument; macOS
+    // delivers it through `RunEvent::Opened` instead.
+    #[cfg(windows)]
+    let mut startup_documents = commands::document::startup_paths(std::env::args_os());
+
+    app.run(move |app_handle, event| match event {
         RunEvent::WindowEvent {
             label,
             event: WindowEvent::Focused(true),
@@ -806,6 +811,33 @@ pub fn run() {
                         commands::document::open_path_in_new_window(app.clone(), path).await
                     {
                         tracing::warn!(%error, "failed to open a file from the operating system");
+                        // A launch open that failed must not end windowless.
+                        if app.webview_windows().is_empty() {
+                            ensure_main_window(&app);
+                        }
+                    }
+                });
+            }
+        }
+        #[cfg(windows)]
+        RunEvent::Ready => {
+            if startup_documents.is_empty() {
+                return;
+            }
+            let paths = std::mem::take(&mut startup_documents);
+            // Skip the blank main window even if it has not started building.
+            app_handle.state::<state::StartupWindow>().mark_opened();
+            tracing::info!(
+                count = paths.len(),
+                "opening documents from the command line"
+            );
+            for path in paths {
+                let app = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) =
+                        commands::document::open_path_in_new_window(app.clone(), path).await
+                    {
+                        tracing::warn!(%error, "failed to open a file from the command line");
                         // A launch open that failed must not end windowless.
                         if app.webview_windows().is_empty() {
                             ensure_main_window(&app);
