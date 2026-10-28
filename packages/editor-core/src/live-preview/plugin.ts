@@ -18,7 +18,7 @@ import { mathBlockPreview } from "./math-blocks";
 import { mediaBlockPreview } from "./media-blocks";
 import { mermaidBlockPreview } from "./mermaid-blocks";
 import { collectDecorationSpecs, type DecorationSpec, type VisibleRange } from "./specs";
-import { tableBlockPreview } from "./table-blocks";
+import { tableBlockPreview, tableSelectionGuard } from "./table-blocks";
 import { tocPreview } from "./toc";
 import { livePreviewTheme } from "./theme";
 import { createLivePreviewWidget } from "./widgets";
@@ -222,6 +222,7 @@ export function livePreview(): Extension {
     mediaBlockPreview,
     commentBlockPreview,
     tableBlockPreview,
+    tableSelectionGuard,
     mathBlockPreview,
     mermaidBlockPreview,
     livePreviewTheme,

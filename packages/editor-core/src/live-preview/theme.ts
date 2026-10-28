@@ -952,6 +952,26 @@ export const livePreviewTheme = EditorView.theme(
     ".cm-md-code-fence": {
       color: "var(--qm-ink-faint)",
     },
+    // The opening fence is a source-only marker. When the caret is elsewhere,
+    // collapse its otherwise empty line so the block starts at the code text.
+    ".cm-md-code-fence-hidden": {
+      height: "0",
+      lineHeight: "0",
+      fontSize: "0",
+      paddingTop: "0",
+      paddingBottom: "0",
+      overflow: "hidden",
+    },
+    ".cm-md-code-fence-hidden + .cm-md-code-block": {
+      paddingTop: "0.35em",
+    },
+    // The closing fence carries the language badge in its bottom-right corner.
+    ".cm-md-code-fence-close": {
+      paddingBottom: "0.2em",
+    },
+    ".cm-md-code-fence-badged": {
+      textAlign: "right",
+    },
     ".cm-md-code-highlight": {
       backgroundColor: "var(--qm-accent-soft)",
       boxShadow: "inset 2px 0 0 var(--qm-accent)",
@@ -969,9 +989,14 @@ export const livePreviewTheme = EditorView.theme(
       backgroundColor: "var(--qm-accent-soft)",
     },
     ".cm-md-code-info": {
+      // Inline widgets participate in the line's text flow. Right-aligning the
+      // closing line keeps the badge in the block's bottom-right corner
+      // without a full-width element (which would wrap the widget buffers and
+      // leave a tall empty strip).
       display: "inline-flex",
-      alignItems: "baseline",
+      alignItems: "center",
       gap: "0.45em",
+      userSelect: "none",
     },
     ".cm-md-code-title": {
       color: "var(--qm-ink-muted)",
@@ -1033,6 +1058,32 @@ export const livePreviewTheme = EditorView.theme(
       textAlign: "left",
       verticalAlign: "top",
       lineHeight: "1.5",
+      position: "relative",
+    },
+    // Rendered cells stay visible while another cell is edited; the
+    // transparent input on top handles clicks, caret placement and typing.
+    ".cm-md-table-cell-view": {
+      display: "block",
+    },
+    ".cm-md-table-cell-input": {
+      position: "absolute",
+      inset: "0",
+      margin: "0",
+      padding: "inherit",
+      border: "0",
+      outline: "none",
+      background: "var(--qm-surface)",
+      color: "inherit",
+      font: "inherit",
+      textAlign: "inherit",
+      opacity: "0",
+      cursor: "text",
+    },
+    ".cm-md-table-cell-input:focus": {
+      opacity: "1",
+      outline: "2px solid var(--qm-accent)",
+      outlineOffset: "-2px",
+      borderRadius: "2px",
     },
     ".cm-md-table-block th": {
       backgroundColor: "var(--qm-surface-muted)",

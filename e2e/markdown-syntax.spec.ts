@@ -59,17 +59,21 @@ test("renders highlight, sub/sup and inline HTML in the syntax guide table", asy
   // Jump to the section-4 heading with CodeMirror's go-to-line dialog. The
   // caret ends on the heading, outside the table, so the table renders as a
   // block widget exactly as it does while reading the guide.
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
   await page.keyboard.press(`${modifier()}+Alt+g`);
   await page.keyboard.type(String(SECTION_LINE));
   await page.keyboard.press("Enter");
+  await expect(page.getByTestId("status-bar")).toContainText(`第 ${SECTION_LINE} 行`);
+  // Lazy block widgets change the document height; re-anchor the target line
+  // so the Live Preview viewport actually decorates it.
+  await page.locator(".cm-line.cm-activeLine").scrollIntoViewIfNeeded();
 
   const table = page.locator(".cm-md-table-block").filter({ hasText: "删除线" });
   await expect(table).toBeVisible();
 
   const row = (label: string) =>
     table.locator("tbody tr").filter({
-      has: page.locator(`td:first-child:text-is("${label}")`),
+      has: page.locator(`td:first-child > .cm-md-table-cell-view:text-is("${label}")`),
     });
 
   await expect(row("删除线").locator(".cm-md-strike")).toHaveText("文本");
@@ -97,13 +101,17 @@ test("renders highlight markers in live preview text", async ({ page }) => {
 test("renders inline HTML, alerts, emoji and footnotes from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
 
   const go = async (needle: string, from = 0) => {
     const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf(needle, from)).split("\n").length;
     await page.keyboard.press(`${modifier()}+Alt+g`);
     await page.keyboard.type(String(line));
     await page.keyboard.press("Enter");
+    await expect(page.getByTestId("status-bar")).toContainText(`第 ${line} 行`);
+    // Lazy block widgets change the document height; re-anchor the target line
+    // so the Live Preview viewport actually decorates it.
+    await page.locator(".cm-line.cm-activeLine").scrollIntoViewIfNeeded();
   };
 
   await go("渲染效果：<kbd>Ctrl</kbd>");
@@ -125,23 +133,56 @@ test("renders inline HTML, alerts, emoji and footnotes from the guide", async ({
 test("renders inline and block math with KaTeX from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
 
   const go = async (needle: string, from = 0) => {
     const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf(needle, from)).split("\n").length;
     await page.keyboard.press(`${modifier()}+Alt+g`);
     await page.keyboard.type(String(line));
     await page.keyboard.press("Enter");
+    await expect(page.getByTestId("status-bar")).toContainText(`第 ${line} 行`);
+    // Lazy block widgets change the document height; keep re-anchoring the
+    // target line until it settles inside the decorated viewport.
+    const active = page.locator(".cm-line.cm-activeLine");
+    await expect
+      .poll(
+        async () => {
+          await active.scrollIntoViewIfNeeded();
+          return active.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return rect.top >= 0 && rect.bottom <= window.innerHeight;
+          });
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
   };
 
   await go("渲染效果：质能方程");
-  await expect(page.locator(".cm-md-math-inline .katex")).toHaveCount(3);
+  const mathLine = page.locator(".cm-line").filter({ hasText: "渲染效果：质能方程" });
+  await expect
+    .poll(
+      async () => {
+        await mathLine.scrollIntoViewIfNeeded();
+        return mathLine.locator(".cm-md-math-inline .katex").count();
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(3);
 
   await go("渲染效果：", DOC_TEXT.indexOf("### 18.2"));
   // The document header was removed, so the taller viewport may expose the
   // neighbouring math block too; assert the first block renders KaTeX.
   const block = page.locator(".cm-md-math-block").first();
-  await expect(block.locator(".katex")).toHaveCount(1);
+  await expect
+    .poll(
+      async () => {
+        await block.scrollIntoViewIfNeeded();
+        return block.locator(".katex").count();
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(1);
   await expect(block).toBeVisible();
 });
 
@@ -170,7 +211,7 @@ test("renders a fenced math block with KaTeX", async ({ page }) => {
 test("renders Mermaid diagrams from the guide in a sandboxed frame", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
 
   const go = async (needle: string, from = 0) => {
     const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf(needle, from)).split("\n").length;
@@ -203,7 +244,7 @@ test("renders Mermaid diagrams from the guide in a sandboxed frame", async ({ pa
 test("re-renders Mermaid diagrams when the theme changes", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果：", DOC_TEXT.indexOf("## 23."))).split(
     "\n",
@@ -243,7 +284,7 @@ test("renders Mermaid under the production CSP", async ({ page }) => {
 
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果：", DOC_TEXT.indexOf("## 23."))).split(
     "\n",
@@ -318,7 +359,7 @@ test("renders every top-level Mermaid diagram in the guide", async ({ page }) =>
 test("renders a collapsible details block from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果：", DOC_TEXT.indexOf("## 20."))).split(
     "\n",
@@ -345,7 +386,7 @@ test("renders a collapsible details block from the guide", async ({ page }) => {
 test("renders definition lists from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果（需渲染器支持）：")).split("\n").length;
   await page.keyboard.press(`${modifier()}+Alt+g`);
@@ -381,7 +422,7 @@ Markdown
 test("renders front matter, a generated TOC and definition lists", async ({ page }) => {
   await openApp(page, [{ path: "/docs/structured.md", text: STRUCTURED_DOC }]);
   await openSeededFile(page, "structured.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const frontMatter = page.locator(".cm-md-frontmatter");
@@ -480,7 +521,7 @@ const JSON_FRONTMATTER_DOC = `{
 test("renders JSON front matter", async ({ page }) => {
   await openApp(page, [{ path: "/docs/json-frontmatter.md", text: JSON_FRONTMATTER_DOC }]);
   await openSeededFile(page, "json-frontmatter.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const frontMatter = page.locator(".cm-md-frontmatter");
@@ -506,7 +547,7 @@ console.log(a + b); // 高亮
 test("renders code block titles and highlighted lines", async ({ page }) => {
   await openApp(page, [{ path: "/docs/code-info.md", text: CODE_INFO_DOC }]);
   await openSeededFile(page, "code-info.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const info = page.locator(".cm-md-code-info");
@@ -535,7 +576,7 @@ const DIFF_DOC = `\`\`\`diff
 test("colors added and removed diff code lines", async ({ page }) => {
   await openApp(page, [{ path: "/docs/diff.md", text: DIFF_DOC }]);
   await openSeededFile(page, "diff.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const added = page.locator(".cm-line.cm-md-code-diff-add");
@@ -562,7 +603,7 @@ const MEDIA_DOC = `<video src="./demo.mp4" controls width="480"></video>
 test("renders video, audio and picture blocks", async ({ page }) => {
   await openApp(page, [{ path: "/docs/media.md", text: MEDIA_DOC }]);
   await openSeededFile(page, "media.md");
-  await page.locator(".cm-content").click();
+  await page.locator(".cm-content").focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const video = page.locator(".cm-md-media-video");
