@@ -73,11 +73,11 @@
 | macOS 签名自动更新 | ✅ 本地发布链路已验证；真机安装冒烟仍待执行 |
 | 工作区文件树、全文搜索、SQLite 索引、崩溃恢复 | 🚧 计划于 P2 |
 | 插件 SDK、Worker/iframe 运行时、能力代理、插件市场 | 🚧 已设计，P3 交付 |
-| Windows / Linux 发布构建 | 🚧 已加入 tag 触发工作流（NSIS / AppImage + deb）；首次 CI 运行待验证 |
+| Windows / Linux 发布构建 | 🚧 有编译与 CI 覆盖；打包和发布验证待完成 |
 
 ### 平台支持
 
-macOS 是当前主目标，也是唯一验证过发布/更新链路的平台。推送 `v*` tag 会触发全平台发布工作流；Windows 与 Linux 安装器由该工作流构建，首次 CI 运行待验证。
+macOS 是当前主目标，也是唯一验证过发布/更新链路的平台。Windows 与 Linux 会在 CI 中做编译检查，但在安装器和发布流程验证前仍属 compile-only。
 
 ## 安装与构建
 
@@ -112,20 +112,29 @@ make build-mac-arch MAC_ARCH=x86_64
 
 正式版本只通过 DMG 分发，不要直接发送 `.app` 文件夹：微信、压缩工具或网盘同步可能丢掉扩展属性、可执行权限和签名资源，接收方就会看到“青墨.app 已损坏，无法打开”。这不是证书失效。
 
-- 分发：`release-artifacts/v<version>/青墨_<version>_universal.dmg`（Developer ID 签名、App 与 DMG 公证并 stapled）
+- 分发：`release-artifacts/v<version>/Qingmo_<version>_universal.dmg`（Developer ID 签名、App 与 DMG 公证并 stapled）
 - 安装：打开 DMG，把 `青墨.app` 拖入“应用程序”，并按 `SHA256SUMS.txt` 校验 DMG
 - 已经拿到损坏的 `.app` 时，先尝试 `xattr -dr com.apple.quarantine /Applications/青墨.app`；若 `codesign --verify --deep --strict /Applications/青墨.app` 仍失败，重新发送 DMG
 - `make build-mac` 走完整本地发布链路（优先 `.release/release.sh`，缺失时用 `scripts/release/build-local.sh`），会签名、公证并生成 `latest.json`；`make build-mac-arch` 只是未签名的本地 DMG
 
-### 全平台发布
+### 本地发布
 
-确认所有版本文件与 `resources/notes.json` 一致后，推送 `vX.Y.Z` tag。`.github/workflows/release.yml` 会创建草稿 Release，构建 macOS universal、Windows NSIS 与 Linux AppImage + deb，生成并校验 `latest.json`，再下载已上传的资产做一次独立校验，全部通过后才正式发布。
+`make build-mac`（或 `.release/release.sh`）会构建、签名并公证 macOS universal 应用，产物写入 `release-artifacts/v<version>/`，包含 DMG、更新 tarball、`latest.json` 与 `SHA256SUMS.txt`。对外资产名使用 ASCII（`Qingmo.app.tar.gz`、`Qingmo_<version>_universal.dmg`），因为 GitHub 会剥离 release asset 名称中的非 ASCII 字符；包内的应用仍是 `青墨.app`。
 
-必需 secrets（仓库级或 `release` Environment 级）：`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。可选的 Apple secrets（`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`）用于 macOS 签名与公证；未配置时 macOS 构建不签名。失败后可用 `workflow_dispatch` 指定已有 tag 重跑。
+校验产物后手动发布：
+
+```bash
+gh release create v<version> --draft --title "青墨 v<version>" \
+  --notes-file release-artifacts/v<version>/RELEASE-NOTES.txt
+gh release upload v<version> release-artifacts/v<version>/* --clobber
+gh release edit v<version> --draft=false --latest
+```
+
+Windows 与 Linux 打包仍待完成。
 
 ### 发布说明
 
-每个待发布版本都必须在 `resources/notes.json` 中有中英双语条目，`make build-mac` 和发布流程会在构建前强制校验，缺失即失败：
+每个待发布版本都必须在 `resources/notes.json` 中有中英双语条目，`make build-mac` 会在构建前强制校验，缺失即失败：
 
 ```json
 {
