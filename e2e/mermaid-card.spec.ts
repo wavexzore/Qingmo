@@ -360,6 +360,7 @@ test("diagram card lines up with the writing column", async ({ page }) => {
   const metrics = await page.evaluate(() => {
     const content = document.querySelector(".cm-content")!.getBoundingClientRect();
     const card = document.querySelector(".cm-md-mermaid")!.getBoundingClientRect();
+    const scroller = document.querySelector(".cm-scroller")!.getBoundingClientRect();
     const ending = [...document.querySelectorAll(".cm-line")].find(
       (line) => line.textContent === "结尾段落",
     )!;
@@ -372,14 +373,24 @@ test("diagram card lines up with the writing column", async ({ page }) => {
       textLeft: text.left,
       inset: text.left - content.left,
       trailing: content.right - card.right,
+      scrollerLeft: scroller.left,
+      scrollerRight: scroller.right,
+      viewport: window.innerWidth,
     };
   });
 
   // The card is a block widget, so it must repeat the line inset instead of
-  // bleeding into the gutter that holds the line numbers.
+  // bleeding into the gutter that holds the line numbers. The content box now
+  // spans the window, so its inset is the 20px page padding plus the 20px
+  // writing inset.
   expect(Math.abs(metrics.cardLeft - metrics.textLeft)).toBeLessThan(1);
-  expect(metrics.inset).toBeCloseTo(20, 0);
-  expect(metrics.trailing).toBeCloseTo(20, 0);
+  expect(metrics.inset).toBeCloseTo(40, 0);
+  expect(metrics.trailing).toBeCloseTo(40, 0);
+
+  // The scrollbar lives on the scroller's edge, so the scroller must reach the
+  // window border instead of stopping at the page inset.
+  expect(metrics.scrollerLeft).toBeCloseTo(0, 0);
+  expect(metrics.scrollerRight).toBeCloseTo(metrics.viewport, 0);
 });
 
 test("oversized diagrams keep a readable width and only scroll horizontally", async ({ page }) => {

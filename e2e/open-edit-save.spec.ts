@@ -92,16 +92,32 @@ test("a lone dash leaves the paragraph above in plain text", async ({ page }) =>
 
 test("saved documents keep the same writing margins as the untitled buffer", async ({ page }) => {
   await openApp(page);
-  const untitledBox = await page.locator(".cm-editor").boundingBox();
 
+  const margins = () =>
+    page.evaluate(() => {
+      const editor = document.querySelector(".cm-editor")!.getBoundingClientRect();
+      const content = document.querySelector(".cm-content")!;
+      const line = document.querySelector(".cm-line")!;
+      return {
+        editorLeft: editor.left,
+        editorWidth: editor.width,
+        viewport: window.innerWidth,
+        contentInset: Number.parseFloat(getComputedStyle(content).paddingLeft),
+        lineInset: Number.parseFloat(getComputedStyle(line).paddingLeft),
+      };
+    });
+
+  const untitled = await margins();
   await openSeededFile(page, "note.md");
-  const savedBox = await page.locator(".cm-editor").boundingBox();
+  const saved = await margins();
 
-  // A 20px page gutter on both sides, identical in every window.
-  expect(untitledBox!.x).toBe(20);
-  expect(savedBox!.x).toBe(untitledBox!.x);
-  expect(savedBox!.width).toBe(untitledBox!.width);
-  expect(untitledBox!.width).toBe(page.viewportSize()!.width - 40);
+  // The scroller spans the window so the vertical scrollbar sits on the
+  // border; the page gutter and writing inset live inside the content instead.
+  expect(untitled.editorLeft).toBe(0);
+  expect(untitled.editorWidth).toBe(untitled.viewport);
+  expect(untitled.contentInset).toBe(20);
+  expect(untitled.lineInset).toBe(20);
+  expect(saved).toEqual(untitled);
 });
 
 test("cancelling Save As keeps the untitled document dirty", async ({ page }) => {

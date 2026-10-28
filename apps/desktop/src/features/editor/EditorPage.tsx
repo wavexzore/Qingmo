@@ -75,7 +75,7 @@ function DocumentEditor() {
         </div>
       ) : null}
 
-      <div className="mx-auto min-h-0 w-full px-5 flex-1">
+      <div className="min-h-0 w-full flex-1">
         <EditorHost session={session} autoFocus={untitled} />
       </div>
 

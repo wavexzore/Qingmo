@@ -2,14 +2,15 @@
 @import "@qingmo/ui/tokens.css";
 
 /*
- * Line numbers hang in the window's 20px page gutter, outside the writing
- * column: source mode shows them without shifting the text, and Live Preview
- * hides them entirely.
+ * Line numbers hang in the writing area's fixed left inset: source mode shows
+ * them without shifting the text, and Live Preview hides them entirely. The
+ * inset lives inside the scroller, so the vertical scrollbar can sit on the
+ * window border instead of being pushed 20px inwards.
  */
 .cm-editor .cm-gutters {
   position: absolute !important;
   top: 0;
-  left: -20px;
+  left: 0;
   width: 40px;
   justify-content: flex-end;
   padding-right: 4px;
