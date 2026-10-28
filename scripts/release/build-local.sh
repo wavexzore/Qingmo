@@ -209,11 +209,14 @@ fi
 sig="$tarball.sig"
 [[ -f "$tarball" ]] || die "updater tarball not found: $tarball"
 [[ -s "$sig" ]] || die "updater signature not found: $sig"
-dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name 'Qingmo_*.dmg' -print -quit 2>/dev/null || true)"
-if [[ -z "$dmg" ]]; then
-  dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name "$product_name*.dmg" -print -quit 2>/dev/null || true)"
+dmg="$dmg_dir/${product_name}_${version}_universal.dmg"
+if [[ ! -f "$dmg" ]]; then
+  dmg="$dmg_dir/Qingmo_${version}_universal.dmg"
 fi
-[[ -n "$dmg" ]] || die "dmg for $product_name not found under: $dmg_dir"
+if [[ ! -f "$dmg" ]]; then
+  dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name "*_${version}_*.dmg" -print -quit 2>/dev/null || true)"
+fi
+[[ -f "$dmg" ]] || die "dmg for $product_name $version not found under: $dmg_dir"
 
 info "verifying app signature, Gatekeeper assessment and notarization ticket"
 codesign --verify --deep --strict --verbose=2 "$app"
