@@ -170,7 +170,7 @@ function collectNotes(root, version) {
 }
 
 function render(entry, lang) {
-  const lines = [`Qingmo ${entry.version} (${entry.date})`];
+  const lines = [`青墨 ${entry.version} (${entry.date})`];
   const languages = lang === "all" ? LANGUAGES : [lang];
   for (const language of languages) {
     const heading = language === "zh-CN" ? "中文" : "English";

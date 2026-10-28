@@ -1,4 +1,4 @@
-# Qingmo · 轻墨
+# Qingmo · 青墨
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -73,11 +73,11 @@ Qingmo is **pre-1.0** and under active development. The editor MVP is usable tod
 | macOS signed auto-update | ✅ Local release chain validated; real-device install smoke test still pending |
 | Workspace file tree, full-text search, SQLite index, crash recovery | 🚧 Planned for P2 |
 | Plugin SDK, Worker/iframe runtime, capability broker, plugin market | 🚧 Designed for P3, not shipped |
-| Windows and Linux release builds | 🚧 Compile-checked in CI; packaging and release verification pending |
+| Windows and Linux release builds | 🚧 Tag-triggered workflow added (NSIS / AppImage + deb); first CI run pending |
 
 ### Platform support
 
-macOS is the primary target and the only platform with a verified release/update path today. Windows and Linux are compile-checked in CI, but remain compile-only until their installers and release flows are validated.
+macOS is the primary target and the only platform with a verified release/update path today. Pushing a `v*` tag runs the all-platform release workflow; Windows and Linux installers are built by that workflow and are pending their first CI run.
 
 ## Install and build
 
@@ -110,12 +110,18 @@ make build-mac-arch MAC_ARCH=x86_64
 
 ### Distribution and install (macOS)
 
-Ship release builds as the DMG, never as a bare `.app` folder: WeChat, archive tools and cloud sync can drop extended attributes, executable permissions and signature resources, and the receiver then sees "Qingmo.app is damaged and can't be opened". The certificate is not at fault.
+Ship release builds as the DMG, never as a bare `.app` folder: WeChat, archive tools and cloud sync can drop extended attributes, executable permissions and signature resources, and the receiver then sees "青墨.app is damaged and can't be opened". The certificate is not at fault.
 
-- Distribute: `release-artifacts/v<version>/Qingmo_<version>_universal.dmg` (Developer ID signed; app and DMG notarized and stapled)
-- Install: open the DMG, drag `Qingmo.app` into Applications, and verify the DMG against `SHA256SUMS.txt`
-- If a bare `.app` already fails, try `xattr -dr com.apple.quarantine /Applications/Qingmo.app` first; if `codesign --verify --deep --strict /Applications/Qingmo.app` still fails, send the DMG again
+- Distribute: `release-artifacts/v<version>/青墨_<version>_universal.dmg` (Developer ID signed; app and DMG notarized and stapled)
+- Install: open the DMG, drag `青墨.app` into Applications, and verify the DMG against `SHA256SUMS.txt`
+- If a bare `.app` already fails, try `xattr -dr com.apple.quarantine /Applications/青墨.app` first; if `codesign --verify --deep --strict /Applications/青墨.app` still fails, send the DMG again
 - `make build-mac` runs the full local release pipeline (prefers `.release/release.sh`, falls back to `scripts/release/build-local.sh`), signing, notarizing and generating `latest.json`; `make build-mac-arch` is an unsigned local DMG
+
+### Releasing all platforms
+
+Push a `vX.Y.Z` tag after every version file and `resources/notes.json` agree. `.github/workflows/release.yml` creates a draft release, builds macOS universal, Windows NSIS and Linux AppImage + deb, assembles and verifies `latest.json`, downloads the uploaded assets again for an independent check, and only then publishes the release.
+
+Required secrets (repository or `release` environment): `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The optional Apple secrets (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`) enable macOS signing and notarization; without them the macOS build is unsigned. Use `workflow_dispatch` with an existing tag to retry a failed run.
 
 ### Release notes
 

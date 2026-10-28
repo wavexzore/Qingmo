@@ -82,7 +82,7 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
         .state::<crate::state::ShellLocale>()
         .labels()
         .map(|labels| labels.app_name)
-        .unwrap_or_else(|| "Qingmo".to_string());
+        .unwrap_or_else(|| "青墨".to_string());
     let title = window_title_for(Path::new(&payload.path), &app_name);
     let doc_token = payload.doc_token.clone();
     let label = format!("doc-{}", uuid::Uuid::new_v4());
@@ -195,7 +195,7 @@ pub async fn document_save_as<R: tauri::Runtime>(
     let app_name = locale
         .labels()
         .map(|labels| labels.app_name)
-        .unwrap_or_else(|| "Qingmo".to_string());
+        .unwrap_or_else(|| "青墨".to_string());
     let (sender, receiver) = tokio::sync::oneshot::channel();
 
     window

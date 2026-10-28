@@ -66,7 +66,7 @@ impl AboutLink {
 fn about_window_title(labels: Option<crate::ipc::dto::NativeShellLabels>) -> String {
     labels
         .map(|labels| labels.about)
-        .unwrap_or_else(|| "Qingmo".to_string())
+        .unwrap_or_else(|| "青墨".to_string())
 }
 
 /// Opens the About window, or focuses it when it is already open.
@@ -182,8 +182,8 @@ mod tests {
     }
 
     #[test]
-    fn about_title_falls_back_to_a_neutral_name() {
-        assert_eq!(about_window_title(None), "Qingmo");
+    fn about_title_falls_back_to_the_product_name() {
+        assert_eq!(about_window_title(None), "青墨");
 
         let labels = crate::ipc::dto::test_native_labels("青墨");
         assert_eq!(about_window_title(Some(labels.clone())), "About 青墨");
