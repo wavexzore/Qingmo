@@ -69,7 +69,7 @@
 | --- | --- |
 | 编辑器 MVP（打开、编辑、保存、Live Preview、主题、命令面板、大文件） | ✅ 已实现，并有单元、Rust 集成与 Playwright E2E 覆盖 |
 | 保存可靠性（自动保存、原子写、冲突横幅、外部变更感知、关闭守卫） | ✅ 已实现 |
-| 原生菜单、多窗口、运行时 i18n（zh-CN / en） | ✅ 已实现，并有单元、Rust 契约、Playwright E2E 与 macOS 真机菜单冒烟；Windows 运行时未验证 |
+| 原生菜单、多窗口、运行时 i18n（zh-CN / en） | ✅ 已实现，并有单元、Rust 契约、Playwright E2E 与 macOS 真机菜单冒烟；Windows 构建、122 Rust 测试、469 单测与 80 E2E 通过（原生 GUI 未自动化） |
 | macOS 签名自动更新 | ✅ 本地发布链路已验证；真机安装冒烟仍待执行 |
 | 工作区文件树、全文搜索、SQLite 索引、崩溃恢复 | 🚧 计划于 P2 |
 | 插件 SDK、Worker/iframe 运行时、能力代理、插件市场 | 🚧 已设计，P3 交付 |
