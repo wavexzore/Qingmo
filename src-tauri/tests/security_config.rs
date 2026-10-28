@@ -123,6 +123,40 @@ fn about_capability_is_least_privilege() {
 }
 
 #[test]
+fn settings_capability_is_least_privilege() {
+    let capability = read_json("capabilities/settings.json");
+    let permissions = capability["permissions"]
+        .as_array()
+        .expect("permissions must be an array")
+        .iter()
+        .map(|value| value.as_str().expect("permission must be a string"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(capability["windows"], serde_json::json!(["settings"]));
+    assert_eq!(
+        permissions,
+        vec![
+            "core:window:allow-start-dragging",
+            "allow-app-settings-info",
+            "allow-app-settings-close",
+        ]
+    );
+
+    for permission in &permissions {
+        assert!(
+            !permission.starts_with("updater:"),
+            "updater:* must never be granted to the webview: {permission}"
+        );
+        for prefix in ["fs:", "shell:", "http:", "dialog:", "opener:", "updater:"] {
+            assert!(
+                !permission.starts_with(prefix),
+                "forbidden settings permission {permission}"
+            );
+        }
+    }
+}
+
+#[test]
 fn production_csp_is_strict_and_has_no_wildcards() {
     let config = read_json("tauri.conf.json");
     let security = &config["app"]["security"];
@@ -224,7 +258,7 @@ fn window_and_asset_protocol_are_locked_down() {
     );
     assert_eq!(
         app["security"]["capabilities"],
-        serde_json::json!(["default", "about"])
+        serde_json::json!(["default", "about", "settings"])
     );
 
     let windows = app["windows"].as_array().expect("windows must be an array");

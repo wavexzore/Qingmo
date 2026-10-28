@@ -1,34 +1,43 @@
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 use crate::commands::about::ABOUT_WINDOW_LABEL;
+use crate::commands::settings::SETTINGS_WINDOW_LABEL;
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::contract::EVENT_CLOSE_REQUESTED;
 use crate::ipc::dto::{CloseReason, CloseRequestedPayload};
 use crate::state::{CloseGuard, CloseOutcome, DocumentRegistry, DocumentWatcher, WindowSessions};
 
+/// Windows that never hold document state.
+///
+/// About and Settings can own keyboard focus, but they neither confirm a quit
+/// nor keep the app alive after the last document closes.
+fn is_auxiliary_window(label: &str) -> bool {
+    label == ABOUT_WINDOW_LABEL || label == SETTINGS_WINDOW_LABEL
+}
+
 /// Resolves the windows that must confirm a close.
 ///
-/// The About window holds no document state and is deliberately excluded from
-/// app exit: `app.exit` closes it with every other window, and waiting for a
-/// close confirmation it cannot send would deadlock quitting.
+/// Auxiliary windows hold no document state and are deliberately excluded from
+/// app exit: `app.exit` closes them with every other window, and waiting for a
+/// close confirmation they cannot send would deadlock quitting.
 fn close_targets(reason: CloseReason, target: Option<&str>, open: Vec<String>) -> Vec<String> {
     match reason {
         CloseReason::Window => target.map(str::to_string).into_iter().collect(),
         CloseReason::Exit => open
             .into_iter()
-            .filter(|label| label != ABOUT_WINDOW_LABEL)
+            .filter(|label| !is_auxiliary_window(label))
             .collect(),
     }
 }
 
 /// Counts windows that can keep the app alive after one editable window closes.
 ///
-/// The About window is auxiliary: closing the last document while About is
-/// open must still follow the app's "last window exits" gesture instead of
-/// leaving an About window that can no longer open files.
+/// Auxiliary windows are excluded: closing the last document while About or
+/// Settings is open must still follow the app's "last window exits" gesture
+/// instead of leaving a window that can no longer open files.
 fn remaining_editable_windows(open: Vec<String>, closing: &str) -> usize {
     open.into_iter()
-        .filter(|label| label != closing && label != ABOUT_WINDOW_LABEL)
+        .filter(|label| label != closing && !is_auxiliary_window(label))
         .count()
 }
 
@@ -182,19 +191,23 @@ mod tests {
     }
 
     #[test]
-    fn exit_ignores_the_about_window() {
+    fn exit_ignores_auxiliary_windows() {
         let targets = close_targets(
             CloseReason::Exit,
             None,
-            labels(&["main", "doc-1", ABOUT_WINDOW_LABEL]),
+            labels(&["main", "doc-1", ABOUT_WINDOW_LABEL, SETTINGS_WINDOW_LABEL]),
         );
 
         assert_eq!(targets, labels(&["main", "doc-1"]));
     }
 
     #[test]
-    fn an_about_only_exit_resolves_to_no_pending_targets() {
-        let targets = close_targets(CloseReason::Exit, None, labels(&[ABOUT_WINDOW_LABEL]));
+    fn an_auxiliary_only_exit_resolves_to_no_pending_targets() {
+        let targets = close_targets(
+            CloseReason::Exit,
+            None,
+            labels(&[ABOUT_WINDOW_LABEL, SETTINGS_WINDOW_LABEL]),
+        );
 
         assert!(targets.is_empty());
     }
@@ -204,16 +217,20 @@ mod tests {
         let targets = close_targets(
             CloseReason::Window,
             Some("doc-1"),
-            labels(&["main", "doc-1", ABOUT_WINDOW_LABEL]),
+            labels(&["main", "doc-1", ABOUT_WINDOW_LABEL, SETTINGS_WINDOW_LABEL]),
         );
 
         assert_eq!(targets, labels(&["doc-1"]));
     }
 
     #[test]
-    fn the_about_window_never_keeps_the_app_alive() {
+    fn auxiliary_windows_never_keep_the_app_alive() {
         assert_eq!(
             remaining_editable_windows(labels(&["doc-1", ABOUT_WINDOW_LABEL]), "doc-1"),
+            0
+        );
+        assert_eq!(
+            remaining_editable_windows(labels(&["doc-1", SETTINGS_WINDOW_LABEL]), "doc-1"),
             0
         );
         assert_eq!(
@@ -221,7 +238,10 @@ mod tests {
             0
         );
         assert_eq!(
-            remaining_editable_windows(labels(&["main", "doc-1", ABOUT_WINDOW_LABEL]), "doc-1"),
+            remaining_editable_windows(
+                labels(&["main", "doc-1", ABOUT_WINDOW_LABEL, SETTINGS_WINDOW_LABEL]),
+                "doc-1"
+            ),
             1
         );
     }

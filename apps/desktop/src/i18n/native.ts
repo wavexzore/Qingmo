@@ -15,6 +15,7 @@ export function buildNativeShellLabels(language: SupportedLanguage): NativeShell
   return {
     appName,
     about: menu("about", { appName }),
+    settings: menu("settings"),
     services: menu("services"),
     hideApp: menu("hideApp", { appName }),
     hideOthers: menu("hideOthers"),

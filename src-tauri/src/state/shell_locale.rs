@@ -69,6 +69,7 @@ mod tests {
         let mut labels: NativeShellLabels = serde_json::from_value(serde_json::json!({
             "appName": app_name,
             "about": "about",
+            "settings": "settings",
             "services": "services",
             "hideApp": "hide",
             "hideOthers": "hide others",

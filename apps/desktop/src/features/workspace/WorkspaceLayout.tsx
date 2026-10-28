@@ -17,7 +17,6 @@ import { uiStore } from "../../stores/uiStore";
 import { CommandPalette } from "../commands/CommandPalette";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { useCommandKeybindings } from "../commands/keybindings";
-import { useLocaleCommands } from "../commands/localeCommand";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { EditorSession } from "../editor/EditorSession";
@@ -55,7 +54,6 @@ export function WorkspaceLayout() {
   const updateBlocked = closeGuard.closing || closeGuard.prompt !== null;
 
   useThemeCommand();
-  useLocaleCommands();
   useThemeService(session);
   useEditorLocale(session);
   useLivePreviewMenu(ipc, session);

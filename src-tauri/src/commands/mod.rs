@@ -3,6 +3,7 @@ pub mod close;
 pub mod document;
 pub mod locale;
 pub mod logs;
+pub mod settings;
 pub mod update;
 pub mod view;
 
@@ -20,6 +21,8 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         about::app_about_info,
         about::app_about_close,
         about::app_about_open_link,
+        settings::app_settings_info,
+        settings::app_settings_close,
         update::app_update_status,
         update::app_update_check,
         update::app_update_download,

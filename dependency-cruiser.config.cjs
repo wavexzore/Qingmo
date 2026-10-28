@@ -12,7 +12,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^apps/desktop/src",
-        pathNot: "^apps/desktop/src/lib/(ipc|platform|update|about|log)/tauri\\.ts$",
+        pathNot: "^apps/desktop/src/lib/(ipc|platform|update|about|log|settings)/tauri\\.ts$",
       },
       to: { path: "(^|/)@tauri-apps/|\\.pnpm/@tauri-apps\\+" },
     },

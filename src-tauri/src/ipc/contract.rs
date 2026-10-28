@@ -14,6 +14,8 @@ pub const COMMANDS: &[&str] = &[
     "app_about_info",
     "app_about_close",
     "app_about_open_link",
+    "app_settings_info",
+    "app_settings_close",
     "app_update_status",
     "app_update_check",
     "app_update_download",

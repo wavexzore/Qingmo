@@ -30,7 +30,7 @@
         "enable": false,
         "scope": []
       },
-      "capabilities": ["default", "about"]
+      "capabilities": ["default", "about", "settings"]
     }
   },
   "bundle": {

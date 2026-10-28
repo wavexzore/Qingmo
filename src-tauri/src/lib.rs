@@ -17,9 +17,11 @@ pub mod commands;
 pub mod error;
 pub mod ipc;
 pub mod services;
+mod startup_locale;
 pub mod state;
 
 use commands::about::{open_about, ABOUT_WINDOW_LABEL};
+use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
     EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_OPEN, MENU_FILE_SAVE, MENU_LANGUAGE_EN,
     MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
@@ -29,6 +31,7 @@ use ipc::dto::{AppLanguage, MenuActionPayload, NativeShellLabels};
 
 /// Menu ids handled in Rust instead of being forwarded to the webview.
 const MENU_ABOUT: &str = "app.about";
+const MENU_SETTINGS: &str = "app.openSettings";
 const MENU_LOGS: &str = "app.openLogs";
 const MENU_QUIT: &str = "app.quit";
 const MENU_CLOSE_WINDOW: &str = "window.close";
@@ -176,9 +179,17 @@ fn menu_layout<'a>(
     let mut file_items = vec![
         action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
         action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
-        MenuEntry::Separator,
-        action(MENU_CLOSE_WINDOW, &labels.close_window, Some("CmdOrCtrl+W")),
     ];
+    if !macos {
+        file_items.push(MenuEntry::Separator);
+        file_items.push(action(MENU_SETTINGS, &labels.settings, Some("CmdOrCtrl+,")));
+    }
+    file_items.push(MenuEntry::Separator);
+    file_items.push(action(
+        MENU_CLOSE_WINDOW,
+        &labels.close_window,
+        Some("CmdOrCtrl+W"),
+    ));
     if !macos {
         file_items.push(MenuEntry::Separator);
         file_items.push(action(MENU_QUIT, &labels.quit_app, Some("CmdOrCtrl+Q")));
@@ -222,6 +233,7 @@ fn menu_layout<'a>(
             title: &labels.app_name,
             items: vec![
                 action(MENU_ABOUT, &labels.about, None),
+                action(MENU_SETTINGS, &labels.settings, Some("CmdOrCtrl+,")),
                 MenuEntry::Separator,
                 MenuEntry::Services(&labels.services),
                 MenuEntry::Separator,
@@ -300,11 +312,13 @@ fn menu_layout<'a>(
     menus
 }
 
-/// Startup fallback used before the webview sends its first projection.
+/// Last-resort fallback when the bundled startup labels cannot be parsed.
 ///
-/// It is intentionally minimal and neutral: a custom Quit item always routes
-/// through CloseGuard, and the standard edit items keep text editing usable.
-/// It must never fall back to `Menu::default`, whose platform Quit bypasses the
+/// The normal startup path builds the complete localized menu from the shared
+/// frontend menu resources, so the menu never changes when the webview sends
+/// its first projection. If that resource is damaged, this minimal neutral
+/// menu still keeps Quit on the CloseGuard path and text editing usable. It
+/// must never fall back to `Menu::default`, whose platform Quit bypasses the
 /// guard and whose About item would add a second copy source.
 fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
     let macos = platform == MenuPlatform::Mac;
@@ -405,6 +419,15 @@ fn build_submenu<'a, R: Runtime>(
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let language = startup_locale::language(app);
+    if let Some(labels) = startup_locale::labels_for(language) {
+        let layout = menu_layout(menu_platform(), &labels, language, true);
+        return build_menu_with_layout(app, &layout);
+    }
+
+    // The bundled JSON is verified by unit tests; this branch only protects a
+    // damaged build from starting without any menu.
+    eprintln!("startup menu labels could not be parsed; using the neutral fallback");
     let layout = startup_layout(menu_platform());
     build_menu_with_layout(app, &layout)
 }
@@ -533,6 +556,9 @@ fn resolve_window_title(
     if label == ABOUT_WINDOW_LABEL {
         return Some(labels.about.clone());
     }
+    if label == SETTINGS_WINDOW_LABEL {
+        return Some(labels.settings.clone());
+    }
     if let Some(path) = sessions.pending_path(label) {
         return Some(commands::document::window_title_for(
             &path,
@@ -594,9 +620,17 @@ fn ensure_main_window(app: &AppHandle) {
         return;
     };
 
-    if let Err(error) =
-        WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build())
-    {
+    let labels = app.state::<state::ShellLocale>().labels();
+    let built = WebviewWindowBuilder::from_config(app, &config).and_then(|builder| {
+        let builder = match labels.as_ref() {
+            // The config title is the product default; use the startup
+            // projection so an English launch does not briefly show it.
+            Some(labels) => builder.title(labels.app_name.clone()),
+            None => builder,
+        };
+        builder.build()
+    });
+    if let Err(error) = built {
         tracing::error!(%error, "failed to create the main window");
     }
 }
@@ -630,6 +664,12 @@ pub fn run() {
                 }
                 return;
             }
+            if id == MENU_SETTINGS {
+                if let Err(error) = open_settings(app) {
+                    tracing::error!(%error, "failed to open the settings window");
+                }
+                return;
+            }
             if id == MENU_QUIT {
                 commands::close::request_close(
                     app,
@@ -640,11 +680,13 @@ pub fn run() {
             }
             if id == MENU_CLOSE_WINDOW {
                 if let Some(window) = target.as_ref() {
-                    if window.label() == ABOUT_WINDOW_LABEL {
-                        // The About window has no unsaved state; destroying it
-                        // directly keeps Cmd+W and the red dot symmetrical.
+                    if window.label() == ABOUT_WINDOW_LABEL
+                        || window.label() == SETTINGS_WINDOW_LABEL
+                    {
+                        // Auxiliary windows have no unsaved state; destroying
+                        // them directly keeps Cmd+W and the red dot symmetrical.
                         if let Err(error) = window.destroy() {
-                            tracing::warn!(%error, "failed to close the About window");
+                            tracing::warn!(%error, label = window.label(), "failed to close an auxiliary window");
                         }
                     } else {
                         commands::close::request_close(
@@ -658,7 +700,9 @@ pub fn run() {
             }
             if id == MENU_TOGGLE_FULLSCREEN {
                 if let Some(window) = target.as_ref() {
-                    if window.label() != ABOUT_WINDOW_LABEL {
+                    if window.label() != ABOUT_WINDOW_LABEL
+                        && window.label() != SETTINGS_WINDOW_LABEL
+                    {
                         toggle_fullscreen(window);
                     }
                 }
@@ -712,6 +756,14 @@ pub fn run() {
                 log_dir = %services::logging::dir().display(),
                 "Qingmo started"
             );
+            // Seed the shell projection before any window can be created. The
+            // first webview projection then matches the startup menu and does
+            // not rebuild it, so the menu bar never visibly changes on load.
+            let startup_language = startup_locale::language(app.handle());
+            if let Some(labels) = startup_locale::labels_for(startup_language) {
+                app.state::<state::ShellLocale>()
+                    .replace(startup_language, labels);
+            }
             app.manage(state::UpdateManager::new(
                 app.package_info().version.to_string(),
             ));
@@ -742,7 +794,7 @@ pub fn run() {
             ..
         } => {
             let tracker = app_handle.state::<state::FocusTracker>();
-            if label == ABOUT_WINDOW_LABEL {
+            if label == ABOUT_WINDOW_LABEL || label == SETTINGS_WINDOW_LABEL {
                 // Keep the last document as the menu command target.
                 tracker.set_auxiliary(&label);
             } else {
@@ -781,7 +833,7 @@ pub fn run() {
             event: WindowEvent::CloseRequested { api, .. },
             ..
         } => {
-            if label == ABOUT_WINDOW_LABEL {
+            if label == ABOUT_WINDOW_LABEL || label == SETTINGS_WINDOW_LABEL {
                 // No document state to flush; let the native close proceed.
                 return;
             }
@@ -864,6 +916,7 @@ mod menu_tests {
         NativeShellLabels {
             app_name: format!("{prefix}-app"),
             about: format!("{prefix}-about"),
+            settings: format!("{prefix}-settings"),
             services: format!("{prefix}-services"),
             hide_app: format!("{prefix}-hide"),
             hide_others: format!("{prefix}-hide-others"),
@@ -965,6 +1018,7 @@ mod menu_tests {
     fn assert_every_action_has_a_handler(layout: &[MenuSpec<'_>]) {
         let rust_handled = [
             MENU_ABOUT,
+            MENU_SETTINGS,
             MENU_QUIT,
             MENU_CLOSE_WINDOW,
             MENU_TOGGLE_FULLSCREEN,
@@ -996,6 +1050,11 @@ mod menu_tests {
 
         let app_menu = menu(&layout, "zh-app");
         assert_eq!(action_label(action(app_menu, MENU_ABOUT)), "zh-about");
+        assert_eq!(action_label(action(app_menu, MENU_SETTINGS)), "zh-settings");
+        assert_eq!(
+            action_accelerator(action(app_menu, MENU_SETTINGS)),
+            Some("CmdOrCtrl+,")
+        );
         assert!(action_ids(app_menu).contains(&MENU_QUIT));
         assert_eq!(
             action_accelerator(action(app_menu, MENU_QUIT)),
@@ -1008,6 +1067,10 @@ mod menu_tests {
         assert!(file_ids.contains(&MENU_FILE_SAVE));
         assert!(file_ids.contains(&MENU_CLOSE_WINDOW));
         assert!(!file_ids.contains(&MENU_QUIT));
+        assert!(
+            !file_ids.contains(&MENU_SETTINGS),
+            "macOS keeps settings in the application menu"
+        );
         assert_eq!(action_label(action(file_menu, MENU_FILE_OPEN)), "zh-open");
 
         assert_eq!(
@@ -1075,6 +1138,15 @@ mod menu_tests {
         let file_menu = menu(&layout, "en-file");
         let file_ids = action_ids(file_menu);
         assert!(file_ids.contains(&MENU_QUIT));
+        assert!(file_ids.contains(&MENU_SETTINGS));
+        assert_eq!(
+            action_label(action(file_menu, MENU_SETTINGS)),
+            "en-settings"
+        );
+        assert_eq!(
+            action_accelerator(action(file_menu, MENU_SETTINGS)),
+            Some("CmdOrCtrl+,")
+        );
         assert_eq!(action_label(action(file_menu, MENU_QUIT)), "en-quit");
         assert_eq!(
             action_accelerator(action(file_menu, MENU_QUIT)),
@@ -1132,6 +1204,11 @@ mod menu_tests {
                     "{expected} must appear exactly once in {platform:?}"
                 );
             }
+            assert_eq!(
+                ids.iter().filter(|id| **id == MENU_SETTINGS).count(),
+                1,
+                "the Rust-handled settings item must appear exactly once in {platform:?}"
+            );
         }
     }
 
@@ -1147,6 +1224,7 @@ mod menu_tests {
             );
             assert!(ids.contains(&MENU_CLOSE_WINDOW));
             assert!(!ids.contains(&MENU_ABOUT));
+            assert!(!ids.contains(&MENU_SETTINGS));
             assert_every_action_has_a_handler(&layout);
         }
     }
@@ -1199,6 +1277,10 @@ mod menu_tests {
         assert_eq!(
             resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
             Some("zh-about")
+        );
+        assert_eq!(
+            resolve_window_title(SETTINGS_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
+            Some("zh-settings")
         );
 
         sessions.stage("doc-pending", payload("/docs/pending.md", "pending-token"));

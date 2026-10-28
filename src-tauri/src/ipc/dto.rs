@@ -275,6 +275,7 @@ pub enum AppLanguage {
 pub struct NativeShellLabels {
     pub app_name: String,
     pub about: String,
+    pub settings: String,
     pub services: String,
     pub hide_app: String,
     pub hide_others: String,
@@ -368,10 +369,11 @@ fn validate_untitled_file_name(name: &str) -> Result<(), AppError> {
 
 impl NativeShellLabels {
     /// Menu/title labels only; `untitledFileName` is validated separately.
-    pub fn fields(&self) -> [(&'static str, &str); 37] {
+    pub fn fields(&self) -> [(&'static str, &str); 38] {
         [
             ("appName", &self.app_name),
             ("about", &self.about),
+            ("settings", &self.settings),
             ("services", &self.services),
             ("hideApp", &self.hide_app),
             ("hideOthers", &self.hide_others),
@@ -447,6 +449,7 @@ pub fn test_native_labels(app_name: &str) -> NativeShellLabels {
     NativeShellLabels {
         app_name: app_name.to_string(),
         about: format!("About {app_name}"),
+        settings: "Settings…".to_string(),
         services: "Services".to_string(),
         hide_app: format!("Hide {app_name}"),
         hide_others: "Hide Others".to_string(),

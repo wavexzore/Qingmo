@@ -53,7 +53,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 20);
+    assert_eq!(COMMANDS.len(), 22);
     assert_eq!(
         EVENTS,
         &[
@@ -80,7 +80,11 @@ fn frontend_command_mirror_contains_every_contract_name() {
 #[test]
 fn capabilities_cover_exactly_the_application_commands() {
     let mut app_permissions = Vec::new();
-    for capability in ["capabilities/default.json", "capabilities/about.json"] {
+    for capability in [
+        "capabilities/default.json",
+        "capabilities/about.json",
+        "capabilities/settings.json",
+    ] {
         app_permissions.extend(
             capability_permissions(capability)
                 .into_iter()
@@ -94,12 +98,14 @@ fn capabilities_cover_exactly_the_application_commands() {
     expected.sort();
     assert_eq!(app_permissions, expected);
 
-    let about_permissions = capability_permissions("capabilities/about.json");
-    for permission in &about_permissions {
-        assert!(
-            !permission.starts_with("updater:"),
-            "updater:* must never be granted to the webview: {permission}"
-        );
+    for auxiliary in ["capabilities/about.json", "capabilities/settings.json"] {
+        let permissions = capability_permissions(auxiliary);
+        for permission in &permissions {
+            assert!(
+                !permission.starts_with("updater:"),
+                "updater:* must never be granted to the webview: {permission}"
+            );
+        }
     }
 
     assert_eq!(
@@ -109,6 +115,10 @@ fn capabilities_cover_exactly_the_application_commands() {
     assert_eq!(
         read_json("capabilities/about.json")["windows"],
         json!(["about"])
+    );
+    assert_eq!(
+        read_json("capabilities/settings.json")["windows"],
+        json!(["settings"])
     );
 }
 
@@ -374,6 +384,26 @@ fn invoke_handler_registers_every_contract_command() {
         "unexpected build metadata: {info}"
     );
 
+    for command in ["app_settings_info", "app_settings_close"] {
+        let error = invoke(&webview, command, json!({}))
+            .expect_err("settings commands must reject other windows");
+        let denied = error.get("code").and_then(Value::as_str) == Some("PERMISSION_DENIED")
+            || error
+                .as_str()
+                .is_some_and(|message| message.contains("not allowed"));
+        assert!(
+            denied,
+            "{command} must be scoped to the settings window: {error}"
+        );
+    }
+
+    let settings = tauri::WebviewWindowBuilder::new(&app, "settings", Default::default())
+        .build()
+        .expect("mock settings webview must build");
+    let version = invoke(&settings, "app_settings_info", json!({}))
+        .expect("the settings window must read the app version");
+    assert_eq!(version, env!("CARGO_PKG_VERSION"));
+
     let stats = invoke(&webview, "app_logs_stats", json!({}))
         .expect("log stats must work without the plugin");
     assert!(stats["totalEntries"].is_number());
@@ -437,6 +467,7 @@ fn valid_labels() -> NativeShellLabels {
     NativeShellLabels {
         app_name: "Qingmo".to_string(),
         about: "About Qingmo".to_string(),
+        settings: "Settings…".to_string(),
         services: "Services".to_string(),
         hide_app: "Hide Qingmo".to_string(),
         hide_others: "Hide Others".to_string(),

@@ -54,7 +54,8 @@ pub fn app_apply_locale<R: Runtime>(
     request: ApplyLocaleRequest,
 ) -> Result<(), AppError> {
     let checked = crate::current_live_preview_checked(&app);
-    apply_with(
+    let language = request.language;
+    let result = apply_with(
         &locale,
         request,
         checked,
@@ -67,7 +68,13 @@ pub fn app_apply_locale<R: Runtime>(
                 .map_err(|error| AppError::new(AppErrorCode::Io, error.to_string()))
         },
         |labels| crate::apply_window_titles(&app, labels),
-    )
+    );
+    if result.is_ok() {
+        // Cache only a successful projection; the next launch can render the
+        // final menu before the webview starts.
+        crate::startup_locale::remember_language(&app, language);
+    }
+    result
 }
 
 #[cfg(test)]

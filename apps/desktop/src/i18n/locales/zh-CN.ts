@@ -1,5 +1,9 @@
 import type { AppErrorCode } from "@qingmo/shared";
 
+import menu from "./menu.zh-CN.json";
+
+export { menu };
+
 export const common = {
   appName: "青墨",
   appNameLatin: "Qingmo",
@@ -336,6 +340,60 @@ export const about = {
   copyValue: "青墨 {{version}} ({{build}}) · {{platform}}",
 } as const;
 
+export const settings = {
+  windowLabel: "Qingmo / Preferences",
+  aria: {
+    window: "青墨设置",
+    rail: "设置",
+    language: "界面语言",
+  },
+  title: "设置",
+  lede: "让青墨以你习惯的语言开口。",
+  nav: {
+    caption: "偏好",
+    general: "通用",
+    generalNote: "界面语言",
+  },
+  storageNote: "所有偏好只保存在这台设备上。",
+  localFirst: "LOCAL-FIRST",
+  breadcrumb: {
+    settings: "设置",
+    general: "通用",
+  },
+  heading: "通用设置",
+  description: "应用的界面语言。更改会立即应用，不需要重启。",
+  section: {
+    interface: "界面",
+  },
+  language: {
+    title: "语言",
+    description: "菜单、提示与编辑器界面的显示语言。文档内容不会被翻译。",
+    ariaLabel: "界面语言",
+    zhCN: "简体中文",
+    zhCNDetail: "Chinese (Simplified)",
+    zhCNCode: "ZH-CN",
+    en: "English",
+    enDetail: "English",
+    enCode: "EN",
+  },
+  hint: "更改会立即应用到所有窗口。",
+  note: {
+    quote: "语言是工具开口的方式。",
+    body: "青墨只翻译界面本身。你的 Markdown 文本、文件名与元数据始终保持原样。",
+    ghost: "语",
+  },
+  footer: {
+    esc: "返回编辑器",
+    version: "版本 {{version}}",
+  },
+  toast: {
+    languageChanged: "界面语言已切换为 {{language}}。",
+  },
+  actions: {
+    close: "关闭设置",
+  },
+} as const;
+
 export const commandLabels = {
   file: {
     open: "打开文件",
@@ -350,10 +408,6 @@ export const commandLabels = {
   },
   app: {
     openLogs: "查看运行日志",
-  },
-  language: {
-    zhCN: "简体中文",
-    en: "English",
   },
   category: {
     file: "文件",
@@ -411,46 +465,6 @@ export const logs = {
   },
 } as const;
 
-export const menu = {
-  about: "关于{{appName}}",
-  services: "服务",
-  hideApp: "隐藏{{appName}}",
-  hideOthers: "隐藏其他",
-  showAll: "显示全部",
-  quitApp: "退出{{appName}}",
-  file: "文件",
-  open: "打开…",
-  save: "保存",
-  closeWindow: "关闭窗口",
-  edit: "编辑",
-  undo: "撤销",
-  redo: "重做",
-  cut: "剪切",
-  copy: "复制",
-  paste: "粘贴",
-  selectAll: "全选",
-  view: "显示",
-  livePreview: "实时预览",
-  commandPalette: "命令面板",
-  toggleTheme: "切换主题",
-  logs: "日志…",
-  fullscreen: "全屏",
-  theme: "主题",
-  themeLight: "浅色",
-  themeDark: "深色",
-  themeSystem: "跟随系统",
-  language: "语言",
-  languageZhCN: "简体中文",
-  languageEn: "English",
-  window: "窗口",
-  minimize: "最小化",
-  zoom: "缩放",
-  maximize: "最大化",
-  bringAllToFront: "前置全部窗口",
-  help: "帮助",
-  untitledFileName: "未命名.md",
-} as const;
-
 export const zhCN = {
   common,
   editor,
@@ -458,6 +472,7 @@ export const zhCN = {
   update,
   commands: commandLabels,
   about,
+  settings,
   logs,
   menu,
 };
