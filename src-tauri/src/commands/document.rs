@@ -101,6 +101,7 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
 
     match built {
         Ok(window) => {
+            tracing::info!(window = %label, "opened a document window");
             app.state::<FocusTracker>().set(&label);
             if let Err(error) = window.set_focus() {
                 tracing::warn!(%error, "failed to focus the document window");
@@ -132,6 +133,23 @@ pub(crate) fn opened_paths(urls: &[Url]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Windows delivers a file association as a plain command-line path; macOS
+/// uses `RunEvent::Opened` instead. Skip the executable and any flags, and
+/// keep the files the registry accepts so a stray argument cannot fail the
+/// launch before a window exists.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn startup_paths<I>(args: I) -> Vec<PathBuf>
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
+    args.into_iter()
+        .skip(1)
+        .filter(|arg| !arg.to_string_lossy().starts_with('-'))
+        .map(PathBuf::from)
+        .filter(|path| ensure_supported_extension(path).is_ok() && path.is_file())
+        .collect()
+}
+
 /// Hands the staged document to the window that was created for it.
 #[tauri::command]
 pub fn document_take_pending<R: tauri::Runtime>(
@@ -140,6 +158,11 @@ pub fn document_take_pending<R: tauri::Runtime>(
     registry: State<'_, DocumentRegistry>,
 ) -> Result<Option<FilePayload>, AppError> {
     let payload = sessions.take_pending(window.label());
+    tracing::info!(
+        window = window.label(),
+        has_payload = payload.is_some(),
+        "document window consumed its pending payload"
+    );
 
     // Start watching only after the window has consumed its payload, so the
     // first event cannot be emitted before the webview has installed its
@@ -258,7 +281,7 @@ pub async fn document_write_atomic(
 
 #[cfg(test)]
 mod tests {
-    use super::{opened_paths, window_title_for};
+    use super::{opened_paths, startup_paths, window_title_for};
     use std::path::Path;
     use tauri::Url;
 
@@ -294,6 +317,26 @@ mod tests {
         ];
 
         assert_eq!(opened_paths(&urls), vec![markdown, mdx]);
+    }
+
+    #[test]
+    fn startup_paths_skip_the_executable_flags_and_unsupported_files() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let markdown = dir.path().join("note.md");
+        let text = dir.path().join("notes.txt");
+        for path in [&markdown, &text] {
+            std::fs::write(path, "body").expect("write fixture");
+        }
+
+        let args = vec![
+            std::ffi::OsString::from("C:\\Program Files\\Qingmo\\qingmo.exe"),
+            std::ffi::OsString::from("--flag"),
+            markdown.clone().into_os_string(),
+            text.into_os_string(),
+            dir.path().join("missing.md").into_os_string(),
+        ];
+
+        assert_eq!(startup_paths(args), vec![markdown]);
     }
 
     #[test]
