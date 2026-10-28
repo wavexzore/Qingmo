@@ -189,8 +189,6 @@ jobs:
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@8632757d5a758c452f724e9d837848c694a7bb48 # 1.91.1
-        with:
-          toolchain: 1.91.1
 
       - name: Add macOS universal targets
         if: runner.os == 'macOS'
@@ -316,6 +314,7 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    environment: release
     permissions:
       contents: write
       actions: read
@@ -324,9 +323,17 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
 
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+          run_install: false
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Install minisign
         run: sudo apt-get update && sudo apt-get install -y minisign
@@ -347,6 +354,33 @@ jobs:
           find dist -type f -exec cp -f {} dist-flat/ \;
           rm -rf dist
           mv dist-flat dist
+          ls -1 dist
+
+      # GitHub strips non-ASCII characters from release asset names (for
+      # example 青墨.app.tar.gz becomes app.tar.gz). Keep the downloaded asset
+      # names ASCII while the app bundle and installer still display 青墨, and
+      # re-sign the renamed updater artifacts so their trusted comments match.
+      - name: Normalize GitHub asset names and re-sign
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          rename_and_sign() {
+            src="$1"
+            dst="$2"
+            if [ -f "$src" ]; then
+              mv -f "$src" "$dst"
+              rm -f "$src.sig"
+              pnpm tauri signer sign --app-version "$VERSION" "$dst"
+            fi
+          }
+          rename_and_sign "dist/青墨.app.tar.gz" "dist/Qingmo.app.tar.gz"
+          rename_and_sign "dist/青墨_${VERSION}_x64-setup.exe" "dist/Qingmo_${VERSION}_x64-setup.exe"
+          if [ -f "dist/青墨_${VERSION}_universal.dmg" ]; then
+            mv -f "dist/青墨_${VERSION}_universal.dmg" "dist/Qingmo_${VERSION}_universal.dmg"
+          fi
           ls -1 dist
 
       - name: Render per-language release notes
@@ -392,6 +426,10 @@ jobs:
         run: |
           set -euo pipefail
           (cd dist && shasum -a 256 ./* >SHA256SUMS.txt)
+          gh release view "$TAG" --json assets --jq '.assets[].name' |
+            while IFS= read -r name; do
+              [ -n "$name" ] && gh release delete-asset "$TAG" "$name" --yes
+            done
           gh release upload "$TAG" dist/* --clobber
 
   publish:
