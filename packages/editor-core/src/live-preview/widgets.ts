@@ -162,7 +162,7 @@ class ImageWidget extends WidgetType {
   }
 }
 
-const EXTERNAL_DIAGRAM_LANGUAGES: Readonly<Record<string, string>> = Object.freeze({
+export const EXTERNAL_DIAGRAM_LANGUAGES: Readonly<Record<string, string>> = Object.freeze({
   plantuml: "PlantUML",
   dot: "Graphviz DOT",
   graphviz: "Graphviz",

@@ -29,6 +29,26 @@ export function modifier(): "Meta" | "Control" {
   return process.platform === "darwin" ? "Meta" : "Control";
 }
 
+/**
+ * The outer Markdown editor. Top-level code fences now mount an embedded
+ * CodeMirror editor, so a bare `.cm-content` / `.cm-line` locator matches both
+ * the document and every code block.
+ */
+export function editorContent(page: Page) {
+  return page.locator(".cm-content").first();
+}
+
+export function editorLines(page: Page) {
+  return page.locator(".cm-editor").first().locator("> .cm-scroller > .cm-content > .cm-line");
+}
+
+export function editorActiveLine(page: Page) {
+  return page
+    .locator(".cm-editor")
+    .first()
+    .locator("> .cm-scroller > .cm-content > .cm-line.cm-activeLine");
+}
+
 export async function openApp(page: Page, files: SeedFile[] = BASE_FILES): Promise<void> {
   await page.addInitScript((seed) => {
     window.__QINGMO_E2E_SEED__ = seed;
@@ -65,7 +85,7 @@ export async function emitMenuAction(
 }
 
 export async function typeInEditor(page: Page, text: string): Promise<void> {
-  await page.locator(".cm-content").click();
+  await editorContent(page).click();
   await page.keyboard.press(`${modifier()}+End`);
   await page.keyboard.type(text);
 }

@@ -946,6 +946,78 @@ export const livePreviewTheme = EditorView.theme(
       backgroundColor: "var(--qm-surface-muted)",
       fontFamily: "var(--qm-font-mono)",
     },
+    // Top-level fences are a single Typora-style block with an embedded
+    // editor. The widget owns the padding and background; the nested editor
+    // stays transparent so selection and diff/highlight lines paint inside it.
+    ".cm-md-code-block-widget": {
+      position: "relative",
+      margin: "0.55em 0",
+      padding: "0.55em 1em 1.8em",
+      backgroundColor: "var(--qm-surface-muted)",
+      fontFamily: "var(--qm-font-mono)",
+      fontSize: "0.92em",
+      borderRadius: "4px",
+    },
+    ".cm-md-code-block-widget:focus-within": {
+      boxShadow: "inset 0 0 0 1px var(--qm-line)",
+    },
+    ".cm-md-code-block-widget .cm-editor": {
+      height: "auto",
+      backgroundColor: "transparent",
+      fontSize: "inherit",
+    },
+    ".cm-md-code-block-widget .cm-scroller": {
+      fontFamily: "var(--qm-font-mono)",
+      lineHeight: "1.75",
+      overflow: "visible",
+    },
+    ".cm-md-code-block-widget .cm-content": {
+      padding: "0",
+      caretColor: "var(--qm-accent)",
+    },
+    ".cm-md-code-block-widget .cm-line": {
+      padding: "0",
+    },
+    ".cm-md-code-block-widget .cm-gutters": {
+      display: "none",
+    },
+    ".cm-md-code-block-widget .cm-activeLine": {
+      backgroundColor: "transparent",
+    },
+    ".cm-md-code-info-floating": {
+      position: "absolute",
+      right: "0.75em",
+      bottom: "0.4em",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "0.45em",
+      maxWidth: "calc(100% - 1.5em)",
+    },
+    ".cm-md-code-block-widget .cm-md-code-language": {
+      appearance: "none",
+      width: "auto",
+      minWidth: "2.2em",
+      border: "1px solid transparent",
+      outline: "none",
+      backgroundColor: "transparent",
+      color: "var(--qm-ink-muted)",
+      textAlign: "center",
+      fontFamily: "var(--qm-font-mono)",
+      fontSize: "0.82em",
+      letterSpacing: "0.04em",
+      cursor: "text",
+    },
+    ".cm-md-code-block-widget .cm-md-code-language:hover": {
+      backgroundColor: "var(--qm-surface)",
+    },
+    ".cm-md-code-block-widget .cm-md-code-language:focus": {
+      borderColor: "var(--qm-accent)",
+      backgroundColor: "var(--qm-surface)",
+      color: "var(--qm-ink)",
+    },
+    ".cm-md-code-block-widget .cm-md-code-language[readonly]": {
+      cursor: "default",
+    },
     ".cm-md-code-block.cm-selectedLine": {
       backgroundColor: "transparent",
     },

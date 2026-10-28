@@ -88,14 +88,15 @@ test("select all inside a fenced code block selects only the code text", async (
   await openApp(page, [{ path: "/docs/select-all.md", text: CODE_BLOCK_DOC }]);
   await openSeededFile(page, "select-all.md");
 
+  const block = page.locator(".cm-md-code-block-widget");
   const selectedText = () =>
-    page.evaluate(() =>
-      [...document.querySelectorAll(".cm-selectedText")]
-        .map((element) => element.textContent)
+    block.evaluate((element) =>
+      [...element.querySelectorAll(".cm-selectedText")]
+        .map((selected) => selected.textContent)
         .join("\n"),
     );
 
-  await page.locator(".cm-line").filter({ hasText: "const b = 2;" }).click();
+  await block.locator(".cm-line").filter({ hasText: "const b = 2;" }).click();
   await page.keyboard.press(`${modifier()}+a`);
 
   await expect.poll(selectedText).toBe("const a = 1;\nconst b = 2;");
