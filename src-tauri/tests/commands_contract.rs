@@ -265,6 +265,16 @@ fn error_wire_shape_is_stable() {
     }
 }
 
+/// The ACL treats the platform's real frontend origin as `local`; the mock
+/// runtime defaults to the macOS/Linux scheme on every platform.
+fn local_invoke_url() -> tauri::Url {
+    #[cfg(windows)]
+    let url = "http://tauri.localhost";
+    #[cfg(not(windows))]
+    let url = "tauri://localhost";
+    url.parse().expect("valid URL")
+}
+
 fn invoke(
     webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
     command: &str,
@@ -276,7 +286,7 @@ fn invoke(
             cmd: command.into(),
             callback: tauri::ipc::CallbackFn(0),
             error: tauri::ipc::CallbackFn(1),
-            url: "tauri://localhost".parse().expect("valid URL"),
+            url: local_invoke_url(),
             body: tauri::ipc::InvokeBody::Json(body),
             headers: Default::default(),
             invoke_key: tauri::test::INVOKE_KEY.to_string(),

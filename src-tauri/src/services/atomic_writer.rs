@@ -104,6 +104,25 @@ pub(crate) fn write_formatted(
 }
 
 fn read_current(record: &DocumentRecord) -> Result<CurrentDisk, AppError> {
+    // See FileService::read: classify directories before opening them so the
+    // same NOT_A_FILE contract holds on Windows.
+    let path_metadata = std::fs::metadata(&record.canonical_target).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            AppError::new(
+                AppErrorCode::NotFound,
+                format!("file not found: {}", record.canonical_target.display()),
+            )
+        } else {
+            AppError::from_io(&error)
+        }
+    })?;
+    if !path_metadata.is_file() {
+        return Err(AppError::new(
+            AppErrorCode::NotAFile,
+            format!("not a regular file: {}", record.canonical_target.display()),
+        ));
+    }
+
     let mut file = File::open(&record.canonical_target).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             AppError::new(
@@ -116,12 +135,6 @@ fn read_current(record: &DocumentRecord) -> Result<CurrentDisk, AppError> {
     })?;
 
     let metadata = file.metadata().map_err(|error| AppError::from_io(&error))?;
-    if !metadata.is_file() {
-        return Err(AppError::new(
-            AppErrorCode::NotAFile,
-            format!("not a regular file: {}", record.canonical_target.display()),
-        ));
-    }
 
     let mut hasher = blake3::Hasher::new();
     let mut size = 0u64;

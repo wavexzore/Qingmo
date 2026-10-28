@@ -124,6 +124,7 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
 /// macOS also delivers directories (for example when a folder is dropped on
 /// the dock icon) and unrelated files; opening a window for those would only
 /// fail after the fact. Unsupported URLs are skipped silently.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn opened_paths(urls: &[Url]) -> Vec<PathBuf> {
     urls.iter()
         .filter_map(|url| url.to_file_path().ok())

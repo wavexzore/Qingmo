@@ -46,6 +46,25 @@ impl FileService {
     /// Reads the canonical target through one open handle and returns a fully
     /// validated, LF-normalized document. It never returns partial content.
     pub fn read(path: &Path) -> Result<ParsedFile, AppError> {
+        // Check the kind before opening: Windows rejects opening a directory
+        // with ERROR_ACCESS_DENIED, which would otherwise mask NOT_A_FILE.
+        let path_metadata = std::fs::metadata(path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                AppError::new(
+                    AppErrorCode::NotFound,
+                    format!("file not found: {}", path.display()),
+                )
+            } else {
+                AppError::from_io(&error)
+            }
+        })?;
+        if !path_metadata.is_file() {
+            return Err(AppError::new(
+                AppErrorCode::NotAFile,
+                format!("not a regular file: {}", path.display()),
+            ));
+        }
+
         let file = File::open(path).map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 AppError::new(
@@ -58,12 +77,6 @@ impl FileService {
         })?;
 
         let metadata = file.metadata().map_err(|error| AppError::from_io(&error))?;
-        if !metadata.is_file() {
-            return Err(AppError::new(
-                AppErrorCode::NotAFile,
-                format!("not a regular file: {}", path.display()),
-            ));
-        }
 
         if metadata.len() > MAX_FILE_BYTES {
             return Err(file_too_large());

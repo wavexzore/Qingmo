@@ -333,7 +333,10 @@ mod tests {
             fs::write(path, "line").expect("write fixture");
         }
         let old = SystemTime::now() - Duration::from_secs(30 * 24 * 60 * 60);
-        File::open(&stale)
+        // Windows needs FILE_WRITE_ATTRIBUTES, which a read-only handle lacks.
+        File::options()
+            .write(true)
+            .open(&stale)
             .expect("open stale fixture")
             .set_modified(old)
             .expect("age the stale fixture");

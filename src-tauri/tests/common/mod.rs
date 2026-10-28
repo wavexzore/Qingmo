@@ -71,6 +71,16 @@ pub fn temp_siblings(target: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The ACL treats the platform's real frontend origin as `local`; the mock
+/// runtime defaults to the macOS/Linux scheme on every platform.
+pub fn local_invoke_url() -> tauri::Url {
+    #[cfg(windows)]
+    let url = "http://tauri.localhost";
+    #[cfg(not(windows))]
+    let url = "tauri://localhost";
+    url.parse().expect("valid URL")
+}
+
 /// Invokes a Tauri command through the mock webview, exactly like the real IPC
 /// boundary serializes it. Kept here so command-level integration tests share
 /// one wire helper instead of copying `InvokeRequest` details.
@@ -85,7 +95,7 @@ pub fn invoke(
             cmd: command.into(),
             callback: tauri::ipc::CallbackFn(0),
             error: tauri::ipc::CallbackFn(1),
-            url: "tauri://localhost".parse().expect("valid URL"),
+            url: local_invoke_url(),
             body: tauri::ipc::InvokeBody::Json(body),
             headers: Default::default(),
             invoke_key: tauri::test::INVOKE_KEY.to_string(),
