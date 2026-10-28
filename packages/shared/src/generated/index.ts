@@ -5,6 +5,8 @@ export type { AboutLink } from "./AboutLink";
 export type { CloseReason } from "./CloseReason";
 export type { CloseRequestedPayload } from "./CloseRequestedPayload";
 export type { ConflictDetails } from "./ConflictDetails";
+export type { DocumentChangedPayload } from "./DocumentChangedPayload";
+export type { DocumentChangeKind } from "./DocumentChangeKind";
 export type { FilePayload } from "./FilePayload";
 export type { LineEnding } from "./LineEnding";
 export type { LogEntry } from "./LogEntry";

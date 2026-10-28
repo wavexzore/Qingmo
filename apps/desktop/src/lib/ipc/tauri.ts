@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { DocumentChangedPayload } from "@qingmo/shared";
 
 import { normalizeError } from "./errors";
 import {
   COMMANDS,
+  EVENTS,
   type CommandName,
   type CommandRequestMap,
   type CommandResponseMap,
@@ -40,6 +43,34 @@ export function createTauriIpc(): IpcPort {
     },
     documentWriteAtomic(request) {
       return invokeCommand(COMMANDS.documentWriteAtomic, request);
+    },
+    onDocumentChanged(callback) {
+      let disposed = false;
+      let unlisten: UnlistenFn | undefined;
+
+      void listen<DocumentChangedPayload>(EVENTS.documentChanged, (event) => {
+        if (!disposed) {
+          callback(event.payload);
+        }
+      })
+        .then((stop) => {
+          if (disposed) {
+            stop();
+          } else {
+            unlisten = stop;
+          }
+        })
+        .catch((error: unknown) => {
+          // The document stays usable without live change detection; the next
+          // native save still performs the exact-hash conflict check.
+          console.error("failed to subscribe to app://document-changed", normalizeError(error));
+        });
+
+      return () => {
+        disposed = true;
+        unlisten?.();
+        unlisten = undefined;
+      };
     },
     async appCloseConfirm(request) {
       await invokeCommand(COMMANDS.appCloseConfirm, request);

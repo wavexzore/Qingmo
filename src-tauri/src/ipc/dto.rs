@@ -82,6 +82,37 @@ pub struct ConflictDetails {
     pub current_size: u64,
 }
 
+/// Why the document watcher notified the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum DocumentChangeKind {
+    /// The file exists with a different hash than the editor's base version.
+    Modified,
+    /// The file disappeared or stopped being a regular file.
+    Deleted,
+}
+
+/// Payload of `app://document-changed`.
+///
+/// The watcher has already read the disk version, so a modified file carries
+/// the exact hash/size/mtime the window needs to open the conflict banner
+/// without a second read. Deleted files carry no version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentChangedPayload {
+    pub doc_token: String,
+    pub kind: DocumentChangeKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub current_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub current_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub current_mtime_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum CloseReason {

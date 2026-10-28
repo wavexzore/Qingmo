@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import {
   CONFLICT_PATH,
   CONFLICT_TEXT,
+  deleteDiskFile,
   getFileText,
   modifier,
   openApp,
@@ -19,6 +20,40 @@ async function triggerConflict(page: Parameters<typeof openApp>[0]): Promise<voi
   await page.keyboard.press(`${modifier()}+s`);
   await expect(page.getByTestId("conflict-banner")).toBeVisible();
 }
+
+test("a clean document reloads automatically when the file changes on disk", async ({ page }) => {
+  await openApp(page, CONFLICT_FILES);
+  await openSeededFile(page, "conflict.md");
+
+  await setDiskText(page, CONFLICT_PATH, "external\n");
+
+  await expect(page.locator(".cm-content")).toContainText("external");
+  await expect(page.getByText("磁盘上的文件已更新，已重新加载。")).toBeVisible();
+  await expect(page.getByTestId("conflict-banner")).toBeHidden();
+});
+
+test("a dirty document opens the banner without waiting for a save", async ({ page }) => {
+  await openApp(page, CONFLICT_FILES);
+  await openSeededFile(page, "conflict.md");
+  await typeInEditor(page, "local");
+
+  await setDiskText(page, CONFLICT_PATH, "external\n");
+
+  await expect(page.getByTestId("conflict-banner")).toBeVisible();
+  await expect(page.locator(".cm-content")).toContainText("local");
+});
+
+test("a deleted file keeps the editor text and warns", async ({ page }) => {
+  await openApp(page, CONFLICT_FILES);
+  await openSeededFile(page, "conflict.md");
+
+  await deleteDiskFile(page, CONFLICT_PATH);
+
+  await expect(
+    page.getByText("磁盘上的文件已被删除或移动，当前内容仍保留在编辑器中。"),
+  ).toBeVisible();
+  await expect(page.locator(".cm-content")).toContainText("base");
+});
 
 test("external change opens the banner and reload keeps the disk version", async ({ page }) => {
   await openApp(page, CONFLICT_FILES);

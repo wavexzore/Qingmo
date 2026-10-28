@@ -322,6 +322,15 @@ export class EditorSession {
     if (this.themeApplied) {
       state = state.update({ effects: setThemeEffect(themeExtension(this.theme)) }).state;
     }
+    // A watcher-driven reload should not throw the reader back to the top of
+    // the document; clamp the previous cursor into the new text.
+    const previous = this.snapshot.selection;
+    state = state.update({
+      selection: {
+        anchor: Math.min(previous.anchor, state.doc.length),
+        head: Math.min(previous.head, state.doc.length),
+      },
+    }).state;
     const largeFile = state.doc.length > LP_MAX_UNITS;
     this.previewEnabled = !largeFile;
     this.metadata = metadataOf(payload);

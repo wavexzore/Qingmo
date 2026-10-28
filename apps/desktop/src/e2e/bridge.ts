@@ -37,6 +37,7 @@ export interface E2eUpdateInfo {
  */
 export interface E2eBridge {
   setDiskText(path: string, text: string): void;
+  deleteDiskFile(path: string): void;
   getFile(path: string): FakeFileSnapshot | undefined;
   setOpenFile(path: string | null): void;
   setSaveAsFile(path: string | null): void;
@@ -83,6 +84,9 @@ export function createE2eServices(): {
   window.__QINGMO_E2E__ = {
     setDiskText: (path, text) => {
       ipc.setDiskText(path, text);
+    },
+    deleteDiskFile: (path) => {
+      ipc.deleteDiskFile(path);
     },
     getFile: (path) => ipc.getFile(path),
     setOpenFile: (path) => {

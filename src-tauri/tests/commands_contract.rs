@@ -1,7 +1,7 @@
 use qingmo_lib::error::{AppError, AppErrorCode};
 use qingmo_lib::ipc::dto::{
-    AboutLink, CloseReason, FilePayload, SaveRequest, TextEncoding, TextFormat, UpdateInfo,
-    UpdatePhase, UpdateSnapshot,
+    AboutLink, CloseReason, DocumentChangeKind, DocumentChangedPayload, FilePayload, SaveRequest,
+    TextEncoding, TextFormat, UpdateInfo, UpdatePhase, UpdateSnapshot,
 };
 use qingmo_lib::ipc::{command_permissions, COMMANDS, EVENTS};
 use qingmo_lib::state::CloseGuard;
@@ -59,7 +59,8 @@ fn frontend_command_mirror_contains_every_contract_name() {
             "app://close-requested",
             "app://update-state",
             "app://update-progress",
-            "app://menu-action"
+            "app://menu-action",
+            "app://document-changed"
         ]
     );
 
@@ -186,6 +187,35 @@ fn dto_wire_names_are_camel_case_and_stable() {
             "progress": null
         })
     );
+
+    let change = DocumentChangedPayload {
+        doc_token: "token".to_string(),
+        kind: DocumentChangeKind::Modified,
+        current_hash: Some("abc".to_string()),
+        current_size: Some(6),
+        current_mtime_ms: Some(1_700_000_000_000),
+    };
+    let value = serde_json::to_value(&change).expect("DocumentChangedPayload must serialize");
+    assert_eq!(
+        value,
+        json!({
+            "docToken": "token",
+            "kind": "modified",
+            "currentHash": "abc",
+            "currentSize": 6,
+            "currentMtimeMs": 1_700_000_000_000i64
+        })
+    );
+
+    let deleted = DocumentChangedPayload {
+        doc_token: "token".to_string(),
+        kind: DocumentChangeKind::Deleted,
+        current_hash: None,
+        current_size: None,
+        current_mtime_ms: None,
+    };
+    let value = serde_json::to_value(&deleted).expect("deleted payload must serialize");
+    assert_eq!(value, json!({"docToken": "token", "kind": "deleted"}));
 
     let about = qingmo_lib::ipc::dto::AboutInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),

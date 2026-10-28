@@ -104,6 +104,11 @@ export const editor = {
     overwriting: "正在保存…",
     failed: "操作未完成，请重试。",
   },
+  external: {
+    reloaded: "磁盘上的文件已更新，已重新加载。",
+    deleted: "磁盘上的文件已被删除或移动，当前内容仍保留在编辑器中。",
+    reloadFailed: "检测到磁盘修改，但重新加载失败。",
+  },
 } as const;
 
 export const errors = {

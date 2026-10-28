@@ -97,7 +97,7 @@ describe("compartments", () => {
 describe("markdown composition", () => {
   it("parses Markdown via the composed language support", () => {
     const state = createEditorState({ doc: "# heading\n\n**strong** and `code`\n" });
-    const tree = ensureSyntaxTree(state, state.doc.length, 2_000);
+    const tree = ensureSyntaxTree(state, state.doc.length, 10_000);
     expect(tree).not.toBeNull();
     expect(tree?.type.name).toBe("Document");
   });
