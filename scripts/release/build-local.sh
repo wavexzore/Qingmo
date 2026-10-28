@@ -120,6 +120,33 @@ node scripts/release/check-versions.mjs --expect "$version"
 info "checking release notes for $version"
 node scripts/release/check-release-notes.mjs --version "$version"
 
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  if [[ -n "${TAURI_SIGNING_PRIVATE_KEY_FILE:-}" ]]; then
+    [[ -f "$TAURI_SIGNING_PRIVATE_KEY_FILE" ]] || die "TAURI_SIGNING_PRIVATE_KEY_FILE does not exist: $TAURI_SIGNING_PRIVATE_KEY_FILE"
+    export TAURI_SIGNING_PRIVATE_KEY
+    TAURI_SIGNING_PRIVATE_KEY="$(cat "$TAURI_SIGNING_PRIVATE_KEY_FILE")"
+    info "using updater key from TAURI_SIGNING_PRIVATE_KEY_FILE"
+  elif [[ -f "$HOME/.tauri/qingmo-updater.key" ]]; then
+    export TAURI_SIGNING_PRIVATE_KEY
+    TAURI_SIGNING_PRIVATE_KEY="$(cat "$HOME/.tauri/qingmo-updater.key")"
+    info "using updater key from ~/.tauri/qingmo-updater.key"
+  else
+    die "TAURI_SIGNING_PRIVATE_KEY is required to sign updater artifacts"
+  fi
+fi
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]]; then
+  if [[ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE:-}" ]]; then
+    [[ -f "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE" ]] || die "TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE does not exist: $TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE"
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(cat "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE")"
+  elif [[ -f "$HOME/.tauri/qingmo-updater.key.password" ]]; then
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(cat "$HOME/.tauri/qingmo-updater.key.password")"
+  else
+    die "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required (empty passwords are rejected)"
+  fi
+fi
+
 if [[ $skip_build -eq 0 ]]; then
   if [[ -n "${APPLE_CERTIFICATE_FILE:-}" ]]; then
     [[ -f "$APPLE_CERTIFICATE_FILE" ]] || die "APPLE_CERTIFICATE_FILE does not exist: $APPLE_CERTIFICATE_FILE"
@@ -168,33 +195,6 @@ if [[ $skip_build -eq 0 ]]; then
     fi
   fi
 
-  if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-    if [[ -n "${TAURI_SIGNING_PRIVATE_KEY_FILE:-}" ]]; then
-      [[ -f "$TAURI_SIGNING_PRIVATE_KEY_FILE" ]] || die "TAURI_SIGNING_PRIVATE_KEY_FILE does not exist: $TAURI_SIGNING_PRIVATE_KEY_FILE"
-      export TAURI_SIGNING_PRIVATE_KEY
-      TAURI_SIGNING_PRIVATE_KEY="$(cat "$TAURI_SIGNING_PRIVATE_KEY_FILE")"
-      info "using updater key from TAURI_SIGNING_PRIVATE_KEY_FILE"
-    elif [[ -f "$HOME/.tauri/qingmo-updater.key" ]]; then
-      export TAURI_SIGNING_PRIVATE_KEY
-      TAURI_SIGNING_PRIVATE_KEY="$(cat "$HOME/.tauri/qingmo-updater.key")"
-      info "using updater key from ~/.tauri/qingmo-updater.key"
-    else
-      die "TAURI_SIGNING_PRIVATE_KEY is required to sign updater artifacts"
-    fi
-  fi
-  if [[ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]]; then
-    if [[ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE:-}" ]]; then
-      [[ -f "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE" ]] || die "TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE does not exist: $TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE"
-      export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(cat "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD_FILE")"
-    elif [[ -f "$HOME/.tauri/qingmo-updater.key.password" ]]; then
-      export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(cat "$HOME/.tauri/qingmo-updater.key.password")"
-    else
-      die "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required (empty passwords are rejected)"
-    fi
-  fi
-
   info "building universal app and dmg (this can take several minutes)"
   pnpm tauri build --target "$target" --bundles app,dmg
 else
@@ -203,10 +203,16 @@ fi
 
 [[ -d "$app" ]] || die "app not found: $app"
 tarball="$macos_dir/$product_name.app.tar.gz"
+if [[ ! -f "$tarball" && -f "$macos_dir/Qingmo.app.tar.gz" ]]; then
+  tarball="$macos_dir/Qingmo.app.tar.gz"
+fi
 sig="$tarball.sig"
 [[ -f "$tarball" ]] || die "updater tarball not found: $tarball"
 [[ -s "$sig" ]] || die "updater signature not found: $sig"
-dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name "$product_name*.dmg" -print -quit 2>/dev/null || true)"
+dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name 'Qingmo_*.dmg' -print -quit 2>/dev/null || true)"
+if [[ -z "$dmg" ]]; then
+  dmg="$(find "$dmg_dir" -maxdepth 1 -type f -name "$product_name*.dmg" -print -quit 2>/dev/null || true)"
+fi
 [[ -n "$dmg" ]] || die "dmg for $product_name not found under: $dmg_dir"
 
 info "verifying app signature, Gatekeeper assessment and notarization ticket"
@@ -250,6 +256,29 @@ else
   info "skipping DMG notarization (--skip-notarize)"
 fi
 
+# GitHub strips non-ASCII characters from release asset names. Keep the
+# downloadable assets ASCII while the app bundle inside still displays 青墨.
+ascii_tarball="$macos_dir/Qingmo.app.tar.gz"
+if [[ "$tarball" != "$ascii_tarball" ]]; then
+  info "renaming updater tarball to ASCII for GitHub release assets"
+  mv -f "$tarball" "$ascii_tarball"
+  rm -f "$sig"
+  tarball="$ascii_tarball"
+  sig="$tarball.sig"
+  if [[ -f "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+    export TAURI_SIGNING_PRIVATE_KEY
+    TAURI_SIGNING_PRIVATE_KEY="$(cat "$TAURI_SIGNING_PRIVATE_KEY")"
+  fi
+  info "re-signing the renamed updater tarball"
+  pnpm tauri signer sign --app-version "$version" "$tarball"
+fi
+ascii_dmg="$dmg_dir/Qingmo_${version}_universal.dmg"
+if [[ "$dmg" != "$ascii_dmg" ]]; then
+  info "renaming dmg to ASCII for GitHub release assets"
+  mv -f "$dmg" "$ascii_dmg"
+  dmg="$ascii_dmg"
+fi
+
 if [[ -z "$out_dir" ]]; then
   out_dir="$root/release-artifacts/$tag"
 fi
@@ -282,8 +311,8 @@ node scripts/release/make-latest-json.mjs \
   --artifacts "$out_dir" \
   --out "$out_dir/latest.json" \
   --base-url "https://github.com/wavexzore/Qingmo/releases/download/$tag" \
-  --platform "darwin-aarch64=$product_name.app.tar.gz" \
-  --platform "darwin-x86_64=$product_name.app.tar.gz" \
+  --platform "darwin-aarch64=Qingmo.app.tar.gz" \
+  --platform "darwin-x86_64=Qingmo.app.tar.gz" \
   "${notes_args[@]}"
 
 pubkey="$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")"
