@@ -11,7 +11,8 @@
           "新增外部修改自动感知：文档被其他程序改动时给出提示，保存前仍会检查磁盘版本冲突。",
           "修复 Windows 通过文件关联打开 Markdown 时窗口空白的问题。",
           "修复编辑器垂直滚动条与窗口右边框之间的空隙。",
-          "首次提供 Windows NSIS 与 Linux AppImage/deb 安装包；macOS 继续提供 universal DMG，自动更新清单覆盖四个平台。",
+          "本版本提供 macOS universal DMG 与 Windows NSIS 安装包；Linux AppImage/deb 仍在验证中，自动更新清单已覆盖 macOS 与 Windows。",
+          "Windows 安装器暂未做 Authenticode 签名，SmartScreen 可能提示；应用内更新包仍使用 minisign 校验。",
           "迁移提示：旧版 Qingmo（Windows `%LOCALAPPDATA%\\Qingmo`、macOS `Qingmo.app`）不会自动改名，首次升级后请卸载旧版或手动删除旧快捷方式；Linux deb 包名仍为 `qingmo`。"
         ],
         "en-US": [
@@ -20,7 +21,8 @@
           "Added external-change awareness: the app notices when a document is modified on disk by another program and still checks for version conflicts before saving.",
           "Fixed a blank window when opening Markdown through Windows file associations.",
           "Fixed the gap between the editor's vertical scrollbar and the window's right edge.",
-          "First Windows NSIS and Linux AppImage/deb packages; macOS continues to ship a universal DMG, and the update manifest now covers all four platform keys.",
+          "This release ships a macOS universal DMG and a Windows NSIS installer; Linux AppImage/deb are still being validated, and the update manifest covers macOS and Windows.",
+          "The Windows installer is not Authenticode-signed yet, so SmartScreen may warn; update packages are still minisign-verified.",
           "Migration: existing Qingmo installs (`%LOCALAPPDATA%\\Qingmo` on Windows, `Qingmo.app` on macOS) are not renamed automatically; uninstall the old version or remove the old shortcut after upgrading. The Linux deb package name remains `qingmo`."
         ]
       }
