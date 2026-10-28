@@ -1,15 +1,14 @@
 name: Release
 
-# OPTIONAL TEMPLATE — currently INACTIVE. Local releases use ./.release/release.sh.
-# Tag push -> draft release -> macOS universal build/notarize -> validate -> manual publish.
+# MANUAL-ONLY TEMPLATE — tag pushes no longer start this workflow.
+# Run it from a vX.Y.Z tag ref via "Run workflow" (workflow_dispatch). Local releases
+# use ./.release/release.sh + scripts/release/build-local.sh instead.
+# Flow: manual run -> draft release -> macOS universal build/notarize -> validate -> publish.
 # The `release` Environment holds the Xcode certificate, notarization credentials and
-# updater minisign key. It is requested twice: once for build, once for publish.
-# The environment and its secrets were deleted for the local-first workflow; recreate
-# them before enabling this workflow.
+# updater minisign key. It currently has no secrets, so the build fails while importing
+# the signing certificate; recreate them before using this workflow.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -46,6 +45,18 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          case "$TAG" in
+            v[0-9]*) ;;
+            *)
+              echo "run this workflow from a vX.Y.Z tag ref, got: $TAG" >&2
+              exit 1
+              ;;
+          esac
+          count="$(gh release list --limit 100 --json tagName --jq "[.[] | select(.tagName == \"$TAG\")] | length")"
+          if [ "$count" -gt 1 ]; then
+            echo "multiple releases already exist for $TAG; delete the duplicates first" >&2
+            exit 1
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != "true" ]; then
               echo "release $TAG already exists and is published; refusing to overwrite" >&2

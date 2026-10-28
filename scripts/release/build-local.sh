@@ -298,6 +298,12 @@ cat <<EOF
 Local release is ready and validated. Nothing was uploaded.
 
 Next (manual, after review):
+  # This count must be 0: a release already exists for the tag if it is not
+  # (for example one created by the optional Release workflow). Do not create a
+  # second one -- gh resolves upload/edit by tag, so duplicates are ambiguous.
+  gh release list --limit 100 --json tagName,isDraft \\
+    --jq '[.[] | select(.tagName == "$tag")] | length'
+
   gh release create $tag --draft --title "$tag" --notes-file "$out_dir/RELEASE-NOTES.txt"
   gh release upload $tag "$out_dir"/* --clobber
   gh release view $tag --json isDraft,assets
