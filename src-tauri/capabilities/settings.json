@@ -1,0 +1,10 @@
+{
+  "identifier": "settings",
+  "description": "Least-privilege surface for the settings window: window dragging plus the settings lifecycle commands.",
+  "windows": ["settings"],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "allow-app-settings-info",
+    "allow-app-settings-close"
+  ]
+}

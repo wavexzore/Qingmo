@@ -1,5 +1,9 @@
 import type { AppErrorCode } from "@qingmo/shared";
 
+import menu from "./menu.en.json";
+
+export { menu };
+
 export const common = {
   appName: "Qingmo",
   appNameLatin: "Qingmo",
@@ -342,6 +346,61 @@ export const about = {
   copyValue: "Qingmo {{version}} ({{build}}) · {{platform}}",
 } as const;
 
+export const settings = {
+  windowLabel: "Qingmo / Preferences",
+  aria: {
+    window: "Qingmo settings",
+    rail: "Settings",
+    language: "Interface language",
+  },
+  title: "Settings",
+  lede: "Let Qingmo speak the language you think in.",
+  nav: {
+    caption: "Preferences",
+    general: "General",
+    generalNote: "Interface language",
+  },
+  storageNote: "Every preference stays on this device.",
+  localFirst: "LOCAL-FIRST",
+  breadcrumb: {
+    settings: "Settings",
+    general: "General",
+  },
+  heading: "General settings",
+  description:
+    "The language Qingmo uses across its interface. Changes apply immediately — no restart.",
+  section: {
+    interface: "Interface",
+  },
+  language: {
+    title: "Language",
+    description: "Menus, messages, and the editor interface. Document content is never translated.",
+    ariaLabel: "Interface language",
+    zhCN: "简体中文",
+    zhCNDetail: "Chinese (Simplified)",
+    zhCNCode: "ZH-CN",
+    en: "English",
+    enDetail: "English",
+    enCode: "EN",
+  },
+  hint: "Applied to every open window at once.",
+  note: {
+    quote: "Language is how a tool speaks.",
+    body: "Qingmo translates only its interface. Your Markdown, file names, and metadata stay exactly as written.",
+    ghost: "Aa",
+  },
+  footer: {
+    esc: "Return to the editor",
+    version: "Version {{version}}",
+  },
+  toast: {
+    languageChanged: "Interface language set to {{language}}.",
+  },
+  actions: {
+    close: "Close settings",
+  },
+} as const;
+
 export const commandLabels = {
   file: {
     open: "Open file",
@@ -356,10 +415,6 @@ export const commandLabels = {
   },
   app: {
     openLogs: "View runtime logs",
-  },
-  language: {
-    zhCN: "简体中文",
-    en: "English",
   },
   category: {
     file: "File",
@@ -420,46 +475,6 @@ export const logs = {
   },
 } as const;
 
-export const menu = {
-  about: "About {{appName}}",
-  services: "Services",
-  hideApp: "Hide {{appName}}",
-  hideOthers: "Hide Others",
-  showAll: "Show All",
-  quitApp: "Quit {{appName}}",
-  file: "File",
-  open: "Open…",
-  save: "Save",
-  closeWindow: "Close Window",
-  edit: "Edit",
-  undo: "Undo",
-  redo: "Redo",
-  cut: "Cut",
-  copy: "Copy",
-  paste: "Paste",
-  selectAll: "Select All",
-  view: "View",
-  livePreview: "Live Preview",
-  commandPalette: "Command Palette",
-  toggleTheme: "Toggle Theme",
-  logs: "Logs…",
-  fullscreen: "Full Screen",
-  theme: "Theme",
-  themeLight: "Light",
-  themeDark: "Dark",
-  themeSystem: "System",
-  language: "Language",
-  languageZhCN: "简体中文",
-  languageEn: "English",
-  window: "Window",
-  minimize: "Minimize",
-  zoom: "Zoom",
-  maximize: "Maximize",
-  bringAllToFront: "Bring All to Front",
-  help: "Help",
-  untitledFileName: "Untitled.md",
-} as const;
-
 export const en = {
   common,
   editor,
@@ -467,6 +482,7 @@ export const en = {
   update,
   commands: commandLabels,
   about,
+  settings,
   logs,
   menu,
 };

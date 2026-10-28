@@ -30,6 +30,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         about: fileURLToPath(new URL("./about.html", import.meta.url)),
+        settings: fileURLToPath(new URL("./settings.html", import.meta.url)),
         "mermaid-renderer": fileURLToPath(new URL("./mermaid-renderer.html", import.meta.url)),
       },
       output: {

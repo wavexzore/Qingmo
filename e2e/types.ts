@@ -83,12 +83,19 @@ export interface E2eAboutBridge {
   };
 }
 
+export interface E2eSettingsBridge {
+  settings: {
+    closed: boolean;
+  };
+}
+
 declare global {
   interface Window {
     __QINGMO_E2E_SEED__?: SeedFile[];
     __QINGMO_E2E_PENDING__?: string;
     __QINGMO_E2E__?: E2eBridge;
     __QINGMO_ABOUT_E2E__?: E2eAboutBridge;
+    __QINGMO_SETTINGS_E2E__?: E2eSettingsBridge;
   }
 }
 

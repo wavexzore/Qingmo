@@ -81,6 +81,7 @@
 - **Windows：** 在 Windows 11 + VS2022 BuildTools 上通过 `cargo check/test --all-targets`（122 测试）、469 单测、`pnpm build`、80 E2E，应用二进制可启动；修复了 symlink 测试门控、日志 `set_modified` 句柄、目录 `NOT_A_FILE` 判定、测试清单与平台 local URL、Ctrl+K。
 - **残余 PARTIAL：** Windows 原生菜单/对话框与 Save As 未自动化手测；Windows clippy/fmt 因该机 `rustup.exe` 为 0 字节未跑；GitNexus `detect-changes` 仍报 incomplete/unknown（入口/HTML/测试/再导出文件未映射），未按通过计。
 - **偏差：** 原生菜单重建在 mock runtime 受 macOS 主线程限制，无法单测“有效 `app_apply_locale` 后重建菜单”；已由 Rust 单元/契约测试 + macOS 真机覆盖。
+- **2026-10-28 启动菜单闪烁修复：** 菜单文案移入前后端共享的 `locales/menu.*.json`；`build_menu` 在首帧用该资源 + 上次语言提示构建完整本地化菜单，`app_apply_locale` 首帧幂等命中后不再 `set_menu`，因此启动时先出现简化栏再切换的问题消失。语言提示只是非权威启动缓存，`localStorage` 仍是唯一偏好源；原中性 `startup_layout` 仅作为共享资源损坏时的兜底。
 
 ## 后果
 

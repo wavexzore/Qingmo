@@ -30,6 +30,8 @@ export const COMMANDS = {
   appAboutInfo: "app_about_info",
   appAboutClose: "app_about_close",
   appAboutOpenLink: "app_about_open_link",
+  appSettingsInfo: "app_settings_info",
+  appSettingsClose: "app_settings_close",
   appUpdateStatus: "app_update_status",
   appUpdateCheck: "app_update_check",
   appUpdateDownload: "app_update_download",
@@ -55,6 +57,8 @@ export const COMMAND_NAMES = [
   COMMANDS.appAboutInfo,
   COMMANDS.appAboutClose,
   COMMANDS.appAboutOpenLink,
+  COMMANDS.appSettingsInfo,
+  COMMANDS.appSettingsClose,
   COMMANDS.appUpdateStatus,
   COMMANDS.appUpdateCheck,
   COMMANDS.appUpdateDownload,
@@ -132,6 +136,8 @@ export interface CommandRequestMap {
   [COMMANDS.appAboutInfo]: Record<string, never>;
   [COMMANDS.appAboutClose]: Record<string, never>;
   [COMMANDS.appAboutOpenLink]: { link: AboutLink };
+  [COMMANDS.appSettingsInfo]: Record<string, never>;
+  [COMMANDS.appSettingsClose]: Record<string, never>;
   [COMMANDS.appUpdateStatus]: Record<string, never>;
   [COMMANDS.appUpdateCheck]: Record<string, never>;
   [COMMANDS.appUpdateDownload]: Record<string, never>;
@@ -155,6 +161,8 @@ export interface CommandResponseMap {
   [COMMANDS.appAboutInfo]: AboutInfo;
   [COMMANDS.appAboutClose]: null;
   [COMMANDS.appAboutOpenLink]: null;
+  [COMMANDS.appSettingsInfo]: string;
+  [COMMANDS.appSettingsClose]: null;
   [COMMANDS.appUpdateStatus]: UpdateSnapshot;
   [COMMANDS.appUpdateCheck]: UpdateSnapshot;
   [COMMANDS.appUpdateDownload]: UpdateSnapshot;
@@ -188,6 +196,8 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.appAboutInfo]: commandPermission(COMMANDS.appAboutInfo),
   [COMMANDS.appAboutClose]: commandPermission(COMMANDS.appAboutClose),
   [COMMANDS.appAboutOpenLink]: commandPermission(COMMANDS.appAboutOpenLink),
+  [COMMANDS.appSettingsInfo]: commandPermission(COMMANDS.appSettingsInfo),
+  [COMMANDS.appSettingsClose]: commandPermission(COMMANDS.appSettingsClose),
   [COMMANDS.appUpdateStatus]: commandPermission(COMMANDS.appUpdateStatus),
   [COMMANDS.appUpdateCheck]: commandPermission(COMMANDS.appUpdateCheck),
   [COMMANDS.appUpdateDownload]: commandPermission(COMMANDS.appUpdateDownload),

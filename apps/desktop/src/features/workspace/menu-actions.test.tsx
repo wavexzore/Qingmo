@@ -42,8 +42,6 @@ afterEach(() => {
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");
   commandRegistry.unregister("view.toggleTheme");
-  commandRegistry.unregister("language.zh-CN");
-  commandRegistry.unregister("language.en");
   uiStore.setTheme("system");
   uiStore.setLanguage("zh-CN");
 });

@@ -11,6 +11,7 @@ const EXPECTED_NAMESPACES = [
   "commands",
   "update",
   "about",
+  "settings",
   "logs",
   "menu",
 ] as const;
