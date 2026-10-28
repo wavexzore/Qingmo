@@ -257,6 +257,7 @@ fn rejects_forged_tokens_and_keeps_each_window_document_alive() {
     assert!(!registry.release(&first_payload.doc_token));
 }
 
+#[cfg(unix)]
 #[test]
 fn detects_a_symlink_swap_on_reload() {
     use std::os::unix::fs::symlink;

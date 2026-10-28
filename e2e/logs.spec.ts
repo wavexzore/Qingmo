@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { emitMenuAction, openApp } from "./helpers";
+import { emitMenuAction, modifier, openApp } from "./helpers";
 
 test("the menu opens the log viewer, filters and exports entries", async ({ page }) => {
   await openApp(page);
@@ -29,7 +29,7 @@ test("the menu opens the log viewer, filters and exports entries", async ({ page
 
 test("the palette command opens the same viewer", async ({ page }) => {
   await openApp(page);
-  await page.keyboard.press("Meta+k");
+  await page.keyboard.press(`${modifier()}+k`);
   const palette = page.getByRole("dialog", { name: "命令面板" });
   await palette.getByRole("combobox").fill("运行日志");
   await palette.getByRole("combobox").press("Enter");

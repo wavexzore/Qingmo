@@ -229,6 +229,7 @@ fn eacces_keeps_the_old_file_and_creates_no_temp() {
     assert!(temp_siblings(&target).is_empty());
 }
 
+#[cfg(unix)]
 fn before_hash(path: &std::path::Path) -> String {
     blake3::hash(&fs::read(path).expect("hash source"))
         .to_hex()
