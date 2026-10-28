@@ -504,6 +504,22 @@ pub fn run() {
                 Some(label.as_str()),
             );
         }
+        // Finder, `open(1)` and Dock drops deliver documents through the OS
+        // open event instead of the in-app dialog. Each supported file gets the
+        // same new-window path as `file.open`, so the platform never depends on
+        // the dialog having run.
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => {
+            for path in commands::document::opened_paths(&urls) {
+                let app = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = commands::document::open_path_in_new_window(app, path).await
+                    {
+                        tracing::warn!(%error, "failed to open a file from the operating system");
+                    }
+                });
+            }
+        }
         RunEvent::ExitRequested {
             code: None, api, ..
         } => {
