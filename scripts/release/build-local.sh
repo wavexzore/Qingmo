@@ -328,7 +328,7 @@ node scripts/release/check-latest-json.mjs \
 
 (
   cd "$out_dir"
-  shasum -a 256 ./* >SHA256SUMS.txt
+  find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -exec shasum -a 256 {} + | sort >SHA256SUMS.txt
 )
 
 info "artifacts:"
