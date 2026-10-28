@@ -1,7 +1,12 @@
+use std::time::Duration;
+
 use tauri::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu,
 };
-use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
+};
 use tracing_subscriber::EnvFilter;
 
 pub mod commands;
@@ -356,6 +361,43 @@ fn command_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
         })
 }
 
+/// How long the launch waits for an OS open request before creating the blank
+/// main window.
+///
+/// Finder and `open(1)` deliver the Apple event while the app is still
+/// launching, well inside this budget, so a document open never leaves an
+/// extra empty window behind.
+const MAIN_WINDOW_BOOT_DELAY: Duration = Duration::from_millis(300);
+
+/// Creates the configured `main` window when it does not exist yet.
+///
+/// The window is declared with `create: false` so a launch caused by opening a
+/// document can skip it. A failed open falls back to it instead of ending the
+/// launch with no window at all.
+fn ensure_main_window(app: &AppHandle) {
+    if app.get_webview_window("main").is_some() {
+        return;
+    }
+
+    let Some(config) = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+    else {
+        tracing::error!("the main window config is missing");
+        return;
+    };
+
+    if let Err(error) =
+        WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build())
+    {
+        tracing::error!(%error, "failed to create the main window");
+    }
+}
+
 fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
     match window.is_fullscreen() {
         Ok(fullscreen) => {
@@ -447,11 +489,21 @@ pub fn run() {
         .manage(state::CloseGuard::new())
         .manage(state::FocusTracker::new())
         .manage(state::PreviewModes::new())
+        .manage(state::StartupWindow::new())
         .setup(|app| {
             app.manage(app.handle().clone());
             app.manage(state::UpdateManager::new(
                 app.package_info().version.to_string(),
             ));
+            // The main window is opt-in: give an OS open request the chance to
+            // become the only window before falling back to an empty editor.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(MAIN_WINDOW_BOOT_DELAY).await;
+                if !handle.state::<state::StartupWindow>().was_opened() {
+                    ensure_main_window(&handle);
+                }
+            });
             Ok(())
         })
         .invoke_handler(commands::handler())
@@ -510,12 +562,23 @@ pub fn run() {
         // the dialog having run.
         #[cfg(target_os = "macos")]
         RunEvent::Opened { urls } => {
-            for path in commands::document::opened_paths(&urls) {
+            let paths = commands::document::opened_paths(&urls);
+            if paths.is_empty() {
+                return;
+            }
+            // Skip the blank main window even if it has not started building.
+            app_handle.state::<state::StartupWindow>().mark_opened();
+            for path in paths {
                 let app = app_handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = commands::document::open_path_in_new_window(app, path).await
+                    if let Err(error) =
+                        commands::document::open_path_in_new_window(app.clone(), path).await
                     {
                         tracing::warn!(%error, "failed to open a file from the operating system");
+                        // A launch open that failed must not end windowless.
+                        if app.webview_windows().is_empty() {
+                            ensure_main_window(&app);
+                        }
                     }
                 });
             }
