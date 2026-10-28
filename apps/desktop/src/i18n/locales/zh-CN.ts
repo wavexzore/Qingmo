@@ -178,7 +178,14 @@ export const editor = {
   },
   math: { editSource: "点击编辑公式源码" },
   table: { editSource: "点击单元格编辑表格" },
-  codeBlock: { language: "代码语言" },
+  codeBlock: {
+    language: "代码语言",
+    copy: "复制代码",
+    copied: "已复制",
+    copyFailed: "复制失败",
+    more: "更多操作",
+    selectAll: "全选代码",
+  },
   definitionList: { editSource: "点击编辑定义列表源码" },
   comments: {
     wrapperTitle: "点击查看注释源码",

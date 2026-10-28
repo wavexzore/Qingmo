@@ -94,7 +94,14 @@ export interface EditorUiCopy {
   };
   math: { editSource: string };
   table: { editSource: string };
-  codeBlock: { language: string };
+  codeBlock: {
+    language: string;
+    copy: string;
+    copied: string;
+    copyFailed: string;
+    more: string;
+    selectAll: string;
+  };
   definitionList: { editSource: string };
   comments: {
     wrapperTitle: string;
@@ -214,7 +221,14 @@ export const DEFAULT_EDITOR_UI_COPY: EditorUiCopy = Object.freeze({
   },
   math: { editSource: "Click to edit the formula source" },
   table: { editSource: "Click a cell to edit the table" },
-  codeBlock: { language: "Code language" },
+  codeBlock: {
+    language: "Code language",
+    copy: "Copy code",
+    copied: "Copied",
+    copyFailed: "Copy failed",
+    more: "More actions",
+    selectAll: "Select all code",
+  },
   definitionList: { editSource: "Click to edit the definition list source" },
   comments: {
     wrapperTitle: "Click to view the comment source",

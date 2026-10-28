@@ -558,10 +558,10 @@ test("renders code block titles and highlighted lines", async ({ page }) => {
   await editorContent(page).focus();
   await page.keyboard.press(`${modifier()}+End`);
 
-  const info = page.locator(".cm-md-code-info");
-  await expect(info).toBeVisible();
-  await expect(info.locator(".cm-md-code-language")).toHaveValue("js");
-  await expect(info.locator(".cm-md-code-title")).toHaveText("app.js");
+  const header = page.locator(".cm-md-code-block-widget .cm-md-code-header");
+  await expect(header).toBeVisible();
+  await expect(header.locator("input.cm-md-code-language")).toHaveValue("js");
+  await expect(header.locator(".cm-md-code-title")).toHaveText("app.js");
 
   const highlighted = page.locator(".cm-md-code-block-widget .cm-line.cm-md-code-highlight");
   await expect(highlighted).toHaveCount(3);
@@ -573,8 +573,8 @@ test("renders code block titles and highlighted lines", async ({ page }) => {
   // embedded editor owns the source, so fences are never revealed.
   await page.keyboard.press(`${modifier()}+Home`);
   await expect(page.locator(".cm-md-code-block-widget")).toBeVisible();
-  await expect(info.locator(".cm-md-code-language")).toHaveValue("js");
-  await expect(info.locator(".cm-md-code-title")).toHaveText("app.js");
+  await expect(header.locator("input.cm-md-code-language")).toHaveValue("js");
+  await expect(header.locator(".cm-md-code-title")).toHaveText("app.js");
   await expect(editorContent(page)).not.toContainText('```js title="app.js"');
 });
 

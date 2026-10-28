@@ -222,6 +222,152 @@ interface CodeBlockHandle {
   chip: HTMLInputElement;
   titleNode: HTMLElement;
   externalNode: HTMLElement | null;
+  copyButton: HTMLButtonElement;
+  copyIcon: SVGSVGElement;
+  copyCheck: SVGSVGElement;
+  copyTimer: number | null;
+  moreButton: HTMLButtonElement;
+  copyItem: HTMLButtonElement;
+  selectItem: HTMLButtonElement;
+  cleanup: (() => void) | null;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgIcon(doc: Document): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("aria-hidden", "true");
+  return svg;
+}
+
+function strokeShape(doc: Document, tag: "path" | "rect"): SVGElement {
+  const shape = doc.createElementNS(SVG_NS, tag);
+  shape.setAttribute("stroke", "currentColor");
+  shape.setAttribute("stroke-width", "1.2");
+  shape.setAttribute("stroke-linecap", "round");
+  shape.setAttribute("stroke-linejoin", "round");
+  return shape;
+}
+
+function createCopyIcon(doc: Document): SVGSVGElement {
+  const svg = svgIcon(doc);
+  const back = strokeShape(doc, "path");
+  back.setAttribute("d", "M5.5 4.6V3.4c0-.5.4-.9.9-.9h6.2c.5 0 .9.4.9.9v6.2c0 .5-.4.9-.9.9h-1.2");
+  const front = strokeShape(doc, "rect");
+  front.setAttribute("x", "2.5");
+  front.setAttribute("y", "5.5");
+  front.setAttribute("width", "8");
+  front.setAttribute("height", "8");
+  front.setAttribute("rx", "1.2");
+  svg.append(back, front);
+  return svg;
+}
+
+function createCheckIcon(doc: Document): SVGSVGElement {
+  const svg = svgIcon(doc);
+  const check = strokeShape(doc, "path");
+  check.setAttribute("d", "M3.2 8.3l3 3.1 6.6-7.1");
+  check.setAttribute("stroke-width", "1.5");
+  svg.append(check);
+  return svg;
+}
+
+function createMoreIcon(doc: Document): SVGSVGElement {
+  const svg = svgIcon(doc);
+  for (const cy of ["3.2", "8", "12.8"]) {
+    const dot = doc.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("cx", "8");
+    dot.setAttribute("cy", cy);
+    dot.setAttribute("r", "1.15");
+    dot.setAttribute("fill", "currentColor");
+    svg.append(dot);
+  }
+  return svg;
+}
+
+function actionButton(doc: Document, className: string, label: string): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = `cm-md-code-action ${className}`;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+  return button;
+}
+
+function menuItem(doc: Document, label: string): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "cm-md-code-menu-item";
+  button.setAttribute("role", "menuitem");
+  button.textContent = label;
+  button.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+  return button;
+}
+
+async function writeClipboard(text: string, doc: Document): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall through to the legacy path when the webview denies clipboard
+      // access (for example before the window has focus).
+    }
+  }
+
+  const area = doc.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  doc.body.append(area);
+  area.select();
+  const copied = doc.execCommand("copy");
+  area.remove();
+  if (!copied) {
+    throw new Error("clipboard copy was rejected");
+  }
+}
+
+function resetCopy(handle: CodeBlockHandle): void {
+  handle.copyTimer = null;
+  handle.copyIcon.style.display = "";
+  handle.copyCheck.style.display = "none";
+  delete handle.copyButton.dataset.state;
+  handle.copyButton.title = handle.copy.codeBlock.copy;
+  handle.copyButton.setAttribute("aria-label", handle.copy.codeBlock.copy);
+}
+
+function flashCopy(handle: CodeBlockHandle, success: boolean): void {
+  if (handle.destroyed) {
+    return;
+  }
+  if (handle.copyTimer !== null) {
+    window.clearTimeout(handle.copyTimer);
+  }
+  handle.copyIcon.style.display = success ? "none" : "";
+  handle.copyCheck.style.display = success ? "" : "none";
+  handle.copyButton.dataset.state = success ? "copied" : "failed";
+  const label = success ? handle.copy.codeBlock.copied : handle.copy.codeBlock.copyFailed;
+  handle.copyButton.title = label;
+  handle.copyButton.setAttribute("aria-label", label);
+  handle.copyTimer = window.setTimeout(() => resetCopy(handle), 1_500);
+}
+
+async function copyCode(handle: CodeBlockHandle): Promise<void> {
+  try {
+    await writeClipboard(handle.nested.state.doc.toString(), handle.dom.ownerDocument);
+    flashCopy(handle, true);
+  } catch {
+    flashCopy(handle, false);
+  }
 }
 
 async function loadLanguageSupport(language: string): Promise<Extension | null> {
@@ -280,7 +426,7 @@ class CodeBlockWidget extends WidgetType {
   }
 
   override get estimatedHeight(): number {
-    return Math.max(1, this.codeText.split("\n").length) * 26 + 48;
+    return Math.max(1, this.codeText.split("\n").length) * 26 + 64;
   }
 
   private get codeText(): string {
@@ -293,12 +439,29 @@ class CodeBlockWidget extends WidgetType {
     wrapper.className = "cm-md-code-block-widget";
     wrapper.dataset.codeFrom = String(this.code.openingLine.from);
 
-    const editorHost = doc.createElement("div");
-    editorHost.className = "cm-md-code-editor";
-    wrapper.append(editorHost);
+    const header = doc.createElement("div");
+    header.className = "cm-md-code-header";
 
-    const info = doc.createElement("div");
-    info.className = "cm-md-code-info cm-md-code-info-floating";
+    const dots = doc.createElement("span");
+    dots.className = "cm-md-code-dots";
+    dots.setAttribute("aria-hidden", "true");
+    for (const tone of ["red", "yellow", "green"] as const) {
+      const dot = doc.createElement("span");
+      dot.className = `cm-md-code-dot cm-md-code-dot-${tone}`;
+      dots.append(dot);
+    }
+
+    const title = doc.createElement("span");
+    title.className = "cm-md-code-title";
+    title.hidden = !this.code.title;
+    title.textContent = this.code.title ?? "";
+
+    const spacer = doc.createElement("span");
+    spacer.className = "cm-md-code-header-spacer";
+
+    const actions = doc.createElement("span");
+    actions.className = "cm-md-code-actions";
+
     const chip = doc.createElement("input");
     chip.type = "text";
     chip.className = "cm-md-code-language";
@@ -311,14 +474,36 @@ class CodeBlockWidget extends WidgetType {
     chip.readOnly = this.readOnly;
     chip.tabIndex = this.readOnly ? -1 : 0;
     sizeLanguageChip(chip);
-    info.append(chip);
 
-    const title = doc.createElement("span");
-    title.className = "cm-md-code-title";
-    title.hidden = !this.code.title;
-    title.textContent = this.code.title ?? "";
-    info.append(title);
-    wrapper.append(info);
+    const copyButton = actionButton(doc, "cm-md-code-copy", this.copy.codeBlock.copy);
+    const copyIcon = createCopyIcon(doc);
+    copyIcon.classList.add("cm-md-code-copy-icon");
+    const copyCheck = createCheckIcon(doc);
+    copyCheck.classList.add("cm-md-code-copy-check");
+    copyCheck.style.display = "none";
+    copyButton.append(copyIcon, copyCheck);
+
+    const moreButton = actionButton(doc, "cm-md-code-more", this.copy.codeBlock.more);
+    moreButton.setAttribute("aria-haspopup", "menu");
+    moreButton.setAttribute("aria-expanded", "false");
+    moreButton.append(createMoreIcon(doc));
+
+    const menu = doc.createElement("div");
+    menu.className = "cm-md-code-menu";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+
+    const copyItem = menuItem(doc, this.copy.codeBlock.copy);
+    const selectItem = menuItem(doc, this.copy.codeBlock.selectAll);
+    menu.append(copyItem, selectItem);
+
+    actions.append(chip, copyButton, moreButton);
+    header.append(dots, title, spacer, actions, menu);
+    wrapper.append(header);
+
+    const editorHost = doc.createElement("div");
+    editorHost.className = "cm-md-code-editor";
+    wrapper.append(editorHost);
 
     const handle: CodeBlockHandle = {
       outer,
@@ -344,6 +529,14 @@ class CodeBlockWidget extends WidgetType {
       chip,
       titleNode: title,
       externalNode: null,
+      copyButton,
+      copyIcon,
+      copyCheck,
+      copyTimer: null,
+      moreButton,
+      copyItem,
+      selectItem,
+      cleanup: null,
     };
     (wrapper as unknown as { qingmoCodeBlock?: CodeBlockHandle }).qingmoCodeBlock = handle;
 
@@ -412,6 +605,75 @@ class CodeBlockWidget extends WidgetType {
     handle.nested = new EditorView({ state, parent: editorHost });
 
     applyLanguage(handle, this.code.language, true);
+
+    let menuOpen = false;
+    const closeMenu = (restoreFocus = false): void => {
+      if (!menuOpen) {
+        return;
+      }
+      menuOpen = false;
+      menu.hidden = true;
+      moreButton.setAttribute("aria-expanded", "false");
+      if (restoreFocus) {
+        moreButton.focus();
+      }
+    };
+    const openMenu = (): void => {
+      menuOpen = true;
+      menu.hidden = false;
+      moreButton.setAttribute("aria-expanded", "true");
+      menu.querySelector<HTMLButtonElement>(".cm-md-code-menu-item")?.focus();
+    };
+    const onDocumentMouseDown = (event: MouseEvent): void => {
+      if (!menuOpen) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof Node && (menu.contains(target) || moreButton.contains(target))) {
+        return;
+      }
+      closeMenu();
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape" && menuOpen) {
+        event.preventDefault();
+        closeMenu(true);
+      }
+    };
+    doc.addEventListener("mousedown", onDocumentMouseDown, true);
+    wrapper.addEventListener("keydown", onKeyDown);
+    handle.cleanup = () => {
+      doc.removeEventListener("mousedown", onDocumentMouseDown, true);
+      wrapper.removeEventListener("keydown", onKeyDown);
+      if (handle.copyTimer !== null) {
+        window.clearTimeout(handle.copyTimer);
+      }
+    };
+
+    copyButton.addEventListener("click", () => {
+      void copyCode(handle);
+      handle.nested.focus();
+    });
+    moreButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (menuOpen) {
+        closeMenu(true);
+      } else {
+        openMenu();
+      }
+    });
+    copyItem.addEventListener("click", () => {
+      closeMenu();
+      handle.nested.focus();
+      void copyCode(handle);
+    });
+    selectItem.addEventListener("click", () => {
+      closeMenu();
+      handle.nested.focus();
+      handle.nested.dispatch({
+        selection: EditorSelection.single(0, handle.nested.state.doc.length),
+      });
+    });
 
     chip.addEventListener("mousedown", (event) => {
       event.stopPropagation();
@@ -483,6 +745,15 @@ class CodeBlockWidget extends WidgetType {
     handle.chip.placeholder = this.copy.codeBlock.language;
     handle.chip.setAttribute("aria-label", this.copy.codeBlock.language);
 
+    handle.copyItem.textContent = this.copy.codeBlock.copy;
+    handle.selectItem.textContent = this.copy.codeBlock.selectAll;
+    handle.moreButton.title = this.copy.codeBlock.more;
+    handle.moreButton.setAttribute("aria-label", this.copy.codeBlock.more);
+    if (!handle.copyButton.dataset.state) {
+      handle.copyButton.title = this.copy.codeBlock.copy;
+      handle.copyButton.setAttribute("aria-label", this.copy.codeBlock.copy);
+    }
+
     applyLanguage(handle, this.code.language);
 
     if (handle.readOnly !== this.readOnly) {
@@ -534,6 +805,8 @@ class CodeBlockWidget extends WidgetType {
     }
     const hadFocus = dom.contains(dom.ownerDocument.activeElement);
     handle.destroyed = true;
+    handle.cleanup?.();
+    handle.cleanup = null;
     handle.nested.destroy();
     if (hadFocus) {
       queueMicrotask(() => {
@@ -633,8 +906,8 @@ function commitLanguage(handle: CodeBlockHandle): void {
 }
 
 function updateInfo(handle: CodeBlockHandle): void {
-  const info = handle.chip.parentElement;
-  if (!info) {
+  const host = handle.chip.parentElement;
+  if (!host) {
     return;
   }
   const external = EXTERNAL_DIAGRAM_LANGUAGES[handle.language.trim().toLowerCase()];
@@ -642,7 +915,7 @@ function updateInfo(handle: CodeBlockHandle): void {
     if (!handle.externalNode) {
       handle.externalNode = handle.dom.ownerDocument.createElement("span");
       handle.externalNode.className = "cm-md-code-external";
-      info.append(handle.externalNode);
+      host.insertBefore(handle.externalNode, handle.chip);
     }
     handle.externalNode.textContent = handle.copy.widgets.externalRender;
     handle.externalNode.title = handle.copy.widgets.externalRenderHint(external);

@@ -773,7 +773,11 @@ describe("livePreviewPlugin", () => {
     expect(widget?.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe("js");
     // The fence markers never reach the rendered document.
     expect(widget?.textContent).not.toContain("```");
-    expect(widget?.querySelector(".cm-md-code-info-floating")).not.toBeNull();
+    // The terminal chrome exposes the frame, language, copy and more actions.
+    expect(widget?.querySelector(".cm-md-code-header")).not.toBeNull();
+    expect(widget?.querySelectorAll(".cm-md-code-dot")).toHaveLength(3);
+    expect(widget?.querySelector(".cm-md-code-copy")).not.toBeNull();
+    expect(widget?.querySelector(".cm-md-code-more")).not.toBeNull();
 
     const nestedDom = widget?.querySelector<HTMLElement>(".cm-editor");
     const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
@@ -783,6 +787,54 @@ describe("livePreviewPlugin", () => {
     nested?.dispatch({ changes: { from: 12, insert: " + 2" } });
     expect(view.state.doc.toString()).toBe("```js\nconst x = 1; + 2\n```\n");
     expect(nested?.state.doc.toString()).toBe("const x = 1; + 2");
+  });
+
+  it("copies the code and selects it from the terminal actions", async () => {
+    const doc = "```js\nconst x = 1;\n```\n";
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      const parent = document.createElement("div");
+      document.body.append(parent);
+      const view = new EditorView({ state: stateFor(doc), parent });
+      views.push({ view, parent });
+
+      const copy = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-copy");
+      expect(copy).not.toBeNull();
+      copy!.click();
+      await vi.waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("const x = 1;");
+        expect(copy?.dataset.state).toBe("copied");
+      });
+      expect(copy?.title).toBe("Copied");
+      expect(copy?.querySelector<SVGElement>(".cm-md-code-copy-check")?.style.display).toBe("");
+
+      const more = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-more");
+      more!.click();
+      expect(more?.getAttribute("aria-expanded")).toBe("true");
+      const menu = view.dom.querySelector<HTMLElement>(".cm-md-code-menu");
+      expect(menu?.hidden).toBe(false);
+
+      const nestedDom = view.dom.querySelector<HTMLElement>(".cm-editor");
+      const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
+      const select = Array.from(
+        view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-code-menu-item"),
+      ).find((item) => item.textContent === "Select all code");
+      select!.click();
+      expect(menu?.hidden).toBe(true);
+      expect(nested?.state.selection.main.from).toBe(0);
+      expect(nested?.state.selection.main.to).toBe(nested?.state.doc.length);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(navigator, "clipboard", descriptor);
+      } else {
+        delete (navigator as unknown as { clipboard?: Clipboard }).clipboard;
+      }
+    }
   });
 
   it("keeps edits at the end of the code inside the closing fence", () => {

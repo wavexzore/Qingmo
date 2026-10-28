@@ -32,7 +32,7 @@ test("edits a rendered table cell without revealing Markdown source", async ({ p
   await expect.poll(() => getFileText(page, TABLE_PATH)).toContain("| :--- | ---: |");
 });
 
-test("places the code language chip at the bottom-right and highlights code", async ({ page }) => {
+test("renders terminal chrome with a top-right language chip", async ({ page }) => {
   await openApp(page, [{ path: CODE_PATH, text: CODE_DOC }]);
   await openSeededFile(page, "code-badge.md");
 
@@ -40,27 +40,44 @@ test("places the code language chip at the bottom-right and highlights code", as
   await expect(block).toBeVisible();
   await expect(block).not.toContainText("```");
 
-  const chip = block.locator("input.cm-md-code-language");
+  const header = block.locator(".cm-md-code-header");
+  await expect(header).toBeVisible();
+  await expect(header.locator(".cm-md-code-dot")).toHaveCount(3);
+  await expect(block.locator(".cm-md-code-copy")).toHaveAttribute("aria-label", "复制代码");
+  await expect(block.locator(".cm-md-code-more")).toHaveAttribute("aria-label", "更多操作");
+
+  const chip = header.locator("input.cm-md-code-language");
   await expect(chip).toHaveValue("ts");
 
   const firstCodeLine = block.locator(".cm-line").filter({ hasText: "const answer" }).first();
   await expect(firstCodeLine).toBeVisible();
-  const [chipBox, blockBox, firstBox] = await Promise.all([
+  const [chipBox, headerBox, copyBox, moreBox, blockBox, firstBox] = await Promise.all([
     chip.boundingBox(),
+    header.boundingBox(),
+    block.locator(".cm-md-code-copy").boundingBox(),
+    block.locator(".cm-md-code-more").boundingBox(),
     block.boundingBox(),
     firstCodeLine.boundingBox(),
   ]);
   expect(chipBox).not.toBeNull();
+  expect(headerBox).not.toBeNull();
+  expect(copyBox).not.toBeNull();
+  expect(moreBox).not.toBeNull();
   expect(blockBox).not.toBeNull();
   expect(firstBox).not.toBeNull();
-  if (!chipBox || !blockBox || !firstBox) {
+  if (!chipBox || !headerBox || !copyBox || !moreBox || !blockBox || !firstBox) {
     return;
   }
 
-  // The chip sits below the last code line and hugs the block's right inset.
-  expect(chipBox.y).toBeGreaterThan(firstBox.y + firstBox.height);
+  // The chrome bar sits above the code, and the language chip precedes the
+  // copy/more actions inside it. The more button hugs the window's right inset.
+  expect(headerBox.y).toBeLessThan(firstBox.y);
+  expect(chipBox.y).toBeLessThan(firstBox.y);
+  expect(chipBox.x).toBeGreaterThan(headerBox.x);
+  expect(copyBox.x).toBeGreaterThan(chipBox.x + chipBox.width - 1);
+  expect(moreBox.x).toBeGreaterThan(copyBox.x + copyBox.width - 1);
   const contentRight = blockBox.x + blockBox.width - 10;
-  expect(Math.abs(chipBox.x + chipBox.width - contentRight)).toBeLessThan(20);
+  expect(Math.abs(moreBox.x + moreBox.width - contentRight)).toBeLessThan(20);
 
   // The nested TypeScript parser produces token spans with a different colour
   // from the surrounding code text.
