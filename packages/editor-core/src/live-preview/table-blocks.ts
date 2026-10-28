@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { renderInlineMarkdown } from "./inline-render";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
@@ -65,6 +66,7 @@ function buildTableBlocks(state: EditorState): TableBlockState {
   const ranges: TableRange[] = [];
   const blocked: TableRange[] = [];
   const decorations: ReturnType<Decoration["range"]>[] = [];
+  const copy = state.facet(editorUiCopy);
   const frontMatter = readFrontMatter(state.doc);
   const details = readDetailsBlocks(state);
 
@@ -88,7 +90,7 @@ function buildTableBlocks(state: EditorState): TableBlockState {
           decorations.push(
             Decoration.replace({
               block: true,
-              widget: new TableBlockWidget(table),
+              widget: new TableBlockWidget(copy, table),
             }).range(range.from, range.to),
           );
         }
@@ -120,7 +122,7 @@ function buildTableBlocks(state: EditorState): TableBlockState {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new HtmlTableWidget(table),
+          widget: new HtmlTableWidget(copy, table),
         }).range(range.from, range.to),
       );
     }
@@ -135,13 +137,17 @@ function buildTableBlocks(state: EditorState): TableBlockState {
 }
 
 class TableBlockWidget extends WidgetType {
-  constructor(private readonly table: ParsedTable) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly table: ParsedTable,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
     return (
       other instanceof TableBlockWidget &&
+      other.copy.version === this.copy.version &&
       JSON.stringify(other.table.header) === JSON.stringify(this.table.header) &&
       JSON.stringify(other.table.align) === JSON.stringify(this.table.align) &&
       JSON.stringify(other.table.rows) === JSON.stringify(this.table.rows)
@@ -151,7 +157,7 @@ class TableBlockWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-table-block";
-    wrapper.title = "点击编辑表格源码";
+    wrapper.title = this.copy.table.editSource;
 
     // A block widget has no editable text. Clicking it reveals the source and
     // puts the caret at the first line of the table.
@@ -175,7 +181,7 @@ class TableBlockWidget extends WidgetType {
       const cell = document.createElement("th");
       cell.scope = "col";
       applyAlignment(cell, this.table.align[index] ?? null);
-      renderInlineMarkdown(cell, this.table.header[index] ?? "");
+      renderInlineMarkdown(cell, this.table.header[index] ?? "", this.copy);
       headerRow.append(cell);
     }
     thead.append(headerRow);
@@ -188,7 +194,7 @@ class TableBlockWidget extends WidgetType {
         for (let index = 0; index < this.table.header.length; index += 1) {
           const cell = document.createElement("td");
           applyAlignment(cell, this.table.align[index] ?? null);
-          renderInlineMarkdown(cell, row[index] ?? "");
+          renderInlineMarkdown(cell, row[index] ?? "", this.copy);
           tr.append(cell);
         }
         tbody.append(tr);
@@ -217,7 +223,7 @@ export const tableBlockPreview = StateField.define<TableBlockState>({
   create: buildTableBlocks,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildTableBlocks(transaction.state);
     }
 

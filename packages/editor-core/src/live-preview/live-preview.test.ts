@@ -4,15 +4,131 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_EDITOR_UI_COPY,
   LP_MAX_UNITS,
   MAX_LINE_UNITS,
   buildLivePreviewDecorations,
   collectDecorationSpecs,
   createEditorState,
   livePreviewPlugin,
+  setEditorUiCopyEffect,
   type DecorationSpec,
+  type EditorUiCopy,
   type LivePreviewWidgetSpec,
 } from "../index";
+
+const zhCopy: EditorUiCopy = {
+  ...DEFAULT_EDITOR_UI_COPY,
+  version: "zh-CN:1",
+  language: "zh-CN",
+  widgets: {
+    externalRender: "需外部渲染",
+    externalRenderHint: (name) => `${name} 需要外部渲染器，编辑器仅显示源码`,
+    attributes: "属性",
+    footnoteJump: "跳转到脚注定义",
+    inlineFootnote: (content) => `行内脚注：${content}`,
+    inlineFootnoteLabel: (index) => `注${index}`,
+    abbreviation: "缩写",
+    wikiEmbed: (target) => `嵌入：${target}（不展开笔记内容）`,
+    wikiLink: (target) => `双链：${target}`,
+    htmlAnchor: (label) => `HTML 锚点：${label}`,
+    anchorJump: (href) => `跳转到 ${href}`,
+    taskToggle: "切换任务完成状态",
+  },
+  details: {
+    summary: "详情",
+    empty: "（空内容）",
+    tooLarge: "内容过长，点击“源码”编辑。",
+    edit: "源码",
+    editTitle: "编辑折叠块源码",
+    wrapperTitle: "点击标题展开/折叠，点击内容编辑源码",
+  },
+  toc: {
+    title: "目录",
+    empty: "文档中没有标题",
+    wrapperTitle: "点击目录项跳转，点击空白处编辑占位符",
+  },
+  frontmatter: {
+    title: "元数据",
+    wrapperTitle: "点击编辑 Front Matter",
+    entries: (count) => `${count} 项`,
+    empty: "空元数据",
+    more: (hidden) => `还有 ${hidden} 项，点击查看源码`,
+  },
+  media: {
+    video: "视频",
+    audio: "音频",
+    gallery: "图片组",
+    figure: "图片配文",
+    image: "图片",
+    centeredImage: "居中图片",
+    embed: "外部嵌入",
+    imageEmbedTitle: (target) => `嵌入图片：${target}`,
+    externalPage: "外部页面",
+    externalBlocked: "出于安全考虑，外部页面不会在编辑器中加载",
+    source: "源码",
+    editSource: "编辑媒体源码",
+  },
+  mermaid: {
+    edit: "编辑源码",
+    editTitle: "编辑 Mermaid 源码",
+    zoomOut: "缩小图表",
+    zoomReset: "恢复 100%",
+    zoomIn: "放大图表",
+    fitWidth: "适应",
+    fitTitle: "适应画布宽度",
+    source: "源码",
+    sourceTitle: "编辑 Mermaid 源码",
+    hintEdit: "点击「源码」编辑",
+    hintScroll: "可横向滚动查看",
+    renderFailed: "渲染失败",
+    unsafeSvg: "图表内容未通过安全过滤",
+    invalidSvg: "图表 SVG 无效",
+    unavailable: "Mermaid 渲染器不可用",
+    readyTimeout: "Mermaid 渲染器加载超时",
+    renderTimeout: "Mermaid 图表渲染超时",
+  },
+  math: { editSource: "点击编辑公式源码" },
+  table: { editSource: "点击编辑表格源码" },
+  definitionList: { editSource: "点击编辑定义列表源码" },
+  comments: {
+    wrapperTitle: "点击查看注释源码",
+    html: "HTML 注释",
+    obsidian: "Obsidian 注释",
+    hiddenLines: (lines) => `${lines} 行 · 已隐藏`,
+    source: "源码",
+    editSource: "编辑注释源码",
+  },
+  diagramKinds: {
+    flowchart: "流程图",
+    sequence: "时序图",
+    class: "类图",
+    state: "状态图",
+    er: "ER 图",
+    gantt: "甘特图",
+    pie: "饼图",
+    quadrant: "象限图",
+    mindmap: "思维导图",
+    git: "Git 图",
+    c4: "C4 架构图",
+    journey: "用户旅程",
+    timeline: "时间线",
+    requirement: "需求图",
+    sankey: "桑基图",
+    xychart: "XY 图表",
+    block: "块图",
+    packet: "数据包图",
+    architecture: "架构图",
+    kanban: "看板",
+    radar: "雷达图",
+    treemap: "矩形树图",
+    ishikawa: "鱼骨图",
+    wardley: "沃德利图",
+    zenuml: "ZenUML 时序图",
+    info: "说明",
+    unknown: "图表",
+  },
+};
 
 const fixture = readFileSync("packages/editor-core/src/live-preview/fixtures/basic.md", "utf8");
 const views: Array<{ view: EditorView; parent: HTMLDivElement }> = [];
@@ -25,9 +141,11 @@ afterEach(() => {
 });
 
 function stateFor(doc: string = fixture) {
-  const state = createEditorState({ doc });
+  const state = createEditorState({ doc, uiCopy: zhCopy });
   ensureSyntaxTree(state, state.doc.length, 10_000);
-  return state;
+  // `ensureSyntaxTree` advances the parse context, not the state field; an
+  // empty transaction adopts the completed tree for `syntaxTree(state)`.
+  return state.update({}).state;
 }
 
 function collect(
@@ -1168,6 +1286,49 @@ describe("livePreviewPlugin", () => {
 
     view.dispatch({ selection: { anchor: doc.indexOf("[[") } });
     expect(view.dom.textContent).toContain("[[笔记名称]]");
+  });
+
+  it("re-renders widget copy in place when the language changes", () => {
+    const doc =
+      "---\n" +
+      "title: Test\n" +
+      "---\n" +
+      "\n" +
+      "See [[Note]] and ^[inline].\n" +
+      "\n" +
+      "![[image.png]]\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    view.dispatch({ selection: { anchor: doc.length } });
+
+    expect(view.dom.querySelector(".cm-md-frontmatter")?.getAttribute("title")).toBe(
+      "点击编辑 Front Matter",
+    );
+    expect(view.dom.querySelector(".cm-md-wiki-link")?.getAttribute("title")).toBe("双链：Note");
+    expect(view.dom.querySelector(".cm-md-footnote-inline")?.textContent).toBe("注1");
+    expect(view.dom.querySelector(".cm-md-image")?.getAttribute("title")).toBe(
+      "嵌入图片：image.png",
+    );
+
+    const before = view.state;
+    view.dispatch({ effects: setEditorUiCopyEffect(DEFAULT_EDITOR_UI_COPY) });
+
+    expect(view.state.doc.toString()).toBe(before.doc.toString());
+    expect(view.state.selection.eq(before.selection)).toBe(true);
+    expect(view.dom.querySelector(".cm-md-frontmatter")?.getAttribute("title")).toBe(
+      "Click to edit Front Matter",
+    );
+    expect(view.dom.querySelector(".cm-md-wiki-link")?.getAttribute("title")).toBe(
+      "Wiki link: Note",
+    );
+    expect(view.dom.querySelector(".cm-md-footnote-inline")?.textContent).toBe("Note 1");
+    expect(view.dom.querySelector(".cm-md-image")?.getAttribute("title")).toBe(
+      "Embedded image: image.png",
+    );
+    expect(view.dom.textContent).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it("renders Obsidian image embeds with size aliases", () => {

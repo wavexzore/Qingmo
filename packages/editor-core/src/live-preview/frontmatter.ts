@@ -1,6 +1,8 @@
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+
 /**
  * Front matter is metadata, not prose. Very large documents should not pay for
  * the top-of-file scan on every keystroke.
@@ -210,6 +212,7 @@ function buildFrontMatter(state: EditorState): FrontMatterState {
     // as prose.
     return { data, blocked, inside, decorations: Decoration.none };
   }
+  const copy = state.facet(editorUiCopy);
   return {
     data,
     blocked,
@@ -217,7 +220,7 @@ function buildFrontMatter(state: EditorState): FrontMatterState {
     decorations: Decoration.set([
       Decoration.replace({
         block: true,
-        widget: new FrontMatterWidget(data),
+        widget: new FrontMatterWidget(copy, data),
       }).range(data.from, data.to),
     ]),
   };
@@ -231,18 +234,25 @@ function addCell(parent: HTMLElement, className: string, text: string): void {
 }
 
 class FrontMatterWidget extends WidgetType {
-  constructor(private readonly data: ParsedFrontMatter) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly data: ParsedFrontMatter,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
-    return other instanceof FrontMatterWidget && other.data.raw === this.data.raw;
+    return (
+      other instanceof FrontMatterWidget &&
+      other.copy.version === this.copy.version &&
+      other.data.raw === this.data.raw
+    );
   }
 
   override toDOM(view: EditorView): HTMLElement {
     const card = document.createElement("div");
     card.className = "cm-md-frontmatter";
-    card.title = "点击编辑 Front Matter";
+    card.title = this.copy.frontmatter.wrapperTitle;
 
     card.addEventListener("mousedown", (event) => {
       if (event.button !== 0) {
@@ -256,9 +266,13 @@ class FrontMatterWidget extends WidgetType {
 
     const header = document.createElement("div");
     header.className = "cm-md-frontmatter-header";
-    addCell(header, "cm-md-frontmatter-title", "Front Matter");
+    addCell(header, "cm-md-frontmatter-title", this.copy.frontmatter.title);
     addCell(header, "cm-md-frontmatter-badge", this.data.format.toUpperCase());
-    addCell(header, "cm-md-frontmatter-count", `${this.data.entries.length} 项`);
+    addCell(
+      header,
+      "cm-md-frontmatter-count",
+      this.copy.frontmatter.entries(this.data.entries.length),
+    );
     card.append(header);
 
     if (this.data.entries.length === 0) {
@@ -269,7 +283,7 @@ class FrontMatterWidget extends WidgetType {
         raw.textContent = body;
         card.append(raw);
       } else {
-        addCell(card, "cm-md-frontmatter-empty", "空元数据");
+        addCell(card, "cm-md-frontmatter-empty", this.copy.frontmatter.empty);
       }
       return card;
     }
@@ -291,7 +305,7 @@ class FrontMatterWidget extends WidgetType {
 
     const hidden = this.data.entries.length - MAX_DISPLAY_ENTRIES;
     if (hidden > 0) {
-      addCell(card, "cm-md-frontmatter-more", `还有 ${hidden} 项，点击查看源码`);
+      addCell(card, "cm-md-frontmatter-more", this.copy.frontmatter.more(hidden));
     }
     return card;
   }
@@ -304,7 +318,7 @@ class FrontMatterWidget extends WidgetType {
 export const frontMatterPreview = StateField.define<FrontMatterState>({
   create: buildFrontMatter,
   update(value, transaction) {
-    if (transaction.docChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged) {
       return buildFrontMatter(transaction.state);
     }
     if (!transaction.newSelection.eq(transaction.startState.selection)) {

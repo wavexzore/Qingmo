@@ -2,6 +2,7 @@ import { RouterProvider } from "react-router-dom";
 
 import "../i18n";
 import { AppServicesProvider } from "./AppServices";
+import { LocaleHost } from "./LocaleHost";
 import { AppErrorBoundary } from "../components/AppErrorBoundary";
 import { ToastProvider } from "../components/ToastHost";
 import { DocumentSessionProvider } from "../features/editor/DocumentSessionContext";
@@ -15,6 +16,7 @@ export function AppShell() {
     <AppErrorBoundary>
       <ToastProvider>
         <AppServicesProvider>
+          <LocaleHost />
           <UpdateProvider>
             <DocumentSessionProvider>
               <RouterProvider router={router} />

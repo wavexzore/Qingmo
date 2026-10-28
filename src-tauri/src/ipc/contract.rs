@@ -23,6 +23,7 @@ pub const COMMANDS: &[&str] = &[
     "app_logs_export",
     "app_logs_open_dir",
     "app_logs_clear",
+    "app_apply_locale",
 ];
 
 pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";
@@ -51,6 +52,8 @@ pub const MENU_LOGS: &str = "app.openLogs";
 pub const MENU_THEME_LIGHT: &str = "theme.light";
 pub const MENU_THEME_DARK: &str = "theme.dark";
 pub const MENU_THEME_SYSTEM: &str = "theme.system";
+pub const MENU_LANGUAGE_ZH_CN: &str = "language.zh-CN";
+pub const MENU_LANGUAGE_EN: &str = "language.en";
 
 pub const MENU_ACTIONS: &[&str] = &[
     MENU_FILE_OPEN,
@@ -62,6 +65,8 @@ pub const MENU_ACTIONS: &[&str] = &[
     MENU_THEME_LIGHT,
     MENU_THEME_DARK,
     MENU_THEME_SYSTEM,
+    MENU_LANGUAGE_ZH_CN,
+    MENU_LANGUAGE_EN,
 ];
 
 /// Tauri turns `document_open` into the ACL permission `allow-document-open`.

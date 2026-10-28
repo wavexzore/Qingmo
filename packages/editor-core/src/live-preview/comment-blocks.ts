@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { readDetailsBlocks } from "./details";
 import type { MarkdownNode } from "./markdown-node";
 
@@ -105,13 +106,14 @@ function buildComments(state: EditorState): CommentState {
     return emptyState();
   }
 
+  const copy = state.facet(editorUiCopy);
   const decorations: ReturnType<Decoration["range"]>[] = [];
   for (const range of ranges) {
     if (!selectionTouches(state, range)) {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new CommentWidget(range),
+          widget: new CommentWidget(copy, range),
         }).range(range.from, range.to),
       );
     }
@@ -126,13 +128,17 @@ function buildComments(state: EditorState): CommentState {
 }
 
 class CommentWidget extends WidgetType {
-  constructor(private readonly block: CommentBlock) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly block: CommentBlock,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
     return (
       other instanceof CommentWidget &&
+      other.copy.version === this.copy.version &&
       other.block.raw === this.block.raw &&
       other.block.kind === this.block.kind
     );
@@ -141,7 +147,7 @@ class CommentWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = `cm-md-comment cm-md-comment-${this.block.kind}`;
-    wrapper.title = "点击查看注释源码";
+    wrapper.title = this.copy.comments.wrapperTitle;
 
     const icon = document.createElement("span");
     icon.className = "cm-md-comment-icon";
@@ -150,17 +156,18 @@ class CommentWidget extends WidgetType {
 
     const badge = document.createElement("span");
     badge.className = "cm-md-comment-badge";
-    badge.textContent = this.block.kind === "html" ? "HTML 注释" : "Obsidian 注释";
+    badge.textContent =
+      this.block.kind === "html" ? this.copy.comments.html : this.copy.comments.obsidian;
 
     const meta = document.createElement("span");
     meta.className = "cm-md-comment-meta";
-    meta.textContent = `${this.block.lines} 行 · 已隐藏`;
+    meta.textContent = this.copy.comments.hiddenLines(this.block.lines);
 
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "cm-md-comment-edit";
-    edit.textContent = "源码";
-    edit.title = "编辑注释源码";
+    edit.textContent = this.copy.comments.source;
+    edit.title = this.copy.comments.editSource;
 
     const editSource = (event: MouseEvent) => {
       if (event.button !== 0) {
@@ -187,7 +194,7 @@ export const commentBlockPreview = StateField.define<CommentState>({
   create: buildComments,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildComments(transaction.state);
     }
     if (!transaction.newSelection.eq(transaction.startState.selection)) {

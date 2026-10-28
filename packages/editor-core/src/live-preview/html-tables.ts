@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 
+import { DEFAULT_EDITOR_UI_COPY, type EditorUiCopy } from "../i18n";
 import { renderInlineMarkdown } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
 import type { TableAlignment } from "./specs";
@@ -365,12 +366,15 @@ function applyCellStructure(cell: HTMLTableCellElement, value: HtmlTableCell): v
 }
 
 /** Builds the rendered DOM for one parsed HTML table. */
-export function renderHtmlTable(table: HtmlTable): HTMLTableElement {
+export function renderHtmlTable(
+  table: HtmlTable,
+  copy: EditorUiCopy = DEFAULT_EDITOR_UI_COPY,
+): HTMLTableElement {
   const element = document.createElement("table");
 
   if (table.caption) {
     const caption = document.createElement("caption");
-    renderInlineMarkdown(caption, table.caption);
+    renderInlineMarkdown(caption, table.caption, copy);
     element.append(caption);
   }
 
@@ -387,7 +391,7 @@ export function renderHtmlTable(table: HtmlTable): HTMLTableElement {
     for (const value of row.cells) {
       const cell = document.createElement(value.tag);
       applyCellStructure(cell, value);
-      renderInlineMarkdown(cell, value.content);
+      renderInlineMarkdown(cell, value.content, copy);
       tr.append(cell);
     }
     sectionElement.append(tr);
@@ -397,13 +401,17 @@ export function renderHtmlTable(table: HtmlTable): HTMLTableElement {
 }
 
 class HtmlTableWidget extends WidgetType {
-  constructor(private readonly table: HtmlTable) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly table: HtmlTable,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
     return (
       other instanceof HtmlTableWidget &&
+      other.copy.version === this.copy.version &&
       other.table.from === this.table.from &&
       other.table.to === this.table.to &&
       JSON.stringify(other.table.rows) === JSON.stringify(this.table.rows) &&
@@ -414,8 +422,8 @@ class HtmlTableWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-table-block cm-md-html-table-block";
-    wrapper.title = "点击编辑 HTML 表格源码";
-    wrapper.append(renderHtmlTable(this.table));
+    wrapper.title = this.copy.table.editSource;
+    wrapper.append(renderHtmlTable(this.table, this.copy));
 
     // The widget has no editable text: clicking it reveals the source and
     // places the caret on the opening line.

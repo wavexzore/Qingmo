@@ -38,6 +38,8 @@ const SAMPLE: LogEntry[] = [
 export class FakeLogPort implements LogPort {
   entries: LogEntry[];
   exportError: Error | null = null;
+  /** Number of rotated files reported by `stats`; E2E overrides it. */
+  fileCount = 1;
   readonly calls = { list: 0, stats: 0, export: 0, openDir: 0, clear: 0 };
 
   constructor(entries: LogEntry[] = SAMPLE) {
@@ -63,7 +65,7 @@ export class FakeLogPort implements LogPort {
       infoCount: count("info"),
       debugCount: count("debug") + count("trace"),
       totalSizeBytes: this.entries.length * 96,
-      fileCount: 1,
+      fileCount: this.fileCount,
       oldestEntry: this.entries[0]?.timestamp ?? null,
       newestEntry: this.entries.at(-1)?.timestamp ?? null,
     };

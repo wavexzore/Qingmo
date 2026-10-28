@@ -1,7 +1,7 @@
 use qingmo_lib::error::{AppError, AppErrorCode};
 use qingmo_lib::ipc::dto::{
-    AboutLink, CloseReason, FilePayload, SaveRequest, TextEncoding, TextFormat, UpdateInfo,
-    UpdatePhase, UpdateSnapshot,
+    AboutLink, AppLanguage, ApplyLocaleRequest, CloseReason, FilePayload, NativeShellLabels,
+    SaveRequest, TextEncoding, TextFormat, UpdateInfo, UpdatePhase, UpdateSnapshot,
 };
 use qingmo_lib::ipc::{command_permissions, COMMANDS, EVENTS};
 use qingmo_lib::state::CloseGuard;
@@ -52,7 +52,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 19);
+    assert_eq!(COMMANDS.len(), 20);
     assert_eq!(
         EVENTS,
         &[
@@ -69,6 +69,10 @@ fn frontend_command_mirror_contains_every_contract_name() {
             "commands.ts is missing menu action {action}"
         );
     }
+
+    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 11);
+    assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.zh-CN"));
+    assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.en"));
 }
 
 #[test]
@@ -222,6 +226,7 @@ fn error_wire_shape_is_stable() {
         (AppErrorCode::UpdateInstallFailed, "UPDATE_INSTALL_FAILED"),
         (AppErrorCode::UpdateUnsupported, "UPDATE_UNSUPPORTED"),
         (AppErrorCode::UpdateNotReady, "UPDATE_NOT_READY"),
+        (AppErrorCode::InvalidLocale, "INVALID_LOCALE"),
     ] {
         let value = serde_json::to_value(AppError::new(code, "update error"))
             .expect("AppError must serialize");
@@ -255,6 +260,9 @@ fn invoke_handler_registers_every_contract_command() {
         .manage(qingmo_lib::state::DocumentRegistry::new())
         .manage(qingmo_lib::state::WindowSessions::new())
         .manage(CloseGuard::new())
+        .manage(qingmo_lib::state::FocusTracker::new())
+        .manage(qingmo_lib::state::PreviewModes::new())
+        .manage(qingmo_lib::state::ShellLocale::default())
         .manage(qingmo_lib::state::UpdateManager::new(env!(
             "CARGO_PKG_VERSION"
         )))
@@ -268,24 +276,12 @@ fn invoke_handler_registers_every_contract_command() {
     // `document_open` is registered but cannot be invoked here: it opens a
     // native dialog. Registration is asserted from the single handler source.
     let handler_source = read_text("src/commands/mod.rs");
-    assert!(handler_source.contains("document::document_open"));
-    assert!(handler_source.contains("document::document_take_pending"));
-    assert!(handler_source.contains("document::document_reload"));
-    assert!(handler_source.contains("document::document_save_as"));
-    assert!(handler_source.contains("document::document_write_atomic"));
-    assert!(handler_source.contains("close::app_close_confirm"));
-    assert!(handler_source.contains("about::app_about_info"));
-    assert!(handler_source.contains("about::app_about_close"));
-    assert!(handler_source.contains("about::app_about_open_link"));
-    assert!(handler_source.contains("update::app_update_status"));
-    assert!(handler_source.contains("update::app_update_check"));
-    assert!(handler_source.contains("update::app_update_download"));
-    assert!(handler_source.contains("update::app_update_install"));
-    assert!(handler_source.contains("logs::app_logs_list"));
-    assert!(handler_source.contains("logs::app_logs_stats"));
-    assert!(handler_source.contains("logs::app_logs_export"));
-    assert!(handler_source.contains("logs::app_logs_open_dir"));
-    assert!(handler_source.contains("logs::app_logs_clear"));
+    for command in COMMANDS {
+        assert!(
+            handler_source.contains(&format!("::{command}")),
+            "commands/mod.rs is missing a handler for {command}"
+        );
+    }
 
     let error = invoke(&webview, "document_reload", json!({"docToken": "fake"}))
         .expect_err("reload with a fake token must fail");
@@ -365,6 +361,22 @@ fn invoke_handler_registers_every_contract_command() {
     assert!(guard.begin(CloseReason::Exit, ["main".to_string()]));
     guard.cancel();
 
+    let mut invalid_labels = valid_labels();
+    invalid_labels.open = "  ".to_string();
+    let error = invoke(
+        &webview,
+        "app_apply_locale",
+        json!({
+            "request": {
+                "language": "zh-CN",
+                "labels": invalid_labels,
+            }
+        }),
+    )
+    .expect_err("invalid labels must be rejected");
+    assert_eq!(error["code"], "INVALID_LOCALE", "unexpected error: {error}");
+    assert_eq!(error["details"]["field"], "open");
+
     let status = invoke(&webview, "app_update_status", json!({}))
         .expect("status must be available without the plugin");
     assert_eq!(status["phase"], "idle");
@@ -376,6 +388,122 @@ fn invoke_handler_registers_every_contract_command() {
         assert_eq!(
             error["code"], "UPDATE_NOT_READY",
             "{command} must return UPDATE_NOT_READY: {error}"
+        );
+    }
+}
+
+fn valid_labels() -> NativeShellLabels {
+    NativeShellLabels {
+        app_name: "Qingmo".to_string(),
+        about: "About Qingmo".to_string(),
+        services: "Services".to_string(),
+        hide_app: "Hide Qingmo".to_string(),
+        hide_others: "Hide Others".to_string(),
+        show_all: "Show All".to_string(),
+        quit_app: "Quit Qingmo".to_string(),
+        file: "File".to_string(),
+        open: "Open…".to_string(),
+        save: "Save".to_string(),
+        close_window: "Close Window".to_string(),
+        edit: "Edit".to_string(),
+        undo: "Undo".to_string(),
+        redo: "Redo".to_string(),
+        cut: "Cut".to_string(),
+        copy: "Copy".to_string(),
+        paste: "Paste".to_string(),
+        select_all: "Select All".to_string(),
+        view: "View".to_string(),
+        live_preview: "Live Preview".to_string(),
+        command_palette: "Command Palette".to_string(),
+        toggle_theme: "Toggle Theme".to_string(),
+        logs: "Logs…".to_string(),
+        fullscreen: "Full Screen".to_string(),
+        theme: "Theme".to_string(),
+        theme_light: "Light".to_string(),
+        theme_dark: "Dark".to_string(),
+        theme_system: "System".to_string(),
+        language: "Language".to_string(),
+        language_zh_cn: "简体中文".to_string(),
+        language_en: "English".to_string(),
+        window: "Window".to_string(),
+        minimize: "Minimize".to_string(),
+        zoom: "Zoom".to_string(),
+        maximize: "Maximize".to_string(),
+        bring_all_to_front: "Bring All to Front".to_string(),
+        help: "Help".to_string(),
+        untitled_file_name: "Untitled.md".to_string(),
+    }
+}
+
+#[test]
+fn native_shell_labels_wire_shape_and_validation() {
+    let labels = valid_labels();
+    labels.validate().expect("default labels must be valid");
+
+    let request = ApplyLocaleRequest {
+        language: AppLanguage::ZhCn,
+        labels: labels.clone(),
+    };
+    let value = serde_json::to_value(&request).expect("ApplyLocaleRequest must serialize");
+    assert_eq!(value["language"], "zh-CN");
+    assert_eq!(value["labels"]["appName"], "Qingmo");
+    assert_eq!(value["labels"]["languageZhCN"], "简体中文");
+    assert_eq!(serde_json::to_value(AppLanguage::En).unwrap(), "en");
+
+    let mut empty = labels.clone();
+    empty.open = "  ".to_string();
+    let error = empty.validate().expect_err("empty labels must fail");
+    assert_eq!(error.code, AppErrorCode::InvalidLocale);
+    assert_eq!(error.details.as_ref().unwrap()["field"], "open");
+    assert_eq!(error.details.as_ref().unwrap()["reason"], "empty");
+
+    let mut too_long = labels.clone();
+    too_long.file = "x".repeat(81);
+    assert_eq!(
+        too_long
+            .validate()
+            .expect_err("oversized labels must fail")
+            .code,
+        AppErrorCode::InvalidLocale
+    );
+
+    let mut control = labels.clone();
+    control.help = "a\nb".to_string();
+    assert_eq!(
+        control
+            .validate()
+            .expect_err("control characters must fail")
+            .code,
+        AppErrorCode::InvalidLocale
+    );
+
+    let mut bidi = labels.clone();
+    bidi.save = "a\u{202E}b".to_string();
+    assert_eq!(
+        bidi.validate().expect_err("bidi overrides must fail").code,
+        AppErrorCode::InvalidLocale
+    );
+
+    let too_long_name = format!("{}.md", "x".repeat(118));
+    for invalid_name in [
+        "",
+        "Untitled",
+        "../escape.md",
+        ".hidden.md",
+        "dir/name.md",
+        "dir\\name.md",
+        "C:name.md",
+        too_long_name.as_str(),
+    ] {
+        let mut invalid = labels.clone();
+        invalid.untitled_file_name = invalid_name.to_string();
+        assert_eq!(
+            invalid
+                .validate()
+                .expect_err("invalid untitled file names must fail")
+                .code,
+            AppErrorCode::InvalidLocale,
+            "file name {invalid_name:?}"
         );
     }
 }

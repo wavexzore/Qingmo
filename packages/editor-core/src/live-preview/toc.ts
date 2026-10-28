@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import { headingLevel, headingText, isHeading } from "./heading-text";
@@ -134,7 +135,12 @@ function buildToc(state: EditorState): TocState {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new TocWidget(headings.slice(0, MAX_TOC_ENTRIES), range.from, range.to),
+          widget: new TocWidget(
+            state.facet(editorUiCopy),
+            headings.slice(0, MAX_TOC_ENTRIES),
+            range.from,
+            range.to,
+          ),
         }).range(range.from, range.to),
       );
     }
@@ -151,6 +157,7 @@ function buildToc(state: EditorState): TocState {
 
 class TocWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly headings: readonly TocHeading[],
     private readonly from: number,
     private readonly to: number,
@@ -161,6 +168,7 @@ class TocWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof TocWidget &&
+      other.copy.version === this.copy.version &&
       other.from === this.from &&
       other.to === this.to &&
       JSON.stringify(other.headings) === JSON.stringify(this.headings)
@@ -170,7 +178,7 @@ class TocWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const nav = document.createElement("nav");
     nav.className = "cm-md-toc";
-    nav.title = "点击目录项跳转，点击空白处编辑占位符";
+    nav.title = this.copy.toc.wrapperTitle;
 
     nav.addEventListener("mousedown", (event) => {
       if (event.button !== 0) {
@@ -187,13 +195,13 @@ class TocWidget extends WidgetType {
 
     const title = document.createElement("div");
     title.className = "cm-md-toc-title";
-    title.textContent = "目录";
+    title.textContent = this.copy.toc.title;
     nav.append(title);
 
     if (this.headings.length === 0) {
       const empty = document.createElement("div");
       empty.className = "cm-md-toc-empty";
-      empty.textContent = "文档中没有标题";
+      empty.textContent = this.copy.toc.empty;
       nav.append(empty);
       return nav;
     }
@@ -232,7 +240,7 @@ class TocWidget extends WidgetType {
 
       const label = document.createElement("span");
       label.className = "cm-md-toc-label";
-      renderInlineMarkdown(label, heading.text);
+      renderInlineMarkdown(label, heading.text, this.copy);
       button.append(label);
       item.append(button);
       list.append(item);
@@ -251,7 +259,7 @@ export const tocPreview = StateField.define<TocState>({
   create: buildToc,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildToc(transaction.state);
     }
 

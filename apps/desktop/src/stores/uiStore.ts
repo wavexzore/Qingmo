@@ -1,6 +1,14 @@
 import { useSyncExternalStore } from "react";
 
+import {
+  DEFAULT_LANGUAGE,
+  isSupportedLanguage,
+  normalizeLanguage,
+  type SupportedLanguage,
+} from "../i18n/language";
+
 export const THEME_STORAGE_KEY = "qingmo.ui.theme";
+export const LANGUAGE_STORAGE_KEY = "qingmo.ui.language";
 export const THEME_PREFERENCES = ["light", "dark", "system"] as const;
 
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
@@ -11,6 +19,8 @@ export interface UiSnapshot {
   theme: ThemePreference;
   /** Effective theme after resolving `system` against the OS preference. */
   resolvedTheme: ResolvedTheme;
+  /** Persisted UI language. */
+  language: SupportedLanguage;
 }
 
 export interface ThemeStorage {
@@ -84,10 +94,22 @@ function readStoredTheme(storage: ThemeStorage | null): ThemePreference {
   }
 }
 
+function readStoredLanguage(storage: ThemeStorage | null): SupportedLanguage {
+  if (!storage) {
+    return DEFAULT_LANGUAGE;
+  }
+  try {
+    return normalizeLanguage(storage.getItem(LANGUAGE_STORAGE_KEY));
+  } catch {
+    return DEFAULT_LANGUAGE;
+  }
+}
+
 /**
- * UI-only store. The only persisted key is the theme preference; document
- * identity/body never enters this store. Theme changes are applied to the root
- * `data-theme` attribute and published to the editor theme service.
+ * UI-only store. The persisted keys are the theme preference and the UI
+ * language; document identity/body never enters this store. Theme changes are
+ * applied to the root `data-theme` attribute and published to the editor theme
+ * service.
  */
 export class UiStore {
   private readonly storage: ThemeStorage | null;
@@ -96,6 +118,7 @@ export class UiStore {
   private readonly listeners = new Set<() => void>();
   private snapshot: UiSnapshot;
   private mediaListening = false;
+  private languagePersistenceDegraded = false;
 
   constructor(options: UiStoreOptions = {}) {
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
@@ -107,6 +130,7 @@ export class UiStore {
     this.snapshot = Object.freeze({
       theme,
       resolvedTheme: resolveTheme(theme, this.media?.matches ?? false),
+      language: readStoredLanguage(this.storage),
     });
   }
 
@@ -121,12 +145,43 @@ export class UiStore {
 
   setTheme(theme: ThemePreference): void {
     const next = isThemePreference(theme) ? theme : "system";
-    this.persist(next);
+    this.persist(THEME_STORAGE_KEY, next);
     this.replaceSnapshot({
+      ...this.snapshot,
       theme: next,
       resolvedTheme: resolveTheme(next, this.media?.matches ?? false),
     });
     this.syncMediaListener();
+  }
+
+  /**
+   * Persists the UI language. When storage is unavailable the choice still
+   * applies for this session; `readPersistedLanguage()` then reports `null`
+   * so the locale controller never rolls the choice back to a stale value.
+   */
+  setLanguage(next: SupportedLanguage): void {
+    if (!isSupportedLanguage(next) || next === this.snapshot.language) {
+      return;
+    }
+    this.languagePersistenceDegraded = !this.persist(LANGUAGE_STORAGE_KEY, next);
+    this.replaceSnapshot({ ...this.snapshot, language: next });
+  }
+
+  /**
+   * Reads the authoritative persisted language for cross-window guards.
+   * `null` means there is no trustworthy stored value (storage disabled, read
+   * failure, missing key, or a failed write in this window).
+   */
+  readPersistedLanguage(): SupportedLanguage | null {
+    if (!this.storage || this.languagePersistenceDegraded) {
+      return null;
+    }
+    try {
+      const stored = this.storage.getItem(LANGUAGE_STORAGE_KEY);
+      return stored === null ? null : normalizeLanguage(stored);
+    } catch {
+      return null;
+    }
   }
 
   /** Explicitly switches to the opposite of the currently resolved theme. */
@@ -145,6 +200,7 @@ export class UiStore {
     this.replaceSnapshot({
       theme,
       resolvedTheme: resolveTheme(theme, this.media?.matches ?? false),
+      language: readStoredLanguage(this.storage),
     });
     this.syncMediaListener();
   }
@@ -166,7 +222,7 @@ export class UiStore {
     if (resolvedTheme === this.snapshot.resolvedTheme) {
       return;
     }
-    this.replaceSnapshot({ theme: "system", resolvedTheme });
+    this.replaceSnapshot({ ...this.snapshot, theme: "system", resolvedTheme });
   };
 
   private syncMediaListener(): void {
@@ -194,7 +250,11 @@ export class UiStore {
   }
 
   private replaceSnapshot(next: UiSnapshot): void {
-    if (next.theme === this.snapshot.theme && next.resolvedTheme === this.snapshot.resolvedTheme) {
+    if (
+      next.theme === this.snapshot.theme &&
+      next.resolvedTheme === this.snapshot.resolvedTheme &&
+      next.language === this.snapshot.language
+    ) {
       return;
     }
     this.snapshot = Object.freeze(next);
@@ -204,14 +264,16 @@ export class UiStore {
     }
   }
 
-  private persist(theme: ThemePreference): void {
+  private persist(key: string, value: string): boolean {
     if (!this.storage) {
-      return;
+      return false;
     }
     try {
-      this.storage.setItem(THEME_STORAGE_KEY, theme);
+      this.storage.setItem(key, value);
+      return true;
     } catch {
       // A blocked/quota-exhausted localStorage must never break the UI.
+      return false;
     }
   }
 
@@ -227,6 +289,6 @@ export class UiStore {
 /** App-level singleton; tests use `new UiStore({...})` for isolation. */
 export const uiStore = new UiStore();
 
-export function useUiTheme(): UiSnapshot {
+export function useUiPreferences(): UiSnapshot {
   return useSyncExternalStore(uiStore.subscribe, uiStore.getSnapshot, uiStore.getSnapshot);
 }

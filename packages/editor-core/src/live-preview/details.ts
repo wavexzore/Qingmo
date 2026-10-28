@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
+import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { readFrontMatter } from "./frontmatter";
 import { headingLevel, headingText, isHeading } from "./heading-text";
 import { renderInlineMarkdown } from "./inline-render";
@@ -12,7 +13,7 @@ import type { MarkdownNode } from "./markdown-node";
  * `<details>` blocks are common in Markdown guides and READMEs. Their content
  * is Markdown, so a single HTML tag replacement is not enough: the whole block
  * is rendered as a read-only preview with a collapsible header. Clicking the
- * content or the “源码” button returns the caret to the opening tag.
+ * content or the “Source” button returns the caret to the opening tag.
  */
 export const DETAILS_BLOCK_MAX_UNITS = 200_000;
 const MAX_BODY_LENGTH = 100_000;
@@ -47,12 +48,12 @@ function directChild(node: MarkdownNode, name: string): MarkdownNode | null {
   return null;
 }
 
-function summaryText(inner: string): string {
+function summaryText(inner: string, copy: EditorUiCopy): string {
   if (typeof DOMParser === "undefined") {
-    return inner.replace(/<[^>]+>/g, "").trim() || "详情";
+    return inner.replace(/<[^>]+>/g, "").trim() || copy.details.summary;
   }
   const parsed = new DOMParser().parseFromString(inner, "text/html");
-  return (parsed.body.textContent ?? "").trim() || "详情";
+  return (parsed.body.textContent ?? "").trim() || copy.details.summary;
 }
 
 /**
@@ -60,7 +61,11 @@ function summaryText(inner: string): string {
  * blank line is a separate HTML block in Lezer's tree, so it is intentionally
  * not consumed here; the body nevertheless starts after the opening tag.
  */
-function readSummary(html: string, start: number): { summary: string; bodyStart: number } {
+function readSummary(
+  html: string,
+  start: number,
+  copy: EditorUiCopy,
+): { summary: string; bodyStart: number } {
   const rest = html.slice(start);
   // A summary belongs to this block only until the next nested `<details>`
   // starts; otherwise an outer block would inherit the inner summary.
@@ -68,10 +73,10 @@ function readSummary(html: string, start: number): { summary: string; bodyStart:
   const candidate = nested < 0 ? rest : rest.slice(0, nested);
   const match = /<summary\b[^>]*>([\s\S]*?)<\/summary\s*>/i.exec(candidate);
   if (!match) {
-    return { summary: "详情", bodyStart: start };
+    return { summary: copy.details.summary, bodyStart: start };
   }
   return {
-    summary: summaryText(match[1] ?? ""),
+    summary: summaryText(match[1] ?? "", copy),
     bodyStart: start + (match.index ?? 0) + match[0].length,
   };
 }
@@ -92,6 +97,7 @@ export function readDetailsBlocks(state: EditorState): readonly DetailsBlock[] {
   if (state.doc.length > DETAILS_BLOCK_MAX_UNITS) {
     return [];
   }
+  const copy = state.facet(editorUiCopy);
   const doc = state.doc;
   const root = syntaxTree(state).topNode as unknown as MarkdownNode;
   const frontMatter = readFrontMatter(doc);
@@ -132,7 +138,7 @@ export function readDetailsBlocks(state: EditorState): readonly DetailsBlock[] {
         continue;
       }
 
-      const { summary, bodyStart } = readSummary(html, match.index + match[0].length);
+      const { summary, bodyStart } = readSummary(html, match.index + match[0].length, copy);
       const block: MutableDetailsBlock = {
         from: tagStart,
         to: null,
@@ -183,10 +189,16 @@ export function readDetailsBlocks(state: EditorState): readonly DetailsBlock[] {
   return blocks;
 }
 
-function appendTextBlock(parent: HTMLElement, tag: string, className: string, text: string): void {
+function appendTextBlock(
+  parent: HTMLElement,
+  tag: string,
+  className: string,
+  text: string,
+  copy: EditorUiCopy,
+): void {
   const element = document.createElement(tag);
   element.className = className;
-  renderInlineMarkdown(element, text);
+  renderInlineMarkdown(element, text, copy);
   parent.append(element);
 }
 
@@ -244,6 +256,7 @@ function renderList(
           "div",
           "cm-md-details-li-text",
           state.doc.sliceString(part.from, part.to),
+          state.facet(editorUiCopy),
         );
         continue;
       }
@@ -263,6 +276,7 @@ function renderTable(parent: HTMLElement, state: EditorState, node: MarkdownNode
   if (!table) {
     return;
   }
+  const copy = state.facet(editorUiCopy);
   const element = document.createElement("table");
   element.className = "cm-md-details-table";
 
@@ -273,7 +287,7 @@ function renderTable(parent: HTMLElement, state: EditorState, node: MarkdownNode
     if (table.align[index]) {
       th.style.textAlign = table.align[index];
     }
-    renderInlineMarkdown(th, cell);
+    renderInlineMarkdown(th, cell, copy);
     headRow.append(th);
   }
   head.append(headRow);
@@ -287,7 +301,7 @@ function renderTable(parent: HTMLElement, state: EditorState, node: MarkdownNode
       if (table.align[index]) {
         td.style.textAlign = table.align[index];
       }
-      renderInlineMarkdown(td, cell);
+      renderInlineMarkdown(td, cell, copy);
       tr.append(td);
     }
     body.append(tr);
@@ -304,13 +318,20 @@ function renderBlock(parent: HTMLElement, state: EditorState, node: MarkdownNode
       `h${headingLevel(node.name)}`,
       "cm-md-details-heading",
       headingText(doc, node),
+      state.facet(editorUiCopy),
     );
     return;
   }
 
   switch (node.name) {
     case "Paragraph":
-      appendTextBlock(parent, "p", "cm-md-details-paragraph", doc.sliceString(node.from, node.to));
+      appendTextBlock(
+        parent,
+        "p",
+        "cm-md-details-paragraph",
+        doc.sliceString(node.from, node.to),
+        state.facet(editorUiCopy),
+      );
       return;
     case "FencedCode":
     case "CodeBlock":
@@ -388,7 +409,7 @@ function renderPlain(container: HTMLElement, state: EditorState, from: number, t
   }
   const element = document.createElement("div");
   element.className = "cm-md-details-plain";
-  renderInlineMarkdown(element, raw);
+  renderInlineMarkdown(element, raw, state.facet(editorUiCopy));
   container.append(element);
 }
 
@@ -430,10 +451,11 @@ function renderBlockRange(container: HTMLElement, view: EditorView, block: Detai
 
 function renderDetailsBody(container: HTMLElement, view: EditorView, block: DetailsBlock): void {
   const state = view.state;
+  const copy = state.facet(editorUiCopy);
   if (block.bodyTo - block.bodyFrom > MAX_BODY_LENGTH) {
     const tooLarge = document.createElement("div");
     tooLarge.className = "cm-md-details-empty";
-    tooLarge.textContent = "内容过长，点击“源码”编辑。";
+    tooLarge.textContent = copy.details.tooLarge;
     container.append(tooLarge);
     return;
   }
@@ -442,7 +464,7 @@ function renderDetailsBody(container: HTMLElement, view: EditorView, block: Deta
   if (!body.trim()) {
     const empty = document.createElement("div");
     empty.className = "cm-md-details-empty";
-    empty.textContent = "（空内容）";
+    empty.textContent = copy.details.empty;
     container.append(empty);
     return;
   }
@@ -456,10 +478,11 @@ function editSource(view: EditorView, from: number): void {
 }
 
 function buildDetailsElement(view: EditorView, block: DetailsBlock, nested: boolean): HTMLElement {
+  const copy = view.state.facet(editorUiCopy);
   const wrapper = document.createElement("div");
   wrapper.className = nested ? "cm-md-details cm-md-details-nested" : "cm-md-details";
   wrapper.dataset.open = String(block.open);
-  wrapper.title = "点击标题展开/折叠，点击内容编辑源码";
+  wrapper.title = copy.details.wrapperTitle;
 
   const header = document.createElement("div");
   header.className = "cm-md-details-header";
@@ -482,8 +505,8 @@ function buildDetailsElement(view: EditorView, block: DetailsBlock, nested: bool
   const edit = document.createElement("button");
   edit.type = "button";
   edit.className = "cm-md-details-edit";
-  edit.textContent = "源码";
-  edit.title = "编辑折叠块源码";
+  edit.textContent = copy.details.edit;
+  edit.title = copy.details.editTitle;
   edit.addEventListener("mousedown", (event) => {
     if (event.button !== 0) {
       return;
@@ -533,12 +556,19 @@ function buildDetailsElement(view: EditorView, block: DetailsBlock, nested: bool
 }
 
 class DetailsWidget extends WidgetType {
-  constructor(private readonly block: DetailsBlock) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly block: DetailsBlock,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
-    return other instanceof DetailsWidget && other.block.raw === this.block.raw;
+    return (
+      other instanceof DetailsWidget &&
+      other.copy.version === this.copy.version &&
+      other.block.raw === this.block.raw
+    );
   }
 
   override toDOM(view: EditorView): HTMLElement {
@@ -584,13 +614,14 @@ function buildDetails(state: EditorState): DetailsState {
     return emptyState();
   }
 
+  const copy = state.facet(editorUiCopy);
   const decorations: ReturnType<Decoration["range"]>[] = [];
   for (const range of ranges) {
     if (!selectionTouches(state, range)) {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new DetailsWidget(range),
+          widget: new DetailsWidget(copy, range),
         }).range(range.from, range.to),
       );
     }
@@ -608,7 +639,7 @@ export const detailsBlockPreview = StateField.define<DetailsState>({
   create: buildDetails,
   update(value, transaction) {
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
-    if (transaction.docChanged || treeChanged) {
+    if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildDetails(transaction.state);
     }
     if (!transaction.newSelection.eq(transaction.startState.selection)) {

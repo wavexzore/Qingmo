@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { UpdateSnapshot } from "@qingmo/shared";
 import { Button } from "@qingmo/ui";
 
+import { formatDate } from "../../lib/format";
 import { resolveNotes } from "./notes";
 
 export interface UpdateDialogProps {
@@ -16,17 +17,6 @@ export interface UpdateDialogProps {
   onClose(): void;
   onDownload(): void;
   onInstall(): void;
-}
-
-function formatDate(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleDateString();
 }
 
 function formatPercent(downloaded: number, total: number | null): number | null {
@@ -89,7 +79,7 @@ export function UpdateDialog({
 
   const phase = snapshot?.phase ?? "idle";
   const update = snapshot?.update;
-  const date = formatDate(update?.date ?? null);
+  const date = formatDate(update?.date ?? null, i18n.language);
   const progress = snapshot?.progress ?? null;
   const percent = progress ? formatPercent(progress.downloaded, progress.total) : null;
   const canDownload = phase === "available" && !disabled;

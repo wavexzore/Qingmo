@@ -50,6 +50,19 @@ impl WindowSessions {
         self.lock().tokens.insert(label.to_string(), token);
     }
 
+    /// Path staged for a window that has not consumed its payload yet.
+    pub fn pending_path(&self, label: &str) -> Option<std::path::PathBuf> {
+        self.lock()
+            .pending
+            .get(label)
+            .map(|payload| std::path::PathBuf::from(&payload.path))
+    }
+
+    /// Document token currently owned by a window.
+    pub fn token_for(&self, label: &str) -> Option<String> {
+        self.lock().tokens.get(label).cloned()
+    }
+
     /// Removes a window's token and any payload it never consumed.
     ///
     /// Returns the token so the registry can release the document.

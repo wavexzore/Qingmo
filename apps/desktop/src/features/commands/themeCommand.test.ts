@@ -16,12 +16,20 @@ describe("view.toggleTheme command", () => {
 
     expect(registry.list().map((command) => command.id)).toEqual(["view.toggleTheme"]);
     expect(registry.list()[0]?.keybinding).toBe("Mod+Shift+L");
-    expect(store.getSnapshot()).toEqual({ theme: "system", resolvedTheme: "light" });
+    expect(store.getSnapshot()).toEqual({
+      theme: "system",
+      resolvedTheme: "light",
+      language: "zh-CN",
+    });
 
     const result = await registry.execute("view.toggleTheme");
 
     expect(result.ok).toBe(true);
-    expect(store.getSnapshot()).toEqual({ theme: "dark", resolvedTheme: "dark" });
+    expect(store.getSnapshot()).toEqual({
+      theme: "dark",
+      resolvedTheme: "dark",
+      language: "zh-CN",
+    });
 
     disposable.dispose();
     expect(registry.list()).toEqual([]);

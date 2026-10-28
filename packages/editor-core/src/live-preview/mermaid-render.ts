@@ -17,6 +17,25 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const READY_TIMEOUT_MS = 15_000;
 const MAX_CACHE_ENTRIES = 50;
 
+export type MermaidRenderErrorCode =
+  | "unavailable"
+  | "ready-timeout"
+  | "render-timeout"
+  | "render-failed"
+  | "unsafe-svg"
+  | "invalid-svg";
+
+/** Internal failure with a stable code; the UI localizes it via `EditorUiCopy`. */
+export class MermaidRenderError extends Error {
+  constructor(
+    readonly code: MermaidRenderErrorCode,
+    readonly detail?: string,
+  ) {
+    super(code);
+    this.name = "MermaidRenderError";
+  }
+}
+
 export type { MermaidTheme };
 
 export function currentMermaidTheme(root: HTMLElement = document.documentElement): MermaidTheme {
@@ -73,7 +92,7 @@ class MermaidRenderer {
       return Promise.resolve(cached);
     }
     if (this.readyFailed) {
-      return Promise.reject(new Error("Mermaid 渲染器不可用"));
+      return Promise.reject(new MermaidRenderError("unavailable"));
     }
 
     return new Promise<string>((resolve, reject) => {
@@ -116,7 +135,7 @@ class MermaidRenderer {
       }
       this.readyTimer = null;
       this.readyFailed = true;
-      this.failQueue(new Error("Mermaid 渲染器加载超时"));
+      this.failQueue(new MermaidRenderError("ready-timeout"));
     }, READY_TIMEOUT_MS);
   }
 
@@ -155,7 +174,10 @@ class MermaidRenderer {
       pending.item.resolve(data.svg);
     } else {
       pending.item.reject(
-        new Error(typeof data.error === "string" ? data.error : "Mermaid 渲染失败"),
+        new MermaidRenderError(
+          "render-failed",
+          typeof data.error === "string" ? data.error : undefined,
+        ),
       );
     }
 
@@ -192,7 +214,7 @@ class MermaidRenderer {
     const timer = setTimeout(() => {
       this.pending.delete(requestId);
       this.active = false;
-      item.reject(new Error("Mermaid 图表渲染超时"));
+      item.reject(new MermaidRenderError("render-timeout"));
       this.pump();
     }, REQUEST_TIMEOUT_MS);
     this.pending.set(requestId, { item, cacheKey: key, timer });
@@ -210,7 +232,7 @@ class MermaidRenderer {
     );
   }
 
-  private failQueue(error: Error): void {
+  private failQueue(error: MermaidRenderError): void {
     const queued = this.queue;
     this.queue = [];
     for (const item of queued) {

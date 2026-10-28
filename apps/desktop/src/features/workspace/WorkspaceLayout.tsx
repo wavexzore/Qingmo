@@ -9,15 +9,19 @@ import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
 import { useCloseGuard } from "../../app/useCloseGuard";
 import { useThemeService } from "../../app/useThemeService";
 import { useToast } from "../../components/ToastHost";
+import { buildEditorUiCopy } from "../../i18n/editorCopy";
+import { normalizeLanguage } from "../../i18n/language";
 import { MENU_ACTIONS } from "../../lib/ipc/commands";
 import { AppError as AppErrorClass } from "../../lib/ipc/errors";
 import { uiStore } from "../../stores/uiStore";
 import { CommandPalette } from "../commands/CommandPalette";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { useCommandKeybindings } from "../commands/keybindings";
+import { useLocaleCommands } from "../commands/localeCommand";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { EditorSession } from "../editor/EditorSession";
+import { useEditorLocale } from "../editor/useEditorLocale";
 import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
 import { LogDialog } from "../logs/LogDialog";
 import { UpdateHost } from "../update/UpdateHost";
@@ -31,7 +35,7 @@ import { openFile } from "./openFile";
  * registrations.
  */
 export function WorkspaceLayout() {
-  const { t } = useTranslation(["errors", "editor"]);
+  const { t, i18n } = useTranslation(["errors", "editor"]);
   const toast = useToast();
   const navigate = useNavigate();
   const { ipc, platform } = useAppServices();
@@ -51,7 +55,9 @@ export function WorkspaceLayout() {
   const updateBlocked = closeGuard.closing || closeGuard.prompt !== null;
 
   useThemeCommand();
+  useLocaleCommands();
   useThemeService(session);
+  useEditorLocale(session);
   useLivePreviewMenu(ipc, session);
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
@@ -116,12 +122,16 @@ export function WorkspaceLayout() {
         return;
       }
       // Browser harness fallback: no native window exists, adopt in place.
-      setSession(EditorSession.create(result.value));
+      setSession(
+        EditorSession.create(result.value, {
+          uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
+        }),
+      );
       navigate("/editor");
     } finally {
       openingRef.current = false;
     }
-  }, [ipc, navigate, setSession, t, toast]);
+  }, [i18n.language, ipc, navigate, setSession, t, toast]);
 
   const runMenuCommand = useCallback(
     async (id: string) => {
@@ -175,6 +185,12 @@ export function WorkspaceLayout() {
           break;
         case MENU_ACTIONS.themeSystem:
           uiStore.setTheme("system");
+          break;
+        case MENU_ACTIONS.languageZhCN:
+          uiStore.setLanguage("zh-CN");
+          break;
+        case MENU_ACTIONS.languageEn:
+          uiStore.setLanguage("en");
           break;
         case MENU_ACTIONS.logs:
           setLogsOpen(true);

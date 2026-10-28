@@ -1,5 +1,6 @@
 import type {
   AppErrorCode,
+  ApplyLocaleRequest,
   FilePayload,
   JsonValue,
   ReadOnlyReason,
@@ -118,6 +119,7 @@ export class FakeIpc implements IpcPort {
 
   readonly closeConfirmCalls: CloseConfirmRequest[] = [];
   readonly livePreviewCalls: boolean[] = [];
+  readonly localeCalls: ApplyLocaleRequest[] = [];
 
   constructor(options: FakeIpcOptions = {}) {
     for (const file of options.files ?? []) {
@@ -258,6 +260,17 @@ export class FakeIpc implements IpcPort {
     this.pending = payload;
   }
 
+  /** Seeds the file currently registered under `path` for a document window. */
+  stagePendingPath(path: string): void {
+    const record = this.records.get(path);
+    if (!record) {
+      throw new AppError("NOT_FOUND", `fake file not found: ${path}`);
+    }
+    const token = `fake-doc-${this.nextToken}`;
+    this.nextToken += 1;
+    this.stagePending(this.toPayload(record, token));
+  }
+
   async documentTakePending(): Promise<FilePayload | null> {
     const payload = this.pending;
     this.pending = null;
@@ -364,6 +377,12 @@ export class FakeIpc implements IpcPort {
     await this.wait(COMMANDS.appSetLivePreview);
     this.maybeThrow(COMMANDS.appSetLivePreview);
     this.livePreviewCalls.push(request.livePreview);
+  }
+
+  async appApplyLocale(request: ApplyLocaleRequest): Promise<void> {
+    await this.wait(COMMANDS.appApplyLocale);
+    this.maybeThrow(COMMANDS.appApplyLocale);
+    this.localeCalls.push(request);
   }
 
   private requireActive(docToken: string, command: CommandName): FakeRecord {

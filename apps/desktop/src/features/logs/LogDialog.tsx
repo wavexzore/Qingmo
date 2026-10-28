@@ -5,6 +5,7 @@ import type { LogEntry, LogLevel, LogStats } from "@qingmo/shared";
 import { Button } from "@qingmo/ui";
 
 import { useToast } from "../../components/ToastHost";
+import { formatBytes, formatTime } from "../../lib/format";
 import { useLogs } from "../../lib/log/useLogs";
 
 type Filter = LogLevel | "all";
@@ -29,29 +30,6 @@ const RAIL_COLOR: Record<LogLevel, string> = {
   trace: "bg-ink-faint",
 };
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function formatTime(timestamp: string): string {
-  const parsed = new Date(timestamp);
-  if (Number.isNaN(parsed.getTime())) {
-    return timestamp;
-  }
-  return parsed.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
 export interface LogDialogProps {
   open: boolean;
   onClose(): void;
@@ -62,7 +40,7 @@ export interface LogDialogProps {
  * this dialog only requests filtered pages and exposes export/maintenance.
  */
 export function LogDialog({ open, onClose }: LogDialogProps) {
-  const { t } = useTranslation(["logs", "errors"]);
+  const { t, i18n } = useTranslation(["logs", "errors"]);
   const toast = useToast();
   const logs = useLogs();
   const [filter, setFilter] = useState<Filter>("all");
@@ -307,7 +285,9 @@ export function LogDialog({ open, onClose }: LogDialogProps) {
               {t("logs:unitWarns")}
             </span>
             <span aria-hidden="true">{"· "}</span>
-            <span>{t("logs:files", { count: fileCount, size: formatSize(totalSize) })}</span>
+            <span>
+              {t("logs:files", { count: fileCount, size: formatBytes(totalSize, i18n.language) })}
+            </span>
           </p>
         </div>
 
@@ -330,7 +310,7 @@ export function LogDialog({ open, onClose }: LogDialogProps) {
                   dateTime={entry.timestamp}
                   className="pt-0.5 text-right font-mono text-[10.5px] text-ink-faint tabular-nums"
                 >
-                  {formatTime(entry.timestamp)}
+                  {formatTime(entry.timestamp, i18n.language)}
                 </time>
                 <span className="relative grid self-stretch justify-items-center">
                   <span className="rail absolute inset-y-0 w-px bg-line" />

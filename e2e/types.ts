@@ -41,6 +41,11 @@ export interface E2eUpdateSnapshot {
   progress: { downloaded: number; total: number | null } | null;
 }
 
+export interface E2eLocaleCall {
+  language: string;
+  labels: Record<string, string>;
+}
+
 export interface E2eBridge {
   setDiskText(path: string, text: string): void;
   getFile(path: string): E2eFileSnapshot | undefined;
@@ -54,6 +59,8 @@ export interface E2eBridge {
   clearErrors(): void;
   getCloseConfirms(): Array<{ allow: boolean }>;
   getLivePreviewMenuCalls(): boolean[];
+  getLocaleCalls(): E2eLocaleCall[];
+  setLogFileCount(count: number): void;
   setUpdateAvailable(update: E2eUpdateInfo | null): void;
   setUpdateError(operation: "check" | "download" | "install", code: string | null): void;
   holdUpdateDownload(): void;
@@ -78,6 +85,7 @@ export interface E2eAboutBridge {
 declare global {
   interface Window {
     __QINGMO_E2E_SEED__?: SeedFile[];
+    __QINGMO_E2E_PENDING__?: string;
     __QINGMO_E2E__?: E2eBridge;
     __QINGMO_ABOUT_E2E__?: E2eAboutBridge;
   }

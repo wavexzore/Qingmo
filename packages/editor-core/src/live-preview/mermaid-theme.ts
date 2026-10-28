@@ -1,3 +1,8 @@
+import { DEFAULT_EDITOR_UI_COPY, type EditorUiCopy } from "../i18n";
+import { MERMAID_DIAGRAM_KINDS, type MermaidDiagramKind } from "./mermaid-kinds";
+
+export type { MermaidDiagramKind } from "./mermaid-kinds";
+
 /**
  * Mermaid's `base` theme is configured entirely from Qingmo's semantic CSS
  * tokens. This module resolves those tokens to concrete colours (the sandbox
@@ -11,35 +16,6 @@
 
 export type MermaidTheme = "default" | "dark";
 
-export type MermaidDiagramKind =
-  | "flowchart"
-  | "sequence"
-  | "class"
-  | "state"
-  | "er"
-  | "gantt"
-  | "pie"
-  | "quadrant"
-  | "mindmap"
-  | "git"
-  | "c4"
-  | "journey"
-  | "timeline"
-  | "requirement"
-  | "sankey"
-  | "xychart"
-  | "block"
-  | "packet"
-  | "architecture"
-  | "kanban"
-  | "radar"
-  | "treemap"
-  | "ishikawa"
-  | "wardley"
-  | "zenuml"
-  | "info"
-  | "unknown";
-
 export interface MermaidDiagramInfo {
   kind: MermaidDiagramKind;
   label: string;
@@ -48,35 +24,7 @@ export interface MermaidDiagramInfo {
 /** Bump when the variable mapping or theme CSS changes. */
 export const MERMAID_THEME_VERSION = 1;
 
-const DIAGRAM_LABELS: Record<MermaidDiagramKind, string> = {
-  flowchart: "流程图",
-  sequence: "时序图",
-  class: "类图",
-  state: "状态图",
-  er: "ER 图",
-  gantt: "甘特图",
-  pie: "饼图",
-  quadrant: "象限图",
-  mindmap: "思维导图",
-  git: "Git 图",
-  c4: "C4 架构图",
-  journey: "用户旅程",
-  timeline: "时间线",
-  requirement: "需求图",
-  sankey: "桑基图",
-  xychart: "XY 图表",
-  block: "块图",
-  packet: "数据包图",
-  architecture: "架构图",
-  kanban: "看板",
-  radar: "雷达图",
-  treemap: "矩形树图",
-  ishikawa: "鱼骨图",
-  wardley: "沃德利图",
-  zenuml: "ZenUML 时序图",
-  info: "说明",
-  unknown: "图表",
-};
+const DIAGRAM_KINDS: ReadonlySet<string> = new Set(MERMAID_DIAGRAM_KINDS);
 
 const KIND_BY_KEYWORD: Record<string, MermaidDiagramKind> = {
   sequence: "sequence",
@@ -152,7 +100,10 @@ function firstStatement(code: string): string {
 }
 
 /** Reads the Mermaid diagram keyword without trusting user output. */
-export function diagramInfo(code: string): MermaidDiagramInfo {
+export function diagramInfo(
+  code: string,
+  copy: EditorUiCopy = DEFAULT_EDITOR_UI_COPY,
+): MermaidDiagramInfo {
   const statement = firstStatement(code);
   const keyword = statement.split(/\s+/)[0]?.toLowerCase().replace(/:$/, "") ?? "";
   let kind: MermaidDiagramKind = "unknown";
@@ -161,7 +112,7 @@ export function diagramInfo(code: string): MermaidDiagramInfo {
   } else {
     kind = KIND_BY_KEYWORD[keyword] ?? "unknown";
   }
-  return { kind, label: DIAGRAM_LABELS[kind] };
+  return { kind, label: copy.diagramKinds[kind] };
 }
 
 export function diagramKind(code: string): MermaidDiagramKind {
@@ -199,7 +150,7 @@ export function mermaidElkConfig(): Record<string, unknown> {
 }
 
 export function isMermaidDiagramKind(value: unknown): value is MermaidDiagramKind {
-  return typeof value === "string" && value in DIAGRAM_LABELS;
+  return typeof value === "string" && DIAGRAM_KINDS.has(value);
 }
 
 /**

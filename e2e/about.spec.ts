@@ -17,6 +17,17 @@ test.describe("About window", () => {
     await expect(page.getByText("版本信息已复制")).toBeVisible();
   });
 
+  test("renders in English from the persisted language", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("qingmo.ui.language", "en");
+    });
+    await page.goto("/about.html");
+
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.getByRole("heading", { name: "Qingmo" })).toBeVisible();
+    await expect(page.getByTestId("about-status")).toHaveText("You are up to date");
+  });
+
   test("routes links and close through the native port", async ({ page }) => {
     await page.goto("/about.html");
 

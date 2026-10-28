@@ -13,10 +13,10 @@ use crate::state::{DocumentRegistry, FocusTracker, WindowSessions};
 ///
 /// The macOS window is the document surface, so the file name belongs in the
 /// title bar rather than in a second in-app header.
-pub(crate) fn window_title_for(path: &Path) -> String {
+pub(crate) fn window_title_for(path: &Path, app_name: &str) -> String {
     match path.file_name().and_then(|name| name.to_str()) {
-        Some(name) => format!("{name} — 青墨"),
-        None => "青墨".to_string(),
+        Some(name) => format!("{name} — {app_name}"),
+        None => app_name.to_string(),
     }
 }
 
@@ -78,7 +78,12 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
             )
         })??;
 
-    let title = window_title_for(Path::new(&payload.path));
+    let app_name = app
+        .state::<crate::state::ShellLocale>()
+        .labels()
+        .map(|labels| labels.app_name)
+        .unwrap_or_else(|| "Qingmo".to_string());
+    let title = window_title_for(Path::new(&payload.path), &app_name);
     let doc_token = payload.doc_token.clone();
     let label = format!("doc-{}", uuid::Uuid::new_v4());
     sessions.stage(&label, payload);
@@ -140,17 +145,23 @@ pub async fn document_save_as<R: tauri::Runtime>(
     window: WebviewWindow<R>,
     registry: State<'_, DocumentRegistry>,
     sessions: State<'_, WindowSessions>,
+    locale: State<'_, crate::state::ShellLocale>,
     text: String,
 ) -> Result<FilePayload, AppError> {
     let registry = registry.inner().clone();
     let sessions = sessions.inner().clone();
+    let untitled_file_name = locale.untitled_file_name();
+    let app_name = locale
+        .labels()
+        .map(|labels| labels.app_name)
+        .unwrap_or_else(|| "Qingmo".to_string());
     let (sender, receiver) = tokio::sync::oneshot::channel();
 
     window
         .dialog()
         .file()
         .add_filter("Markdown", &["md", "markdown"])
-        .set_file_name("未命名.md")
+        .set_file_name(&untitled_file_name)
         .save_file(move |selected| {
             let _ = sender.send(selected);
         });
@@ -176,7 +187,7 @@ pub async fn document_save_as<R: tauri::Runtime>(
             )
         })??;
 
-    if let Err(error) = window.set_title(&window_title_for(Path::new(&payload.path))) {
+    if let Err(error) = window.set_title(&window_title_for(Path::new(&payload.path), &app_name)) {
         tracing::warn!(%error, "failed to update the window title");
     }
     sessions.set_token(window.label(), payload.doc_token.clone());
@@ -229,10 +240,14 @@ mod tests {
     #[test]
     fn window_title_uses_the_document_file_name() {
         assert_eq!(
-            window_title_for(Path::new("/docs/note.md")),
+            window_title_for(Path::new("/docs/note.md"), "Qingmo"),
+            "note.md — Qingmo"
+        );
+        assert_eq!(window_title_for(Path::new("/"), "青墨"), "青墨");
+        assert_eq!(
+            window_title_for(Path::new("/docs/note.md"), "青墨"),
             "note.md — 青墨"
         );
-        assert_eq!(window_title_for(Path::new("/")), "青墨");
     }
 
     #[test]

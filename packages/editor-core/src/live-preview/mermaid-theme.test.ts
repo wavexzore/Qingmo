@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_EDITOR_UI_COPY, type EditorUiCopy } from "../i18n";
+
 import {
   buildMermaidTheme,
   diagramInfo,
@@ -10,6 +12,41 @@ import {
   sanitizeMermaidPalette,
   type MermaidPalette,
 } from "./mermaid-theme";
+
+const zhCopy: EditorUiCopy = {
+  ...DEFAULT_EDITOR_UI_COPY,
+  version: "zh-CN:1",
+  language: "zh-CN",
+  diagramKinds: {
+    flowchart: "流程图",
+    sequence: "时序图",
+    class: "类图",
+    state: "状态图",
+    er: "ER 图",
+    gantt: "甘特图",
+    pie: "饼图",
+    quadrant: "象限图",
+    mindmap: "思维导图",
+    git: "Git 图",
+    c4: "C4 架构图",
+    journey: "用户旅程",
+    timeline: "时间线",
+    requirement: "需求图",
+    sankey: "桑基图",
+    xychart: "XY 图表",
+    block: "块图",
+    packet: "数据包图",
+    architecture: "架构图",
+    kanban: "看板",
+    radar: "雷达图",
+    treemap: "矩形树图",
+    ishikawa: "鱼骨图",
+    wardley: "沃德利图",
+    zenuml: "ZenUML 时序图",
+    info: "说明",
+    unknown: "图表",
+  },
+};
 
 describe("diagramInfo", () => {
   it.each([
@@ -44,7 +81,7 @@ describe("diagramInfo", () => {
     ["zenuml\n  A->B: hi", "zenuml", "ZenUML 时序图"],
     ["info\n  showInfo", "info", "说明"],
   ])("recognises %s", (code, kind, label) => {
-    expect(diagramInfo(code)).toEqual({ kind, label });
+    expect(diagramInfo(code, zhCopy)).toEqual({ kind, label });
   });
 
   it("skips front matter, comments and init directives", () => {
@@ -61,7 +98,7 @@ describe("diagramInfo", () => {
   });
 
   it("falls back to the generic label", () => {
-    expect(diagramInfo("not-a-diagram")).toEqual({ kind: "unknown", label: "图表" });
+    expect(diagramInfo("not-a-diagram", zhCopy)).toEqual({ kind: "unknown", label: "图表" });
   });
 });
 

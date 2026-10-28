@@ -6,8 +6,10 @@ import { readDetailsBlocks } from "./details";
 
 function stateFor(doc: string) {
   const state = createEditorState({ doc });
-  ensureSyntaxTree(state, state.doc.length, 2_000);
-  return state;
+  ensureSyntaxTree(state, state.doc.length, 10_000);
+  // `ensureSyntaxTree` advances the parse context, not the state field; an
+  // empty transaction adopts the completed tree for `syntaxTree(state)`.
+  return state.update({}).state;
 }
 
 describe("readDetailsBlocks", () => {

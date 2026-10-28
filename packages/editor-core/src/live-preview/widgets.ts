@@ -1,6 +1,7 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import katex from "katex";
 
+import type { EditorUiCopy } from "../i18n";
 import { inlineHtmlElement, renderInlineMarkdown } from "./inline-render";
 import type { LivePreviewWidgetSpec } from "./specs";
 
@@ -24,6 +25,7 @@ class BulletWidget extends WidgetType {
 
 class TaskWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly checked: boolean,
     private readonly from: number,
     private readonly to: number,
@@ -34,6 +36,7 @@ class TaskWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof TaskWidget &&
+      other.copy.version === this.copy.version &&
       other.checked === this.checked &&
       other.from === this.from &&
       other.to === this.to
@@ -49,7 +52,7 @@ class TaskWidget extends WidgetType {
     input.checked = this.checked;
     input.disabled = view.state.readOnly;
     input.tabIndex = -1;
-    input.setAttribute("aria-label", "Toggle task");
+    input.setAttribute("aria-label", this.copy.widgets.taskToggle);
     input.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -170,6 +173,7 @@ const EXTERNAL_DIAGRAM_LANGUAGES: Readonly<Record<string, string>> = Object.free
 
 class CodeLanguageWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly language: string,
     private readonly title: string | null,
   ) {
@@ -179,6 +183,7 @@ class CodeLanguageWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof CodeLanguageWidget &&
+      other.copy.version === this.copy.version &&
       other.language === this.language &&
       other.title === this.title
     );
@@ -204,8 +209,8 @@ class CodeLanguageWidget extends WidgetType {
     if (external) {
       const hint = document.createElement("span");
       hint.className = "cm-md-code-external";
-      hint.textContent = "需外部渲染";
-      hint.title = `${external} 需要外部渲染器，编辑器仅显示源码`;
+      hint.textContent = this.copy.widgets.externalRender;
+      hint.title = this.copy.widgets.externalRenderHint(external);
       wrapper.append(hint);
     }
 
@@ -261,6 +266,7 @@ class EmojiWidget extends WidgetType {
 
 class InlineHtmlWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly tag: string,
     private readonly content: string,
   ) {
@@ -269,7 +275,10 @@ class InlineHtmlWidget extends WidgetType {
 
   override eq(other: WidgetType): boolean {
     return (
-      other instanceof InlineHtmlWidget && other.tag === this.tag && other.content === this.content
+      other instanceof InlineHtmlWidget &&
+      other.copy.version === this.copy.version &&
+      other.tag === this.tag &&
+      other.content === this.content
     );
   }
 
@@ -280,7 +289,7 @@ class InlineHtmlWidget extends WidgetType {
       fallback.textContent = this.content;
       return fallback;
     }
-    renderInlineMarkdown(element, this.content);
+    renderInlineMarkdown(element, this.content, this.copy);
     return element;
   }
 
@@ -311,12 +320,19 @@ class AlertWidget extends WidgetType {
 }
 
 class AttributesWidget extends WidgetType {
-  constructor(private readonly label: string) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly label: string,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
-    return other instanceof AttributesWidget && other.label === this.label;
+    return (
+      other instanceof AttributesWidget &&
+      other.copy.version === this.copy.version &&
+      other.label === this.label
+    );
   }
 
   override toDOM(): HTMLElement {
@@ -325,7 +341,7 @@ class AttributesWidget extends WidgetType {
 
     const badge = document.createElement("span");
     badge.className = "cm-md-attr-badge-label";
-    badge.textContent = "属性";
+    badge.textContent = this.copy.widgets.attributes;
 
     const value = document.createElement("span");
     value.className = "cm-md-attr-badge-value";
@@ -342,6 +358,7 @@ class AttributesWidget extends WidgetType {
 
 class FootnoteRefWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly label: string,
     private readonly lineFrom: number | null,
   ) {
@@ -351,6 +368,7 @@ class FootnoteRefWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof FootnoteRefWidget &&
+      other.copy.version === this.copy.version &&
       other.label === this.label &&
       other.lineFrom === this.lineFrom
     );
@@ -363,7 +381,7 @@ class FootnoteRefWidget extends WidgetType {
 
     if (this.lineFrom !== null) {
       reference.classList.add("cm-md-footnote-jump");
-      reference.title = "跳转到脚注定义";
+      reference.title = this.copy.widgets.footnoteJump;
       reference.addEventListener("mousedown", (event) => {
         if (event.button !== 0) {
           return;
@@ -413,6 +431,7 @@ class FootnoteDefWidget extends WidgetType {
 
 class InlineFootnoteWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly label: string,
     private readonly content: string,
   ) {
@@ -422,6 +441,7 @@ class InlineFootnoteWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof InlineFootnoteWidget &&
+      other.copy.version === this.copy.version &&
       other.label === this.label &&
       other.content === this.content
     );
@@ -432,7 +452,7 @@ class InlineFootnoteWidget extends WidgetType {
     note.className = "cm-md-footnote-inline";
     note.textContent = this.label;
     note.title = this.content;
-    note.setAttribute("aria-label", `行内脚注：${this.content}`);
+    note.setAttribute("aria-label", this.copy.widgets.inlineFootnote(this.content));
     return note;
   }
 
@@ -464,6 +484,7 @@ class MathWidget extends WidgetType {
 
 class AbbreviationWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly term: string,
     private readonly definition: string,
   ) {
@@ -473,6 +494,7 @@ class AbbreviationWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof AbbreviationWidget &&
+      other.copy.version === this.copy.version &&
       other.term === this.term &&
       other.definition === this.definition
     );
@@ -485,7 +507,7 @@ class AbbreviationWidget extends WidgetType {
 
     const badge = document.createElement("span");
     badge.className = "cm-md-abbr-def-badge";
-    badge.textContent = "缩写";
+    badge.textContent = this.copy.widgets.abbreviation;
 
     const term = document.createElement("span");
     term.className = "cm-md-abbr-def-term";
@@ -506,6 +528,7 @@ class AbbreviationWidget extends WidgetType {
 
 class WikiLinkWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly target: string,
     private readonly label: string,
     private readonly embed: boolean,
@@ -516,6 +539,7 @@ class WikiLinkWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof WikiLinkWidget &&
+      other.copy.version === this.copy.version &&
       other.target === this.target &&
       other.label === this.label &&
       other.embed === this.embed
@@ -525,7 +549,9 @@ class WikiLinkWidget extends WidgetType {
   override toDOM(): HTMLElement {
     const wrapper = document.createElement("span");
     wrapper.className = this.embed ? "cm-md-wiki-link cm-md-wiki-embed" : "cm-md-wiki-link";
-    wrapper.title = this.embed ? `嵌入：${this.target}（不展开笔记内容）` : `双链：${this.target}`;
+    wrapper.title = this.embed
+      ? this.copy.widgets.wikiEmbed(this.target)
+      : this.copy.widgets.wikiLink(this.target);
 
     const icon = document.createElement("span");
     icon.className = "cm-md-wiki-icon";
@@ -546,18 +572,25 @@ class WikiLinkWidget extends WidgetType {
 }
 
 class HtmlAnchorWidget extends WidgetType {
-  constructor(private readonly label: string) {
+  constructor(
+    private readonly copy: EditorUiCopy,
+    private readonly label: string,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
-    return other instanceof HtmlAnchorWidget && other.label === this.label;
+    return (
+      other instanceof HtmlAnchorWidget &&
+      other.copy.version === this.copy.version &&
+      other.label === this.label
+    );
   }
 
   override toDOM(): HTMLElement {
     const anchor = document.createElement("span");
     anchor.className = "cm-md-html-anchor";
-    anchor.title = `HTML 锚点：${this.label}`;
+    anchor.title = this.copy.widgets.htmlAnchor(this.label);
 
     const icon = document.createElement("span");
     icon.className = "cm-md-html-anchor-icon";
@@ -578,6 +611,7 @@ class HtmlAnchorWidget extends WidgetType {
 
 class AnchorLinkWidget extends WidgetType {
   constructor(
+    private readonly copy: EditorUiCopy,
     private readonly label: string,
     private readonly href: string,
     private readonly lineFrom: number,
@@ -588,6 +622,7 @@ class AnchorLinkWidget extends WidgetType {
   override eq(other: WidgetType): boolean {
     return (
       other instanceof AnchorLinkWidget &&
+      other.copy.version === this.copy.version &&
       other.label === this.label &&
       other.href === this.href &&
       other.lineFrom === this.lineFrom
@@ -597,8 +632,8 @@ class AnchorLinkWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const link = document.createElement("span");
     link.className = "cm-md-anchor-link";
-    link.title = `跳转到 ${this.href}`;
-    renderInlineMarkdown(link, this.label || this.href);
+    link.title = this.copy.widgets.anchorJump(this.href);
+    renderInlineMarkdown(link, this.label || this.href, this.copy);
 
     link.addEventListener("mousedown", (event) => {
       if (event.button !== 0) {
@@ -676,43 +711,44 @@ export function createLivePreviewWidget(
   spec: LivePreviewWidgetSpec,
   from: number,
   to: number,
+  copy: EditorUiCopy,
 ): WidgetType {
   switch (spec.kind) {
     case "bullet":
       return new BulletWidget();
     case "task":
-      return new TaskWidget(spec.checked, from, to);
+      return new TaskWidget(copy, spec.checked, from, to);
     case "rule":
       return new RuleWidget();
     case "image":
       return new ImageWidget(spec.src, spec.alt, spec.title, spec.width, spec.height);
     case "code-language":
-      return new CodeLanguageWidget(spec.language, spec.title);
+      return new CodeLanguageWidget(copy, spec.language, spec.title);
     case "entity":
       return new EntityWidget(spec.raw);
     case "emoji":
       return new EmojiWidget(spec.char);
     case "inline-html":
-      return new InlineHtmlWidget(spec.tag, spec.content);
+      return new InlineHtmlWidget(copy, spec.tag, spec.content);
     case "alert":
       return new AlertWidget(spec.label);
     case "footnote-ref":
-      return new FootnoteRefWidget(spec.label, spec.lineFrom);
+      return new FootnoteRefWidget(copy, spec.label, spec.lineFrom);
     case "footnote-def":
       return new FootnoteDefWidget(spec.label);
     case "inline-footnote":
-      return new InlineFootnoteWidget(spec.label, spec.content);
+      return new InlineFootnoteWidget(copy, spec.label, spec.content);
     case "math":
       return new MathWidget(spec.tex);
     case "abbreviation":
-      return new AbbreviationWidget(spec.term, spec.definition);
+      return new AbbreviationWidget(copy, spec.term, spec.definition);
     case "wiki-link":
-      return new WikiLinkWidget(spec.target, spec.label, spec.embed);
+      return new WikiLinkWidget(copy, spec.target, spec.label, spec.embed);
     case "anchor-link":
-      return new AnchorLinkWidget(spec.label, spec.href, spec.lineFrom);
+      return new AnchorLinkWidget(copy, spec.label, spec.href, spec.lineFrom);
     case "html-anchor":
-      return new HtmlAnchorWidget(spec.label);
+      return new HtmlAnchorWidget(copy, spec.label);
     case "attributes":
-      return new AttributesWidget(spec.label);
+      return new AttributesWidget(copy, spec.label);
   }
 }

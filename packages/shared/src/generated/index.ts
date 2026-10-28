@@ -1,5 +1,7 @@
 export type { AppError } from "./AppError";
 export type { AppErrorCode } from "./AppErrorCode";
+export type { AppLanguage } from "./AppLanguage";
+export type { ApplyLocaleRequest } from "./ApplyLocaleRequest";
 export type { AboutInfo } from "./AboutInfo";
 export type { AboutLink } from "./AboutLink";
 export type { CloseReason } from "./CloseReason";
@@ -11,6 +13,7 @@ export type { LogEntry } from "./LogEntry";
 export type { LogLevel } from "./LogLevel";
 export type { LogStats } from "./LogStats";
 export type { MenuActionPayload } from "./MenuActionPayload";
+export type { NativeShellLabels } from "./NativeShellLabels";
 export type { ReadOnlyReason } from "./ReadOnlyReason";
 export type { SaveRequest } from "./SaveRequest";
 export type { SaveResult } from "./SaveResult";

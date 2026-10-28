@@ -1,6 +1,7 @@
 pub mod about;
 pub mod close;
 pub mod document;
+pub mod locale;
 pub mod logs;
 pub mod update;
 pub mod view;
@@ -28,5 +29,6 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         logs::app_logs_export,
         logs::app_logs_open_dir,
         logs::app_logs_clear,
+        locale::app_apply_locale,
     ]
 }

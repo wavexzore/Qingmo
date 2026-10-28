@@ -4,6 +4,7 @@ import { EditorView, placeholder as cmPlaceholder } from "@codemirror/view";
 import { basicExtensions } from "./extensions/basic";
 import { markdownExtensions } from "./extensions/markdown";
 import { qingmoEditorTheme } from "./extensions/theme";
+import { DEFAULT_EDITOR_UI_COPY, editorUiCopy, type EditorUiCopy } from "./i18n";
 import { LP_MAX_UNITS } from "./limits";
 import { livePreview } from "./live-preview/plugin";
 
@@ -17,6 +18,8 @@ import { livePreview } from "./live-preview/plugin";
 export const themeCompartment = new Compartment();
 export const readOnlyCompartment = new Compartment();
 export const modeCompartment = new Compartment();
+export const placeholderCompartment = new Compartment();
+export const uiCopyCompartment = new Compartment();
 
 export interface CreateEditorStateOptions {
   /** Raw text; CRLF/CR is normalized to the LF-only in-memory contract. */
@@ -27,6 +30,8 @@ export interface CreateEditorStateOptions {
   extraExtensions?: readonly Extension[];
   /** Shown only while the document is empty (untitled startup editor). */
   placeholder?: string;
+  /** Injected Widget/block copy; defaults to editor-core's English fallback. */
+  uiCopy?: EditorUiCopy;
 }
 
 /** Normalizes line endings without touching any other character. */
@@ -51,6 +56,19 @@ export function setModeEffect(mode: Extension) {
 }
 
 /**
+ * Swaps the empty-document hint without rebuilding state, so an in-flight IME
+ * composition is never interrupted and undo history survives.
+ */
+export function setPlaceholderEffect(text: string) {
+  return placeholderCompartment.reconfigure(text ? cmPlaceholder(text) : []);
+}
+
+/** Swaps the Widget copy without rebuilding EditorState or the view. */
+export function setEditorUiCopyEffect(copy: EditorUiCopy) {
+  return uiCopyCompartment.reconfigure(editorUiCopy.of(copy));
+}
+
+/**
  * The single CM6 state factory. It intentionally accepts no `lineSeparator`
  * and no DOM node: the document is always LF-only and the view is created by
  * T-010's EditorHost.
@@ -60,6 +78,7 @@ export function createEditorState({
   readOnly = false,
   extraExtensions = [],
   placeholder,
+  uiCopy = DEFAULT_EDITOR_UI_COPY,
 }: CreateEditorStateOptions): EditorState {
   const normalized = normalizeLineEndings(doc);
   // Large documents start in source mode; the plugin also refuses to decorate
@@ -74,7 +93,8 @@ export function createEditorState({
       themeCompartment.of(qingmoEditorTheme),
       readOnlyCompartment.of(readOnlyExtensions(readOnly)),
       modeCompartment.of(previewEnabled ? livePreview() : []),
-      ...(placeholder ? [cmPlaceholder(placeholder)] : []),
+      placeholderCompartment.of(placeholder ? cmPlaceholder(placeholder) : []),
+      uiCopyCompartment.of(editorUiCopy.of(uiCopy)),
       ...extraExtensions,
     ],
   });
