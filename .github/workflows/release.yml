@@ -337,6 +337,18 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # upload-artifact keeps the path below each artifact's least common
+      # ancestor (macos/, dmg/, nsis/, appimage/, deb/). Flatten the download
+      # so make-latest-json sees every bundle in one directory.
+      - name: Flatten downloaded bundles
+        run: |
+          set -euo pipefail
+          mkdir -p dist-flat
+          find dist -type f -exec cp -f {} dist-flat/ \;
+          rm -rf dist
+          mv dist-flat dist
+          ls -1 dist
+
       - name: Render per-language release notes
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
