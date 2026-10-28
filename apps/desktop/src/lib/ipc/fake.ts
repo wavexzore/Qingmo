@@ -1,6 +1,7 @@
 import type {
   AppErrorCode,
   ApplyLocaleRequest,
+  DocumentChangedPayload,
   FilePayload,
   JsonValue,
   ReadOnlyReason,
@@ -109,6 +110,7 @@ export class FakeIpc implements IpcPort {
   private readonly queuedErrors = new Map<CommandName, AppError[]>();
   private readonly persistentErrors = new Map<CommandName, AppError>();
   private readonly commandDelays = new Map<CommandName, number>();
+  private readonly documentChangedListeners = new Set<(change: DocumentChangedPayload) => void>();
   private active: { token: string; path: string } | null = null;
   private pending: FilePayload | null = null;
   private openFile: string | null;
@@ -173,6 +175,31 @@ export class FakeIpc implements IpcPort {
     record.diskHash = fakeHash(text);
     record.size = byteLength(text);
     record.mtimeMs = this.tick();
+    this.emitDiskModified(path);
+  }
+
+  /** Simulates another program deleting or moving the open file. */
+  deleteDiskFile(path: string): void {
+    if (!this.records.delete(path)) {
+      throw new AppError("NOT_FOUND", `fake file not found: ${path}`);
+    }
+    if (this.active?.path === path) {
+      this.emitDocumentChanged({
+        docToken: this.active.token,
+        kind: "deleted",
+      });
+    }
+  }
+
+  /**
+   * Mirrors the Rust watcher event. The fake only reports changes for the
+   * active document, exactly like a window ignores other tokens.
+   */
+  onDocumentChanged(callback: (change: DocumentChangedPayload) => void): () => void {
+    this.documentChangedListeners.add(callback);
+    return () => {
+      this.documentChangedListeners.delete(callback);
+    };
   }
 
   getFile(path: string): FakeFileSnapshot | undefined {
@@ -383,6 +410,29 @@ export class FakeIpc implements IpcPort {
     await this.wait(COMMANDS.appApplyLocale);
     this.maybeThrow(COMMANDS.appApplyLocale);
     this.localeCalls.push(request);
+  }
+
+  private emitDiskModified(path: string): void {
+    if (!this.active || this.active.path !== path) {
+      return;
+    }
+    const record = this.records.get(path);
+    if (!record) {
+      return;
+    }
+    this.emitDocumentChanged({
+      docToken: this.active.token,
+      kind: "modified",
+      currentHash: record.diskHash,
+      currentSize: record.size,
+      currentMtimeMs: record.mtimeMs,
+    });
+  }
+
+  private emitDocumentChanged(change: DocumentChangedPayload): void {
+    for (const listener of [...this.documentChangedListeners]) {
+      listener(change);
+    }
   }
 
   private requireActive(docToken: string, command: CommandName): FakeRecord {

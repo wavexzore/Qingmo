@@ -430,6 +430,96 @@ describe("SaveCoordinator conflicts", () => {
   });
 });
 
+describe("SaveCoordinator external changes", () => {
+  it("pauses auto-save and opens the conflict banner for a dirty buffer", async () => {
+    vi.useFakeTimers();
+    const harness = await openHarness();
+    const write = vi.spyOn(harness.ipc, "documentWriteAtomic");
+    insert(harness.view, "!");
+    expect(harness.coordinator.getSnapshot().state).toBe("scheduled");
+
+    const details = {
+      currentHash: fakeHash("external\n"),
+      currentMtimeMs: 42,
+      currentSize: 9,
+    };
+    harness.coordinator.noteExternalChange(details);
+
+    expect(harness.coordinator.getSnapshot().state).toBe("conflict");
+    expect(harness.coordinator.conflictDetails).toEqual(details);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("keeps the first conflict details when a second external change arrives", async () => {
+    const harness = await openHarness();
+    insert(harness.view, "!");
+
+    const first = {
+      currentHash: fakeHash("external-1\n"),
+      currentMtimeMs: 1,
+      currentSize: 11,
+    };
+    const second = {
+      currentHash: fakeHash("external-2\n"),
+      currentMtimeMs: 2,
+      currentSize: 11,
+    };
+    harness.coordinator.noteExternalChange(first);
+    harness.coordinator.noteExternalChange(second);
+
+    expect(harness.coordinator.conflictDetails).toEqual(first);
+  });
+
+  it("auto-reloads a clean buffer without writing", async () => {
+    const harness = await openHarness("hello\n");
+    const write = vi.spyOn(harness.ipc, "documentWriteAtomic");
+    harness.ipc.setDiskText(PATH, "external\n");
+    const disk = harness.ipc.getFile(PATH);
+    if (!disk) {
+      throw new Error("fake disk record missing");
+    }
+
+    const result = await harness.coordinator.autoReload({
+      currentHash: disk.diskHash,
+      currentMtimeMs: disk.mtimeMs,
+      currentSize: disk.size,
+    });
+
+    expect(result).toEqual({ ok: true, state: "clean" });
+    expect(harness.session.readText()).toBe("external\n");
+    expect(harness.session.getSnapshot().saveState).toBe("clean");
+    expect(harness.coordinator.conflictDetails).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("keeps edits typed while an automatic reload is reading the disk", async () => {
+    vi.useFakeTimers();
+    const harness = await openHarness("hello\n");
+    harness.ipc.setDiskText(PATH, "external\n");
+    harness.ipc.setCommandDelay(COMMANDS.documentReload, 50);
+    const disk = harness.ipc.getFile(PATH);
+    if (!disk) {
+      throw new Error("fake disk record missing");
+    }
+
+    const pending = harness.coordinator.autoReload({
+      currentHash: disk.diskHash,
+      currentMtimeMs: disk.mtimeMs,
+      currentSize: disk.size,
+    });
+    await settle();
+    insert(harness.view, "local");
+    await vi.advanceTimersByTimeAsync(60);
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe("conflict");
+    expect(harness.session.readText()).toContain("local");
+    expect(harness.session.getSnapshot().saveState).toBe("conflict");
+  });
+});
+
 describe("SaveCoordinator errors", () => {
   it("retries IO/BUSY with 1s/2s/4s/8s/16s backoff and stops after five retries", async () => {
     vi.useFakeTimers();

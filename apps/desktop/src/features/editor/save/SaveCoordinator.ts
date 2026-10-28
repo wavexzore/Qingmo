@@ -244,7 +244,42 @@ export class SaveCoordinator {
    * history. Called only after T-012's explicit user confirmation.
    */
   reload(): Promise<FlushResult> {
-    return this.enqueue(() => this.reloadOnce());
+    return this.enqueue(() => this.reloadFromDisk(null));
+  }
+
+  /**
+   * Watcher-driven reload of a clean buffer. If the user types while the disk
+   * read is in flight, the local text wins and the external version becomes a
+   * conflict instead of being applied silently.
+   */
+  autoReload(details: ConflictDetails): Promise<FlushResult> {
+    return this.enqueue(() => this.reloadFromDisk(details));
+  }
+
+  /**
+   * The watcher found a new disk version while the buffer has unsaved edits.
+   * Autosave pauses and the existing conflict banner takes over.
+   *
+   * A conflict already on screen is deliberately kept: its confirmation dialog
+   * displays the hash it was opened with, so replacing it underneath the user
+   * would let them overwrite a version they never saw. The next write re-reads
+   * the disk and surfaces the newer version through a fresh conflict.
+   */
+  noteExternalChange(details: ConflictDetails): void {
+    if (this.disposed || this.session.getSnapshot().readOnly) {
+      return;
+    }
+    if (this.inFlight || this.state === "conflict") {
+      return;
+    }
+
+    this.cancelScheduledTimers();
+    this.conflict = details;
+    this.lastError = null;
+    this.retryable = false;
+    this.retryAttempts = 0;
+    this.pending = false;
+    this.setState("conflict");
   }
 
   dispose(): void {
@@ -305,14 +340,30 @@ export class SaveCoordinator {
     return this.flushLoop("manual");
   }
 
-  private async reloadOnce(): Promise<FlushResult> {
+  private async reloadFromDisk(conflictOnDirty: ConflictDetails | null): Promise<FlushResult> {
     if (this.disposed) {
       return this.failure("error");
     }
     this.cancelScheduledTimers();
     try {
       await this.waitForIdle();
+      if (conflictOnDirty && this.session.getSnapshot().dirty) {
+        this.noteExternalChange(conflictOnDirty);
+        return this.failure("conflict");
+      }
+
       const payload = await this.ipc.documentReload(this.session.docToken);
+      if (conflictOnDirty && this.session.getSnapshot().dirty) {
+        // The user typed while the disk read was in flight: keep the local
+        // text and let the banner resolve the external version explicitly.
+        this.noteExternalChange({
+          currentHash: payload.hash,
+          currentMtimeMs: payload.mtimeMs,
+          currentSize: payload.size,
+        });
+        return this.failure("conflict");
+      }
+
       this.session.replacePayload(payload);
       this.conflict = null;
       this.lastError = null;

@@ -139,6 +139,7 @@ describe("openFile", () => {
       documentReload: vi.fn(),
       documentSaveAs: vi.fn(),
       documentWriteAtomic: vi.fn(),
+      onDocumentChanged: vi.fn(() => () => undefined),
       appCloseConfirm: vi.fn(),
       appSetLivePreview: vi.fn(),
       appApplyLocale: vi.fn(),

@@ -31,12 +31,15 @@ pub const EVENT_UPDATE_STATE: &str = "app://update-state";
 pub const EVENT_UPDATE_PROGRESS: &str = "app://update-progress";
 /// Native menu item activation. The payload is one of `MENU_ACTIONS`.
 pub const EVENT_MENU_ACTION: &str = "app://menu-action";
+/// The watcher found a different (or missing) disk version for an open document.
+pub const EVENT_DOCUMENT_CHANGED: &str = "app://document-changed";
 
 pub const EVENTS: &[&str] = &[
     EVENT_CLOSE_REQUESTED,
     EVENT_UPDATE_STATE,
     EVENT_UPDATE_PROGRESS,
     EVENT_MENU_ACTION,
+    EVENT_DOCUMENT_CHANGED,
 ];
 
 /// Menu item ids that the native menu forwards to the webview.
