@@ -121,6 +121,7 @@ export function buildEditorUiCopy(language: SupportedLanguage): EditorUiCopy {
     },
     math: { editSource: t("math.editSource") },
     table: { editSource: t("table.editSource") },
+    codeBlock: { language: t("codeBlock.language") },
     definitionList: { editSource: t("definitionList.editSource") },
     comments: {
       wrapperTitle: t("comments.wrapperTitle"),

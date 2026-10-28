@@ -393,12 +393,18 @@ export function readTable(doc: EditorState["doc"], table: MarkdownNode): ParsedT
   };
 }
 
-interface ParsedFencedCode {
+export interface ParsedFencedCode {
   language: string;
   title: string | null;
   highlightLines: readonly number[];
   openingLine: { from: number; to: number };
   closingLine: { from: number; to: number };
+  /** Range of the code text between the two fence lines. */
+  contentFrom: number;
+  contentTo: number;
+  /** Range of the language token in the opening info string. */
+  infoFrom: number;
+  infoTo: number;
 }
 
 interface ParsedCodeInfo {
@@ -457,7 +463,10 @@ export function parseCodeInfo(raw: string): ParsedCodeInfo {
   return { language, title, highlightLines };
 }
 
-function readFencedCode(doc: EditorState["doc"], node: MarkdownNode): ParsedFencedCode | null {
+export function readFencedCode(
+  doc: EditorState["doc"],
+  node: MarkdownNode,
+): ParsedFencedCode | null {
   const marks = directChildren(node, "CodeMark");
   if (marks.length < 2) {
     return null;
@@ -473,10 +482,33 @@ function readFencedCode(doc: EditorState["doc"], node: MarkdownNode): ParsedFenc
   const info = firstChild(node, "CodeInfo");
   const parsed = parseCodeInfo(info ? doc.sliceString(info.from, info.to) : "");
 
+  // The code text starts on the line after the opening fence and stops
+  // before the newline that introduces the closing fence. Keeping the
+  // trailing newline out matches how Typora hands the block to its embedded
+  // editor and makes the round trip back into Markdown unambiguous.
+  const contentFrom = Math.min(openingLine.to + 1, closingLine.from);
+  const contentTo = Math.max(contentFrom, closingLine.from - 1);
+
+  // Locate the language token inside the opening line. `CodeInfo` covers the
+  // whole info string (language, title, line-highlight range), so the token
+  // itself is derived from the text following the fence marker.
+  const afterFence = doc.sliceString(opening.to, openingLine.to);
+  const leading = afterFence.length - afterFence.trimStart().length;
+  const firstToken = afterFence.trimStart().split(/\s+/)[0] ?? "";
+  const infoFrom = opening.to + leading;
+  const infoTo =
+    parsed.language && firstToken === parsed.language
+      ? infoFrom + parsed.language.length
+      : infoFrom;
+
   return {
     ...parsed,
     openingLine: { from: openingLine.from, to: openingLine.to },
     closingLine: { from: closingLine.from, to: closingLine.to },
+    contentFrom,
+    contentTo,
+    infoFrom,
+    infoTo,
   };
 }
 
@@ -1230,6 +1262,11 @@ export function collectDecorationSpecs(
             return false;
           }
           case "FencedCode": {
+            // A top-level fence is an embedded code-block widget. Only fences
+            // nested inside quotes/lists keep the line-based source styling.
+            if (syntaxNode.parent?.name === "Document") {
+              return false;
+            }
             const code = readFencedCode(doc, syntaxNode);
             addLineClassesForBlock(state, syntaxNode, range, addLineClass, "cm-md-code-block");
 

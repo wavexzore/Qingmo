@@ -3,7 +3,15 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { modifier, openApp, openSeededFile, typeInEditor } from "./helpers";
+import {
+  editorActiveLine,
+  editorContent,
+  editorLines,
+  modifier,
+  openApp,
+  openSeededFile,
+  typeInEditor,
+} from "./helpers";
 
 const DOC_PATH = "/docs/MARKDOWN-SYNTAX.md";
 const DOC_TEXT = readFileSync(path.join(__dirname, "../docs/MARKDOWN-SYNTAX.md"), "utf8");
@@ -59,14 +67,14 @@ test("renders highlight, sub/sup and inline HTML in the syntax guide table", asy
   // Jump to the section-4 heading with CodeMirror's go-to-line dialog. The
   // caret ends on the heading, outside the table, so the table renders as a
   // block widget exactly as it does while reading the guide.
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
   await page.keyboard.press(`${modifier()}+Alt+g`);
   await page.keyboard.type(String(SECTION_LINE));
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("status-bar")).toContainText(`第 ${SECTION_LINE} 行`);
   // Lazy block widgets change the document height; re-anchor the target line
   // so the Live Preview viewport actually decorates it.
-  await page.locator(".cm-line.cm-activeLine").scrollIntoViewIfNeeded();
+  await editorActiveLine(page).scrollIntoViewIfNeeded();
 
   const table = page.locator(".cm-md-table-block").filter({ hasText: "删除线" });
   await expect(table).toBeVisible();
@@ -95,13 +103,13 @@ test("renders highlight markers in live preview text", async ({ page }) => {
   await typeInEditor(page, "这是 ==hi== 内容");
 
   await expect(page.locator(".cm-md-highlight")).toHaveText("hi");
-  await expect(page.locator(".cm-line").last()).not.toContainText("==");
+  await expect(editorLines(page).last()).not.toContainText("==");
 });
 
 test("renders inline HTML, alerts, emoji and footnotes from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
 
   const go = async (needle: string, from = 0) => {
     const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf(needle, from)).split("\n").length;
@@ -111,7 +119,7 @@ test("renders inline HTML, alerts, emoji and footnotes from the guide", async ({
     await expect(page.getByTestId("status-bar")).toContainText(`第 ${line} 行`);
     // Lazy block widgets change the document height; re-anchor the target line
     // so the Live Preview viewport actually decorates it.
-    await page.locator(".cm-line.cm-activeLine").scrollIntoViewIfNeeded();
+    await editorActiveLine(page).scrollIntoViewIfNeeded();
   };
 
   await go("渲染效果：<kbd>Ctrl</kbd>");
@@ -133,7 +141,7 @@ test("renders inline HTML, alerts, emoji and footnotes from the guide", async ({
 test("renders inline and block math with KaTeX from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
 
   const go = async (needle: string, from = 0) => {
     const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf(needle, from)).split("\n").length;
@@ -143,7 +151,7 @@ test("renders inline and block math with KaTeX from the guide", async ({ page })
     await expect(page.getByTestId("status-bar")).toContainText(`第 ${line} 行`);
     // Lazy block widgets change the document height; keep re-anchoring the
     // target line until it settles inside the decorated viewport.
-    const active = page.locator(".cm-line.cm-activeLine");
+    const active = editorActiveLine(page);
     await expect
       .poll(
         async () => {
@@ -159,7 +167,7 @@ test("renders inline and block math with KaTeX from the guide", async ({ page })
   };
 
   await go("渲染效果：质能方程");
-  const mathLine = page.locator(".cm-line").filter({ hasText: "渲染效果：质能方程" });
+  const mathLine = editorLines(page).filter({ hasText: "渲染效果：质能方程" });
   await expect
     .poll(
       async () => {
@@ -196,7 +204,7 @@ const FENCED_MATH_DOC = `\`\`\`math
 test("renders a fenced math block with KaTeX", async ({ page }) => {
   await openApp(page, [{ path: "/docs/fenced-math.md", text: FENCED_MATH_DOC }]);
   await openSeededFile(page, "fenced-math.md");
-  await page.locator(".cm-line").filter({ hasText: "结尾段落" }).click();
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
 
   const block = page.locator(".cm-md-math-block");
   await expect(block.locator(".katex")).toHaveCount(1);
@@ -205,13 +213,13 @@ test("renders a fenced math block with KaTeX", async ({ page }) => {
 
   await block.dispatchEvent("mousedown", { button: 0 });
   await expect(page.getByTestId("status-bar")).toContainText("第 1 行");
-  await expect(page.locator(".cm-content")).toContainText("```math");
+  await expect(editorContent(page)).toContainText("```math");
 });
 
 test("renders Mermaid diagrams from the guide in a sandboxed frame", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
 
   const go = async (needle: string, from = 0) => {
     const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf(needle, from)).split("\n").length;
@@ -238,13 +246,13 @@ test("renders Mermaid diagrams from the guide in a sandboxed frame", async ({ pa
   await diagram.hover();
   await diagram.getByRole("button", { name: "编辑 Mermaid 源码" }).click();
   await expect.poll(async () => clicked?.evaluate((element) => element.isConnected)).toBe(false);
-  await expect(page.locator(".cm-line").filter({ hasText: "flowchart LR" }).first()).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "flowchart LR" }).first()).toBeVisible();
 });
 
 test("re-renders Mermaid diagrams when the theme changes", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果：", DOC_TEXT.indexOf("## 23."))).split(
     "\n",
@@ -284,7 +292,7 @@ test("renders Mermaid under the production CSP", async ({ page }) => {
 
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果：", DOC_TEXT.indexOf("## 23."))).split(
     "\n",
@@ -359,7 +367,7 @@ test("renders every top-level Mermaid diagram in the guide", async ({ page }) =>
 test("renders a collapsible details block from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果：", DOC_TEXT.indexOf("## 20."))).split(
     "\n",
@@ -380,13 +388,13 @@ test("renders a collapsible details block from the guide", async ({ page }) => {
 
   await details.locator(".cm-md-details-edit").dispatchEvent("mousedown", { button: 0 });
   await expect(page.locator(".cm-md-details")).toHaveCount(0);
-  await expect(page.locator(".cm-line").filter({ hasText: "<details>" }).first()).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "<details>" }).first()).toBeVisible();
 });
 
 test("renders definition lists from the guide", async ({ page }) => {
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
 
   const line = DOC_TEXT.slice(0, DOC_TEXT.indexOf("渲染效果（需渲染器支持）：")).split("\n").length;
   await page.keyboard.press(`${modifier()}+Alt+g`);
@@ -422,7 +430,7 @@ Markdown
 test("renders front matter, a generated TOC and definition lists", async ({ page }) => {
   await openApp(page, [{ path: "/docs/structured.md", text: STRUCTURED_DOC }]);
   await openSeededFile(page, "structured.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const frontMatter = page.locator(".cm-md-frontmatter");
@@ -435,11 +443,11 @@ test("renders front matter, a generated TOC and definition lists", async ({ page
   await expect(page.locator(".cm-md-definition-list")).toContainText("一种轻量级标记语言");
 
   await tocItems.filter({ hasText: "子节" }).click();
-  await expect(page.locator(".cm-line").filter({ hasText: "## 子节" })).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "## 子节" })).toBeVisible();
 
   await frontMatter.click();
   await expect(page.locator(".cm-md-frontmatter")).toHaveCount(0);
-  await expect(page.locator(".cm-line").filter({ hasText: "title: 结构化文档" })).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "title: 结构化文档" })).toBeVisible();
 });
 
 const EXTENSIONS_DOC = `*[HTML]: HyperText Markup Language
@@ -471,7 +479,7 @@ See [[笔记名称]] and [[笔记名称|显示文字]] and [[笔记名称#标题
 test("renders abbreviations, wiki links and nested details", async ({ page }) => {
   await openApp(page, [{ path: "/docs/extensions.md", text: EXTENSIONS_DOC }]);
   await openSeededFile(page, "extensions.md");
-  await page.locator(".cm-line").filter({ hasText: "HTML is a markup language" }).click();
+  await editorLines(page).filter({ hasText: "HTML is a markup language" }).click();
 
   await expect(page.locator(".cm-md-abbr-def")).toContainText("HyperText Markup Language");
   const marks = page.locator(".cm-md-abbr");
@@ -521,7 +529,7 @@ const JSON_FRONTMATTER_DOC = `{
 test("renders JSON front matter", async ({ page }) => {
   await openApp(page, [{ path: "/docs/json-frontmatter.md", text: JSON_FRONTMATTER_DOC }]);
   await openSeededFile(page, "json-frontmatter.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const frontMatter = page.locator(".cm-md-frontmatter");
@@ -532,7 +540,7 @@ test("renders JSON front matter", async ({ page }) => {
 
   await frontMatter.click();
   await expect(page.locator(".cm-md-frontmatter")).toHaveCount(0);
-  await expect(page.locator(".cm-line").filter({ hasText: '"title": "JSON 文档"' })).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: '"title": "JSON 文档"' })).toBeVisible();
 });
 
 const CODE_INFO_DOC = `\`\`\`js title="app.js" {2,4-5}
@@ -547,23 +555,27 @@ console.log(a + b); // 高亮
 test("renders code block titles and highlighted lines", async ({ page }) => {
   await openApp(page, [{ path: "/docs/code-info.md", text: CODE_INFO_DOC }]);
   await openSeededFile(page, "code-info.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const info = page.locator(".cm-md-code-info");
   await expect(info).toBeVisible();
-  await expect(info.locator(".cm-md-code-language")).toHaveText("js");
+  await expect(info.locator(".cm-md-code-language")).toHaveValue("js");
   await expect(info.locator(".cm-md-code-title")).toHaveText("app.js");
 
-  const highlighted = page.locator(".cm-line.cm-md-code-highlight");
+  const highlighted = page.locator(".cm-md-code-block-widget .cm-line.cm-md-code-highlight");
   await expect(highlighted).toHaveCount(3);
   await expect(highlighted.nth(0)).toContainText("console.log(a);");
   await expect(highlighted.nth(1)).toContainText("console.log(b);");
   await expect(highlighted.nth(2)).toContainText("console.log(a + b);");
 
+  // The block stays rendered while the caret is on its first line. The
+  // embedded editor owns the source, so fences are never revealed.
   await page.keyboard.press(`${modifier()}+Home`);
-  await expect(page.locator(".cm-md-code-info")).toHaveCount(0);
-  await expect(page.locator(".cm-line").first()).toContainText('```js title="app.js"');
+  await expect(page.locator(".cm-md-code-block-widget")).toBeVisible();
+  await expect(info.locator(".cm-md-code-language")).toHaveValue("js");
+  await expect(info.locator(".cm-md-code-title")).toHaveText("app.js");
+  await expect(editorContent(page)).not.toContainText('```js title="app.js"');
 });
 
 const DIFF_DOC = `\`\`\`diff
@@ -576,16 +588,17 @@ const DIFF_DOC = `\`\`\`diff
 test("colors added and removed diff code lines", async ({ page }) => {
   await openApp(page, [{ path: "/docs/diff.md", text: DIFF_DOC }]);
   await openSeededFile(page, "diff.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
   await page.keyboard.press(`${modifier()}+End`);
 
-  const added = page.locator(".cm-line.cm-md-code-diff-add");
-  const removed = page.locator(".cm-line.cm-md-code-diff-del");
+  const widget = page.locator(".cm-md-code-block-widget");
+  const added = widget.locator(".cm-line.cm-md-code-diff-add");
+  const removed = widget.locator(".cm-line.cm-md-code-diff-del");
   await expect(added).toHaveCount(1);
   await expect(removed).toHaveCount(1);
   await expect(added).toContainText("+ const port = 8080;");
   await expect(removed).toContainText("- const port = 3000;");
-  await expect(page.locator(".cm-md-code-language")).toHaveText("diff");
+  await expect(page.locator(".cm-md-code-language")).toHaveValue("diff");
 });
 
 const MEDIA_DOC = `<video src="./demo.mp4" controls width="480"></video>
@@ -603,7 +616,7 @@ const MEDIA_DOC = `<video src="./demo.mp4" controls width="480"></video>
 test("renders video, audio and picture blocks", async ({ page }) => {
   await openApp(page, [{ path: "/docs/media.md", text: MEDIA_DOC }]);
   await openSeededFile(page, "media.md");
-  await page.locator(".cm-content").focus();
+  await editorContent(page).focus();
   await page.keyboard.press(`${modifier()}+End`);
 
   const video = page.locator(".cm-md-media-video");
@@ -628,7 +641,7 @@ test("renders video, audio and picture blocks", async ({ page }) => {
 
   await video.locator(".cm-md-media-edit").dispatchEvent("mousedown", { button: 0 });
   await expect(page.locator(".cm-md-media-video")).toHaveCount(0);
-  await expect(page.locator(".cm-line").filter({ hasText: "<video src=" })).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "<video src=" })).toBeVisible();
   await expect(page.locator(".cm-md-media-audio")).toBeVisible();
 });
 
@@ -649,14 +662,14 @@ const HTML_IMAGE_DOC = `<figure>
 test("renders HTML figures, standalone images and centered containers", async ({ page }) => {
   await openApp(page, [{ path: "/docs/html-images.md", text: HTML_IMAGE_DOC }]);
   await openSeededFile(page, "html-images.md");
-  await page.locator(".cm-line").filter({ hasText: "普通段落" }).click();
+  await editorLines(page).filter({ hasText: "普通段落" }).click();
 
   const figure = page.locator(".cm-md-media-figure");
   await expect(figure).toHaveCount(1);
   await expect(figure.locator(".cm-md-media-badge")).toHaveText("图片配文");
   await expect(figure.locator("figcaption")).toHaveText("图 1：系统架构示意");
   await expect(figure.locator("figcaption strong")).toHaveText("系统");
-  await expect(page.locator(".cm-content")).not.toContainText("<figure>");
+  await expect(editorContent(page)).not.toContainText("<figure>");
 
   const image = page.locator(".cm-md-media-img");
   await expect(image).toHaveCount(1);
@@ -667,7 +680,7 @@ test("renders HTML figures, standalone images and centered containers", async ({
   await expect(center).toHaveCount(1);
   await expect(center.locator(".cm-md-media-badge")).toHaveText("居中图片");
   await expect(center).toContainText("居中图片");
-  await expect(page.locator(".cm-content")).not.toContainText('<div align="center">');
+  await expect(editorContent(page)).not.toContainText('<div align="center">');
 });
 
 const COMMENT_DOC = `<!--
@@ -685,20 +698,20 @@ const COMMENT_DOC = `<!--
 test("collapses HTML and Obsidian comments", async ({ page }) => {
   await openApp(page, [{ path: "/docs/comments.md", text: COMMENT_DOC }]);
   await openSeededFile(page, "comments.md");
-  await page.locator(".cm-line").filter({ hasText: "最后一段" }).click();
+  await editorLines(page).filter({ hasText: "最后一段" }).click();
 
   const comments = page.locator(".cm-md-comment");
   await expect(comments).toHaveCount(2);
   await expect(comments.first()).toContainText("HTML 注释");
   await expect(comments.nth(1)).toContainText("Obsidian 注释");
-  await expect(page.locator(".cm-content")).not.toContainText("多行注释");
-  await expect(page.locator(".cm-content")).not.toContainText("行内注释");
-  await expect(page.locator(".cm-content")).toContainText("正文");
-  await expect(page.locator(".cm-content")).toContainText("结束");
+  await expect(editorContent(page)).not.toContainText("多行注释");
+  await expect(editorContent(page)).not.toContainText("行内注释");
+  await expect(editorContent(page)).toContainText("正文");
+  await expect(editorContent(page)).toContainText("结束");
 
   await comments.first().locator(".cm-md-comment-edit").dispatchEvent("mousedown", { button: 0 });
   await expect(page.locator(".cm-md-comment")).toHaveCount(1);
-  await expect(page.locator(".cm-line").filter({ hasText: "多行注释" })).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "多行注释" })).toBeVisible();
 });
 
 const MANUAL_TOC_DOC =
@@ -721,7 +734,7 @@ test("jumps from a manual table of contents link", async ({ page }) => {
   const targetLine = MANUAL_TOC_DOC.slice(0, MANUAL_TOC_DOC.indexOf("# 第二节")).split("\n").length;
   await links.nth(1).dispatchEvent("mousedown", { button: 0 });
   await expect(page.getByTestId("status-bar")).toContainText(`第 ${targetLine} 行`);
-  await expect(page.locator(".cm-line").filter({ hasText: "# 第二节" })).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "# 第二节" })).toBeVisible();
 });
 
 const ATTRIBUTE_DOC = `![图片](logo.png){width=200 height=100}
@@ -733,7 +746,7 @@ const ATTRIBUTE_DOC = `![图片](logo.png){width=200 height=100}
 test("hides image and paragraph attribute blocks", async ({ page }) => {
   await openApp(page, [{ path: "/docs/attributes.md", text: ATTRIBUTE_DOC }]);
   await openSeededFile(page, "attributes.md");
-  await page.locator(".cm-line").filter({ hasText: "一段文字" }).click();
+  await editorLines(page).filter({ hasText: "一段文字" }).click();
 
   await expect(page.locator(".cm-md-image")).toHaveCount(1);
   const badge = page.locator(".cm-md-attr-badge");
@@ -741,8 +754,8 @@ test("hides image and paragraph attribute blocks", async ({ page }) => {
   await expect(badge).toContainText("属性");
   await expect(badge).toContainText(".warning #custom-id");
   await expect(page.locator(".cm-line.cm-md-attr-warning")).toHaveCount(1);
-  await expect(page.locator(".cm-content")).not.toContainText("{width=200");
-  await expect(page.locator(".cm-content")).not.toContainText("{: .warning");
+  await expect(editorContent(page)).not.toContainText("{width=200");
+  await expect(editorContent(page)).not.toContainText("{: .warning");
 });
 
 const LINK_DOC = `[带标题](https://example.com "悬停提示") and [参考][ref] and https://bare.example
@@ -755,14 +768,14 @@ const LINK_DOC = `[带标题](https://example.com "悬停提示") and [参考][r
 test("renders inline, reference and bare links with titles", async ({ page }) => {
   await openApp(page, [{ path: "/docs/links.md", text: LINK_DOC }]);
   await openSeededFile(page, "links.md");
-  await page.locator(".cm-line").filter({ hasText: "结尾段落" }).click();
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
 
   await expect(page.locator('.cm-md-link[title="悬停提示"]')).toHaveText("带标题");
   await expect(page.locator('.cm-md-link[title="OpenAI"]')).toHaveText("参考");
   await expect(page.locator('.cm-md-link[title="https://bare.example"]')).toHaveText(
     "https://bare.example",
   );
-  await expect(page.locator(".cm-line").first()).not.toContainText("[ref]");
+  await expect(editorLines(page).first()).not.toContainText("[ref]");
 });
 
 const HTML_ANCHOR_DOC = `<a id="install"></a>
@@ -776,12 +789,12 @@ const HTML_ANCHOR_DOC = `<a id="install"></a>
 test("renders an explicit HTML anchor and jumps to its heading", async ({ page }) => {
   await openApp(page, [{ path: "/docs/html-anchor.md", text: HTML_ANCHOR_DOC }]);
   await openSeededFile(page, "html-anchor.md");
-  await page.locator(".cm-line").filter({ hasText: "结尾段落" }).click();
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
 
   const badge = page.locator(".cm-md-html-anchor");
   await expect(badge).toHaveCount(1);
   await expect(badge).toContainText("#install");
-  await expect(page.locator(".cm-content")).not.toContainText('<a id="install">');
+  await expect(editorContent(page)).not.toContainText('<a id="install">');
 
   const link = page.locator(".cm-md-anchor-link");
   await expect(link).toHaveText("安装");
@@ -810,7 +823,7 @@ const HTML_TABLE_DOC = `<table>
 test("renders HTML tables with spans and keeps dangerous HTML inert", async ({ page }) => {
   await openApp(page, [{ path: "/docs/html-table.md", text: HTML_TABLE_DOC }]);
   await openSeededFile(page, "html-table.md");
-  await page.locator(".cm-line").filter({ hasText: "结尾段落" }).click();
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
 
   const blocks = page.locator(".cm-md-html-table-block");
   await expect(blocks).toHaveCount(2);
@@ -830,7 +843,7 @@ test("renders HTML tables with spans and keeps dangerous HTML inert", async ({ p
 
   await table.locator("td").first().dispatchEvent("mousedown", { button: 0 });
   await expect(page.getByTestId("status-bar")).toContainText("第 1 行");
-  await expect(page.locator(".cm-content")).toContainText("<table>");
+  await expect(editorContent(page)).toContainText("<table>");
   await expect(page.locator(".cm-md-html-table-block")).toHaveCount(1);
 });
 
@@ -848,7 +861,7 @@ Alice -> Bob: Hello
 test("labels unsupported note embeds and external diagrams", async ({ page }) => {
   await openApp(page, [{ path: "/docs/degraded.md", text: DEGRADED_DOC }]);
   await openSeededFile(page, "degraded.md");
-  await page.locator(".cm-line").filter({ hasText: "结尾段落" }).click();
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
 
   const embed = page.locator(".cm-md-wiki-embed");
   await expect(embed).toContainText("笔记名称");
@@ -857,8 +870,8 @@ test("labels unsupported note embeds and external diagrams", async ({ page }) =>
   const hint = page.locator(".cm-md-code-external");
   await expect(hint).toHaveText("需外部渲染");
   await expect(hint).toHaveAttribute("title", /PlantUML 需要外部渲染器/);
-  await expect(page.locator(".cm-md-code-language")).toHaveText("plantuml");
-  await expect(page.locator(".cm-content")).toContainText("@startuml");
+  await expect(page.locator(".cm-md-code-language")).toHaveValue("plantuml");
+  await expect(page.locator(".cm-md-code-block-widget")).toContainText("@startuml");
 });
 
 const ATTRIBUTE_ANCHOR_DOC = `# 前言
@@ -874,7 +887,7 @@ const ATTRIBUTE_ANCHOR_DOC = `# 前言
 test("jumps to a paragraph attribute id", async ({ page }) => {
   await openApp(page, [{ path: "/docs/attribute-anchor.md", text: ATTRIBUTE_ANCHOR_DOC }]);
   await openSeededFile(page, "attribute-anchor.md");
-  await page.locator(".cm-line").filter({ hasText: "结尾段落" }).click();
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
 
   const link = page.locator(".cm-md-anchor-link");
   await expect(link).toHaveText("目标");
@@ -885,7 +898,7 @@ test("jumps to a paragraph attribute id", async ({ page }) => {
   ).length;
   await link.dispatchEvent("mousedown", { button: 0 });
   await expect(page.getByTestId("status-bar")).toContainText(`第 ${targetLine} 行`);
-  await expect(page.locator(".cm-line").filter({ hasText: "目标段落" })).toBeVisible();
+  await expect(editorLines(page).filter({ hasText: "目标段落" })).toBeVisible();
 });
 
 const FOOTNOTE_DOC = "Text[^1].\n\n" + "填充段落。\n\n".repeat(12) + "[^1]: Footnote text.\n";
@@ -901,7 +914,7 @@ test("jumps from a footnote reference to its definition", async ({ page }) => {
   const targetLine = FOOTNOTE_DOC.slice(0, FOOTNOTE_DOC.indexOf("[^1]:")).split("\n").length;
   await reference.dispatchEvent("mousedown", { button: 0 });
   await expect(page.getByTestId("status-bar")).toContainText(`第 ${targetLine} 行`);
-  await expect(page.locator(".cm-content")).toContainText("Footnote text.");
+  await expect(editorContent(page)).toContainText("Footnote text.");
 });
 
 const INLINE_FOOTNOTE_DOC = `行内脚注^[脚注内容直接写在正文中。] 结束。
@@ -912,11 +925,11 @@ const INLINE_FOOTNOTE_DOC = `行内脚注^[脚注内容直接写在正文中。]
 test("renders inline footnotes with a content tooltip", async ({ page }) => {
   await openApp(page, [{ path: "/docs/inline-footnotes.md", text: INLINE_FOOTNOTE_DOC }]);
   await openSeededFile(page, "inline-footnotes.md");
-  await page.locator(".cm-line").filter({ hasText: "普通段落" }).click();
+  await editorLines(page).filter({ hasText: "普通段落" }).click();
 
   const note = page.locator(".cm-md-footnote-inline");
   await expect(note).toHaveCount(1);
   await expect(note).toHaveText("注1");
   await expect(note).toHaveAttribute("title", "脚注内容直接写在正文中。");
-  await expect(page.locator(".cm-content")).not.toContainText("^[");
+  await expect(editorContent(page)).not.toContainText("^[");
 });

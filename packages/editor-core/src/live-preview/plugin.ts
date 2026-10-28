@@ -11,6 +11,7 @@ import {
 import { LP_MAX_UNITS, SYNTAX_TREE_BUDGET_MS } from "../limits";
 import { editorUiCopy, type EditorUiCopy } from "../i18n";
 import { commentBlockPreview } from "./comment-blocks";
+import { codeBlockPreview, codeBlockSelectionGuard } from "./code-blocks";
 import { definitionListPreview } from "./definition-lists";
 import { detailsBlockPreview } from "./details";
 import { frontMatterPreview } from "./frontmatter";
@@ -146,6 +147,7 @@ function buildForView(view: EditorView): LivePreviewBuild {
     ...(state.field(detailsBlockPreview, false)?.blocked ?? []),
     ...(state.field(mediaBlockPreview, false)?.blocked ?? []),
     ...(state.field(commentBlockPreview, false)?.blocked ?? []),
+    ...(state.field(codeBlockPreview, false)?.ranges ?? []),
     ...(state.field(tableBlockPreview, false)?.blocked ?? []),
     ...(state.field(mathBlockPreview, false)?.blocked ?? []),
     ...(state.field(mermaidBlockPreview, false)?.blocked ?? []),
@@ -221,6 +223,8 @@ export function livePreview(): Extension {
     detailsBlockPreview,
     mediaBlockPreview,
     commentBlockPreview,
+    codeBlockPreview,
+    codeBlockSelectionGuard,
     tableBlockPreview,
     tableSelectionGuard,
     mathBlockPreview,

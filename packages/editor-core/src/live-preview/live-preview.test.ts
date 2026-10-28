@@ -8,6 +8,7 @@ import {
   LP_MAX_UNITS,
   MAX_LINE_UNITS,
   buildLivePreviewDecorations,
+  codeBlockPreview,
   collectDecorationSpecs,
   createEditorState,
   livePreviewPlugin,
@@ -197,7 +198,13 @@ describe("collectDecorationSpecs", () => {
     expect(find(specs, "line", "cm-md-h1")).toMatchObject({ from: 0 });
     expect(find(specs, "line", "cm-md-quote")).toBeDefined();
     expect(find(specs, "line", "cm-md-list")).toBeDefined();
-    expect(find(specs, "line", "cm-md-code-block")).toBeDefined();
+
+    // The top-level fence is owned by the embedded-editor widget, so the
+    // line-decoration planner must not emit source styling for it.
+    const blocks = state.field(codeBlockPreview);
+    expect(blocks.ranges).toHaveLength(1);
+    expect(blocks.ranges[0]?.from).toBe(fixture.indexOf("```js"));
+    expect(find(specs, "line", "cm-md-code-block")).toBeUndefined();
 
     expect(find(specs, "replace")).toMatchObject({ from: 0, to: 2 });
     expect(markRange(specs, "cm-md-strong")).toEqual([
@@ -236,42 +243,18 @@ describe("collectDecorationSpecs", () => {
     });
   });
 
-  it("renders a fenced code block with the language badge on its closing fence", () => {
+  it("leaves top-level fences to the embedded code editor", () => {
     const state = stateFor();
     const specs = collect(state, [{ from: state.doc.length, to: state.doc.length }]);
-    const fence = fixture.indexOf("```js");
-    const openingLine = state.doc.lineAt(fence);
-    const closingLine = state.doc.lineAt(fixture.lastIndexOf("```"));
 
-    // The opening fence collapses; the closing fence carries the badge, which
-    // puts the language in the block's bottom-right corner.
-    expect(specs).toContainEqual({
-      kind: "replace",
-      from: openingLine.from,
-      to: openingLine.to,
-    });
-    expect(specs).toContainEqual({
-      kind: "widget",
-      from: closingLine.from,
-      to: closingLine.to,
-      widget: { kind: "code-language", language: "js", title: null },
-    });
+    // The block widget owns the whole fence; the line-decoration planner must
+    // not also emit fence/line/badge specs for it.
     expect(
-      specs.some(
-        (spec) =>
-          spec.kind === "line" &&
-          spec.from === openingLine.from &&
-          spec.className === "cm-md-code-block",
-      ),
-    ).toBe(true);
+      specs.some((spec) => spec.kind === "widget" && spec.widget.kind === "code-language"),
+    ).toBe(false);
     expect(
-      specs.some(
-        (spec) =>
-          spec.kind === "line" &&
-          spec.from === openingLine.from &&
-          spec.className === "cm-md-code-fence-hidden",
-      ),
-    ).toBe(true);
+      specs.some((spec) => spec.kind === "line" && spec.className.startsWith("cm-md-code")),
+    ).toBe(false);
   });
 
   it("renders setext headings and hides their underline", () => {
@@ -777,7 +760,7 @@ describe("livePreviewPlugin", () => {
     expect(view.dom.querySelector<HTMLInputElement>(".cm-md-task input")?.checked).toBe(true);
   });
 
-  it("renders a fenced code language badge and reveals the fence when touched", () => {
+  it("renders a fenced code block as an embedded editor widget", () => {
     const doc = "```js\nconst x = 1;\n```\n";
     const parent = document.createElement("div");
     document.body.append(parent);
@@ -785,21 +768,103 @@ describe("livePreviewPlugin", () => {
     views.push({ view, parent });
 
     view.dispatch({ selection: { anchor: doc.length } });
-    const badge = view.dom.querySelector(".cm-md-code-language");
-    expect(badge?.textContent).toBe("js");
-    // The badge lives in the closing fence line: bottom-right of the block.
-    expect(badge?.closest(".cm-line")?.classList.contains("cm-md-code-fence-close")).toBe(true);
-    // The hidden opening fence collapses instead of leaving a blank row.
-    expect(view.dom.querySelector(".cm-line")?.classList.contains("cm-md-code-fence-hidden")).toBe(
-      true,
-    );
+    const widget = view.dom.querySelector<HTMLElement>(".cm-md-code-block-widget");
+    expect(widget).not.toBeNull();
+    expect(widget?.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe("js");
+    // The fence markers never reach the rendered document.
+    expect(widget?.textContent).not.toContain("```");
+    expect(widget?.querySelector(".cm-md-code-info-floating")).not.toBeNull();
 
-    view.dispatch({ selection: { anchor: 0 } });
-    expect(view.dom.querySelector(".cm-md-code-language")).toBeNull();
-    expect(view.dom.querySelector(".cm-line")?.textContent).toContain("```js");
-    expect(view.dom.querySelector(".cm-line")?.classList.contains("cm-md-code-fence-hidden")).toBe(
-      false,
-    );
+    const nestedDom = widget?.querySelector<HTMLElement>(".cm-editor");
+    const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
+    expect(nested?.state.doc.toString()).toBe("const x = 1;");
+
+    // Editing inside the nested surface writes back into the Markdown source.
+    nested?.dispatch({ changes: { from: 12, insert: " + 2" } });
+    expect(view.state.doc.toString()).toBe("```js\nconst x = 1; + 2\n```\n");
+    expect(nested?.state.doc.toString()).toBe("const x = 1; + 2");
+  });
+
+  it("keeps edits at the end of the code inside the closing fence", () => {
+    const doc = "```ts\nconst a = 1;\n```\n\n尾段\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const nestedDom = view.dom.querySelector<HTMLElement>(".cm-editor");
+    const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
+    expect(nested).not.toBeNull();
+    nested?.dispatch({
+      changes: { from: nested.state.doc.length, insert: " // ok" },
+    });
+
+    expect(view.state.doc.toString()).toBe("```ts\nconst a = 1; // ok\n```\n\n尾段\n");
+  });
+
+  it("commits the language chip into the opening fence and cancels on Escape", async () => {
+    const doc = '```js title="app.js"\nconst x = 1;\n```\n';
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const chip = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language");
+    expect(chip?.value).toBe("js");
+
+    chip!.value = "ts";
+    chip!.dispatchEvent(new Event("input"));
+    chip!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    // The title attribute survives; only the language token is replaced.
+    expect(view.state.doc.toString()).toBe('```ts title="app.js"\nconst x = 1;\n```\n');
+    await vi.waitFor(() => {
+      expect(view.dom.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe("ts");
+    });
+
+    const next = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language");
+    next!.value = "python";
+    next!.dispatchEvent(new Event("input"));
+    next!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(view.state.doc.toString()).toBe('```ts title="app.js"\nconst x = 1;\n```\n');
+    expect(next?.value).toBe("ts");
+  });
+
+  it("keeps the embedded editor read-only when the document is read-only", () => {
+    const doc = "```js\nconst x = 1;\n```\n";
+    const state = createEditorState({ doc, uiCopy: zhCopy, readOnly: true });
+    ensureSyntaxTree(state, state.doc.length, 10_000);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: state.update({}).state, parent });
+    views.push({ view, parent });
+
+    const chip = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language");
+    expect(chip?.readOnly).toBe(true);
+    expect(chip?.tabIndex).toBe(-1);
+
+    const nestedDom = view.dom.querySelector<HTMLElement>(".cm-editor");
+    const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
+    expect(nested?.state.readOnly).toBe(true);
+    expect(nested?.contentDOM.getAttribute("contenteditable")).toBe("false");
+  });
+
+  it("focuses the embedded editor when a selection lands inside the hidden fence", async () => {
+    const doc = "```js\nconst x = 1;\n```\n\n尾段\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    view.dispatch({ selection: { anchor: 2 } });
+    await vi.waitFor(() => {
+      const nestedDom = view.dom.querySelector<HTMLElement>(".cm-md-code-block-widget .cm-editor");
+      const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
+      expect(nested?.hasFocus).toBe(true);
+      // Outer offset 2 is the "s" of "js"; inside the code surface the guard
+      // clamps the position to the start of the block.
+      expect(nested?.state.selection.main.head).toBe(0);
+    });
   });
 
   it("syntax-highlights the language declared on a fenced block", async () => {
@@ -814,9 +879,9 @@ describe("livePreviewPlugin", () => {
     // token spans instead of a single plain-text node.
     await vi.waitFor(
       () => {
-        const keyword = Array.from(view.dom.querySelectorAll(".cm-line span")).find(
-          (span) => span.textContent === "const",
-        );
+        const keyword = Array.from(
+          view.dom.querySelectorAll(".cm-md-code-block-widget .cm-line span"),
+        ).find((span) => span.textContent === "const");
         expect(keyword).toBeDefined();
         expect(keyword?.className).not.toBe("");
       },
@@ -835,8 +900,10 @@ describe("livePreviewPlugin", () => {
     const hint = view.dom.querySelector(".cm-md-code-external");
     expect(hint?.textContent).toBe("需外部渲染");
     expect(hint?.getAttribute("title")).toContain("PlantUML 需要外部渲染器");
-    expect(view.dom.querySelector(".cm-md-code-language")?.textContent).toBe("plantuml");
-    expect(view.dom.textContent).toContain("@startuml");
+    expect(view.dom.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe(
+      "plantuml",
+    );
+    expect(view.dom.querySelector(".cm-md-code-block-widget")?.textContent).toContain("@startuml");
   });
 
   it("renders fenced code titles and highlighted lines", () => {
@@ -854,21 +921,23 @@ describe("livePreviewPlugin", () => {
     views.push({ view, parent });
 
     view.dispatch({ selection: { anchor: doc.length } });
-    expect(view.dom.querySelector(".cm-md-code-language")?.textContent).toBe("js");
+    expect(view.dom.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe("js");
     expect(view.dom.querySelector(".cm-md-code-title")?.textContent).toBe("app.js");
     expect(
-      Array.from(view.dom.querySelectorAll(".cm-line.cm-md-code-highlight")).map(
-        (line) => line.textContent,
-      ),
+      Array.from(
+        view.dom.querySelectorAll(".cm-md-code-block-widget .cm-line.cm-md-code-highlight"),
+      ).map((line) => line.textContent),
     ).toEqual([
       "console.log(a); // 高亮",
       "console.log(b); // 高亮",
       "console.log(a + b); // 高亮",
     ]);
 
+    // The block stays rendered while the caret is on its first line; the
+    // embedded editor owns the source instead of revealing the fence.
     view.dispatch({ selection: { anchor: 0 } });
-    expect(view.dom.querySelector(".cm-md-code-title")).toBeNull();
-    expect(view.dom.querySelector(".cm-line")?.textContent).toContain("```js");
+    expect(view.dom.querySelector(".cm-md-code-title")?.textContent).toBe("app.js");
+    expect(view.dom.querySelector(".cm-md-code-block-widget")?.textContent).not.toContain("```js");
   });
 
   it("colors diff code block lines", () => {
@@ -887,14 +956,15 @@ describe("livePreviewPlugin", () => {
     views.push({ view, parent });
 
     view.dispatch({ selection: { anchor: doc.length } });
-    expect(view.dom.querySelector(".cm-line.cm-md-code-diff-add")?.textContent).toBe(
+    const widget = view.dom.querySelector(".cm-md-code-block-widget");
+    expect(widget?.querySelector(".cm-line.cm-md-code-diff-add")?.textContent).toBe(
       "+const port = 8080;",
     );
-    expect(view.dom.querySelector(".cm-line.cm-md-code-diff-del")?.textContent).toBe(
+    expect(widget?.querySelector(".cm-line.cm-md-code-diff-del")?.textContent).toBe(
       "-const port = 3000;",
     );
-    expect(view.dom.querySelectorAll(".cm-line.cm-md-code-diff-meta")).toHaveLength(3);
-    expect(view.dom.querySelector(".cm-line.cm-md-code-diff-add")?.textContent).not.toContain(
+    expect(widget?.querySelectorAll(".cm-line.cm-md-code-diff-meta")).toHaveLength(3);
+    expect(widget?.querySelector(".cm-line.cm-md-code-diff-add")?.textContent).not.toContain(
       "localhost",
     );
   });

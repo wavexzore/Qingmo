@@ -42,6 +42,12 @@ export {
   type VisibleRange,
 } from "./live-preview/specs";
 export { TABLE_BLOCK_MAX_UNITS, tableBlockPreview } from "./live-preview/table-blocks";
+export {
+  CODE_BLOCK_MAX_UNITS,
+  codeBlockPreview,
+  codeBlockSelectionGuard,
+  type CodeBlockRange,
+} from "./live-preview/code-blocks";
 export { MATH_BLOCK_MAX_UNITS, mathBlockPreview } from "./live-preview/math-blocks";
 export { MERMAID_BLOCK_MAX_UNITS, mermaidBlockPreview } from "./live-preview/mermaid-blocks";
 export {

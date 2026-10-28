@@ -55,7 +55,7 @@ function selectedTextDecorations(view: EditorView): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
-const selectionTextHighlight = ViewPlugin.fromClass(
+export const selectionTextHighlight = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
 
