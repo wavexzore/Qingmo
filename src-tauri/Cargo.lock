@@ -2902,7 +2902,7 @@ dependencies = [
 
 [[package]]
 name = "qingmo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "atomic-write-file",
  "blake3",

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Qingmo",
-  "version": "0.1.0",
-  "identifier": "com.qingmo.app",
+  "version": "0.1.1",
+  "identifier": "com.wavexzore.qingmo",
   "build": {
     "beforeDevCommand": "pnpm --filter @qingmo/desktop dev",
     "devUrl": "http://localhost:1420",

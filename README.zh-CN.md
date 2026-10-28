@@ -100,10 +100,48 @@ pnpm tauri dev     # 带真实文件 IO 的桌面应用
 ### 构建
 
 ```bash
-pnpm build          # 前端生产构建
-pnpm tauri build    # 桌面安装包
-make build-mac      # 本地 macOS DMG（默认 Apple Silicon）
-make build-mac MAC_ARCH=x86_64
+pnpm build              # 前端生产构建
+pnpm tauri build        # 桌面安装包
+make build-mac          # 本地发布：版本/说明检查 + 签名 + 公证 + latest.json
+make build-mac-arch     # 轻量 macOS DMG，不签名、不公证（默认 Apple Silicon）
+make build-mac-arch MAC_ARCH=x86_64
+```
+
+### 分发与安装（macOS）
+
+正式版本只通过 DMG 分发，不要直接发送 `.app` 文件夹：微信、压缩工具或网盘同步可能丢掉扩展属性、可执行权限和签名资源，接收方就会看到“Qingmo.app 已损坏，无法打开”。这不是证书失效。
+
+- 分发：`release-artifacts/v<version>/Qingmo_<version>_universal.dmg`（Developer ID 签名、App 与 DMG 公证并 stapled）
+- 安装：打开 DMG，把 `Qingmo.app` 拖入“应用程序”，并按 `SHA256SUMS.txt` 校验 DMG
+- 已经拿到损坏的 `.app` 时，先尝试 `xattr -dr com.apple.quarantine /Applications/Qingmo.app`；若 `codesign --verify --deep --strict /Applications/Qingmo.app` 仍失败，重新发送 DMG
+- `make build-mac` 走完整本地发布链路（优先 `.release/release.sh`，缺失时用 `scripts/release/build-local.sh`），会签名、公证并生成 `latest.json`；`make build-mac-arch` 只是未签名的本地 DMG
+
+### 发布说明
+
+每个待发布版本都必须在 `resources/notes.json` 中有中英双语条目，`make build-mac` 和发布流程会在构建前强制校验，缺失即失败：
+
+```json
+{
+  "releaseNotesUrl": "https://github.com/wavexzore/Qingmo/releases/tag/v",
+  "versions": [
+    {
+      "version": "0.2.0",
+      "date": "2026-11-01",
+      "notes": {
+        "zh-CN": ["中文说明"],
+        "en-US": ["English note"]
+      }
+    }
+  ]
+}
+```
+
+校验与渲染：
+
+```bash
+pnpm release:check-notes
+pnpm release:test-notes
+node scripts/release/check-release-notes.mjs --out /tmp/notes.txt
 ```
 
 ### 质量门禁

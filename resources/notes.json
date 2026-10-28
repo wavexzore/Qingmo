@@ -1,0 +1,39 @@
+{
+  "releaseNotesUrl": "https://github.com/wavexzore/Qingmo/releases/tag/v",
+  "versions": [
+    {
+      "version": "0.1.1",
+      "date": "2026-10-28",
+      "notes": {
+        "zh-CN": [
+          "应用标识改为 com.wavexzore.qingmo，消除 macOS 将其末段误认为应用包扩展名的冲突。",
+          "升级后应用标识变化，偏好设置与缓存会重置一次。",
+          "签名、公证与自动更新校验链路保持不变。"
+        ],
+        "en-US": [
+          "Changed the bundle identifier to com.wavexzore.qingmo, removing the macOS conflict that treated its last segment as an app-bundle extension.",
+          "The bundle identifier changed, so preferences and caches reset once after upgrading.",
+          "Signing, notarization and update verification are unchanged."
+        ]
+      }
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-10-28",
+      "notes": {
+        "zh-CN": [
+          "首个公开版本：本地优先的 Markdown 编辑器，文档始终保存在本机。",
+          "Live Preview 覆盖完整 Markdown 语法，含表格、数学公式、脚注、TOC、frontmatter 与 Mermaid 图版。",
+          "支持多窗口编辑、系统「打开方式」、原生中文菜单与应用内自动更新。",
+          "新增「关于」窗口与本地 macOS 发布链路（签名、公证、latest.json 验签）。"
+        ],
+        "en-US": [
+          "First public release: a local-first Markdown editor that keeps every document on your machine.",
+          "Live Preview covers the full Markdown syntax, including tables, math, footnotes, TOC, frontmatter and Mermaid diagrams.",
+          "Multi-window editing, Finder \"Open With\", a native Chinese menu, and in-app auto-update.",
+          "New About window and a local macOS release pipeline with signing, notarization and latest.json verification."
+        ]
+      }
+    }
+  ]
+}

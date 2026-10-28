@@ -100,10 +100,48 @@ pnpm tauri dev     # desktop app with real file IO
 ### Build
 
 ```bash
-pnpm build          # frontend production build
-pnpm tauri build    # desktop bundle
-make build-mac      # local macOS DMG (Apple Silicon by default)
-make build-mac MAC_ARCH=x86_64
+pnpm build              # frontend production build
+pnpm tauri build        # desktop bundle
+make build-mac          # local release: version/notes checks + sign + notarize + latest.json
+make build-mac-arch     # lightweight macOS DMG, unsigned (Apple Silicon by default)
+make build-mac-arch MAC_ARCH=x86_64
+```
+
+### Distribution and install (macOS)
+
+Ship release builds as the DMG, never as a bare `.app` folder: WeChat, archive tools and cloud sync can drop extended attributes, executable permissions and signature resources, and the receiver then sees "Qingmo.app is damaged and can't be opened". The certificate is not at fault.
+
+- Distribute: `release-artifacts/v<version>/Qingmo_<version>_universal.dmg` (Developer ID signed; app and DMG notarized and stapled)
+- Install: open the DMG, drag `Qingmo.app` into Applications, and verify the DMG against `SHA256SUMS.txt`
+- If a bare `.app` already fails, try `xattr -dr com.apple.quarantine /Applications/Qingmo.app` first; if `codesign --verify --deep --strict /Applications/Qingmo.app` still fails, send the DMG again
+- `make build-mac` runs the full local release pipeline (prefers `.release/release.sh`, falls back to `scripts/release/build-local.sh`), signing, notarizing and generating `latest.json`; `make build-mac-arch` is an unsigned local DMG
+
+### Release notes
+
+Every version being released must have a bilingual entry in `resources/notes.json`. `make build-mac` and both release workflows check this before building and fail when the entry is missing:
+
+```json
+{
+  "releaseNotesUrl": "https://github.com/wavexzore/Qingmo/releases/tag/v",
+  "versions": [
+    {
+      "version": "0.2.0",
+      "date": "2026-11-01",
+      "notes": {
+        "zh-CN": ["中文说明"],
+        "en-US": ["English note"]
+      }
+    }
+  ]
+}
+```
+
+Check and render:
+
+```bash
+pnpm release:check-notes
+pnpm release:test-notes
+node scripts/release/check-release-notes.mjs --out /tmp/notes.txt
 ```
 
 ### Quality gates

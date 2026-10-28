@@ -32,6 +32,12 @@ jobs:
     outputs:
       release_id: ${{ steps.draft.outputs.release_id }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - name: Render bilingual release notes
+        run: node scripts/release/check-release-notes.mjs --version "${GITHUB_REF_NAME#v}" --out "$RUNNER_TEMP/RELEASE-NOTES.txt"
       - name: Create or reuse draft release
         id: draft
         env:
@@ -47,7 +53,7 @@ jobs:
             fi
             echo "reusing existing draft release $TAG"
           else
-            gh release create "$TAG" --draft --title "$TAG" --generate-notes
+            gh release create "$TAG" --draft --title "$TAG" --notes-file "$RUNNER_TEMP/RELEASE-NOTES.txt"
           fi
           echo "release_id=$(gh release view "$TAG" --json databaseId --jq .databaseId)" >>"$GITHUB_OUTPUT"
 
@@ -73,6 +79,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check tag matches every version file
         run: node scripts/release/check-versions.mjs --expect "${GITHUB_REF_NAME#v}"
+      - name: Check bilingual release notes
+        run: node scripts/release/check-release-notes.mjs --version "${GITHUB_REF_NAME#v}"
       - uses: dtolnay/rust-toolchain@8632757d5a758c452f724e9d837848c694a7bb48 # 1.91.1
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
