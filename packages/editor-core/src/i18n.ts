@@ -96,6 +96,9 @@ export interface EditorUiCopy {
   table: { editSource: string };
   codeBlock: {
     language: string;
+    searchLanguage: string;
+    plainText: string;
+    customLanguage: (value: string) => string;
     copy: string;
     copied: string;
     copyFailed: string;
@@ -223,6 +226,9 @@ export const DEFAULT_EDITOR_UI_COPY: EditorUiCopy = Object.freeze({
   table: { editSource: "Click a cell to edit the table" },
   codeBlock: {
     language: "Code language",
+    searchLanguage: "Search languages",
+    plainText: "Plain text",
+    customLanguage: (value: string) => `Use “${value}”`,
     copy: "Copy code",
     copied: "Copied",
     copyFailed: "Copy failed",

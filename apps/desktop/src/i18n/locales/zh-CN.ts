@@ -180,6 +180,9 @@ export const editor = {
   table: { editSource: "点击单元格编辑表格" },
   codeBlock: {
     language: "代码语言",
+    searchLanguage: "搜索语言",
+    plainText: "纯文本",
+    customLanguage: "使用“{{value}}”",
     copy: "复制代码",
     copied: "已复制",
     copyFailed: "复制失败",

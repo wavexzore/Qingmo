@@ -184,6 +184,9 @@ export const editor = {
   table: { editSource: "Click a cell to edit the table" },
   codeBlock: {
     language: "Code language",
+    searchLanguage: "Search languages",
+    plainText: "Plain text",
+    customLanguage: "Use “{{value}}”",
     copy: "Copy code",
     copied: "Copied",
     copyFailed: "Copy failed",

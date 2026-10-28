@@ -560,7 +560,7 @@ test("renders code block titles and highlighted lines", async ({ page }) => {
 
   const header = page.locator(".cm-md-code-block-widget .cm-md-code-header");
   await expect(header).toBeVisible();
-  await expect(header.locator("input.cm-md-code-language")).toHaveValue("js");
+  await expect(header.locator("button.cm-md-code-language")).toHaveText("js");
   await expect(header.locator(".cm-md-code-title")).toHaveText("app.js");
 
   const highlighted = page.locator(".cm-md-code-block-widget .cm-line.cm-md-code-highlight");
@@ -573,7 +573,7 @@ test("renders code block titles and highlighted lines", async ({ page }) => {
   // embedded editor owns the source, so fences are never revealed.
   await page.keyboard.press(`${modifier()}+Home`);
   await expect(page.locator(".cm-md-code-block-widget")).toBeVisible();
-  await expect(header.locator("input.cm-md-code-language")).toHaveValue("js");
+  await expect(header.locator("button.cm-md-code-language")).toHaveText("js");
   await expect(header.locator(".cm-md-code-title")).toHaveText("app.js");
   await expect(editorContent(page)).not.toContainText('```js title="app.js"');
 });
@@ -598,7 +598,7 @@ test("colors added and removed diff code lines", async ({ page }) => {
   await expect(removed).toHaveCount(1);
   await expect(added).toContainText("+ const port = 8080;");
   await expect(removed).toContainText("- const port = 3000;");
-  await expect(page.locator(".cm-md-code-language")).toHaveValue("diff");
+  await expect(page.locator(".cm-md-code-language")).toHaveText("diff");
 });
 
 const MEDIA_DOC = `<video src="./demo.mp4" controls width="480"></video>
@@ -870,7 +870,7 @@ test("labels unsupported note embeds and external diagrams", async ({ page }) =>
   const hint = page.locator(".cm-md-code-external");
   await expect(hint).toHaveText("需外部渲染");
   await expect(hint).toHaveAttribute("title", /PlantUML 需要外部渲染器/);
-  await expect(page.locator(".cm-md-code-language")).toHaveValue("plantuml");
+  await expect(page.locator(".cm-md-code-language")).toHaveText("plantuml");
   await expect(page.locator(".cm-md-code-block-widget")).toContainText("@startuml");
 });
 

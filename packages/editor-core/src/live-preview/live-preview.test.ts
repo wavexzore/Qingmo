@@ -770,7 +770,9 @@ describe("livePreviewPlugin", () => {
     view.dispatch({ selection: { anchor: doc.length } });
     const widget = view.dom.querySelector<HTMLElement>(".cm-md-code-block-widget");
     expect(widget).not.toBeNull();
-    expect(widget?.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe("js");
+    expect(widget?.querySelector<HTMLElement>(".cm-md-code-language-label")?.textContent).toBe(
+      "js",
+    );
     // The fence markers never reach the rendered document.
     expect(widget?.textContent).not.toContain("```");
     // The terminal chrome exposes the frame, language, copy and more actions.
@@ -854,32 +856,73 @@ describe("livePreviewPlugin", () => {
     expect(view.state.doc.toString()).toBe("```ts\nconst a = 1; // ok\n```\n\n尾段\n");
   });
 
-  it("commits the language chip into the opening fence and cancels on Escape", async () => {
+  it("picks a language from the dropdown and cancels on Escape", async () => {
     const doc = '```js title="app.js"\nconst x = 1;\n```\n';
     const parent = document.createElement("div");
     document.body.append(parent);
     const view = new EditorView({ state: stateFor(doc), parent });
     views.push({ view, parent });
 
-    const chip = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language");
-    expect(chip?.value).toBe("js");
+    const button = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language");
+    expect(button?.textContent).toContain("js");
 
-    chip!.value = "ts";
-    chip!.dispatchEvent(new Event("input"));
-    chip!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    button!.click();
+    const search = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language-search");
+    expect(search).not.toBeNull();
+    expect(view.dom.querySelector<HTMLElement>(".cm-md-code-language-popover")?.hidden).toBe(false);
+
+    // Filtering matches the display name, then Enter applies the first match.
+    search!.value = "type";
+    search!.dispatchEvent(new Event("input"));
+    const labels = Array.from(
+      view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-code-language-option"),
+    ).map((option) => option.textContent);
+    expect(labels).toContain("TypeScript");
+    search!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
     // The title attribute survives; only the language token is replaced.
-    expect(view.state.doc.toString()).toBe('```ts title="app.js"\nconst x = 1;\n```\n');
+    expect(view.state.doc.toString()).toBe('```typescript title="app.js"\nconst x = 1;\n```\n');
     await vi.waitFor(() => {
-      expect(view.dom.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe("ts");
+      expect(view.dom.querySelector<HTMLElement>(".cm-md-code-language-label")?.textContent).toBe(
+        "typescript",
+      );
     });
 
-    const next = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language");
+    // Reopening and pressing Escape leaves the fence untouched.
+    view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language")!.click();
+    const next = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language-search");
     next!.value = "python";
     next!.dispatchEvent(new Event("input"));
     next!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(view.state.doc.toString()).toBe('```ts title="app.js"\nconst x = 1;\n```\n');
-    expect(next?.value).toBe("ts");
+    expect(view.state.doc.toString()).toBe('```typescript title="app.js"\nconst x = 1;\n```\n');
+    expect(view.dom.querySelector<HTMLElement>(".cm-md-code-language-label")?.textContent).toBe(
+      "typescript",
+    );
+  });
+
+  it("applies a custom language typed into the picker", () => {
+    const doc = "```js\nconst x = 1;\n```\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language")!.click();
+    const search = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language-search");
+    search!.value = "Kotlin";
+    search!.dispatchEvent(new Event("input"));
+    const custom = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language-option");
+    expect(custom?.textContent).toBe("Use “Kotlin”");
+    search!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(view.state.doc.toString()).toBe("```kotlin\nconst x = 1;\n```\n");
+
+    // A language outside the catalog stays visible and selected when reopened.
+    view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language")!.click();
+    expect(
+      view.dom.querySelector<HTMLElement>('.cm-md-code-language-option[aria-selected="true"]')
+        ?.textContent,
+    ).toBe("kotlin");
   });
 
   it("keeps the embedded editor read-only when the document is read-only", () => {
@@ -891,9 +934,9 @@ describe("livePreviewPlugin", () => {
     const view = new EditorView({ state: state.update({}).state, parent });
     views.push({ view, parent });
 
-    const chip = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language");
-    expect(chip?.readOnly).toBe(true);
-    expect(chip?.tabIndex).toBe(-1);
+    const languageButton = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language");
+    expect(languageButton?.disabled).toBe(true);
+    expect(languageButton?.tabIndex).toBe(-1);
 
     const nestedDom = view.dom.querySelector<HTMLElement>(".cm-editor");
     const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
@@ -952,7 +995,7 @@ describe("livePreviewPlugin", () => {
     const hint = view.dom.querySelector(".cm-md-code-external");
     expect(hint?.textContent).toBe("需外部渲染");
     expect(hint?.getAttribute("title")).toContain("PlantUML 需要外部渲染器");
-    expect(view.dom.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe(
+    expect(view.dom.querySelector<HTMLElement>(".cm-md-code-language-label")?.textContent).toBe(
       "plantuml",
     );
     expect(view.dom.querySelector(".cm-md-code-block-widget")?.textContent).toContain("@startuml");
@@ -973,7 +1016,9 @@ describe("livePreviewPlugin", () => {
     views.push({ view, parent });
 
     view.dispatch({ selection: { anchor: doc.length } });
-    expect(view.dom.querySelector<HTMLInputElement>(".cm-md-code-language")?.value).toBe("js");
+    expect(view.dom.querySelector<HTMLElement>(".cm-md-code-language-label")?.textContent).toBe(
+      "js",
+    );
     expect(view.dom.querySelector(".cm-md-code-title")?.textContent).toBe("app.js");
     expect(
       Array.from(
