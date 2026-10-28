@@ -8,7 +8,7 @@ export type EditorTheme = "light" | "dark";
 
 /**
  * Shared by text lines and block widgets so both start on the same writing
- * column. Line numbers hang outside of it, in the window's page gutter.
+ * column. Line numbers hang outside of it, in the page's left inset.
  */
 const WRITING_INSET_PX = 20;
 
@@ -33,7 +33,9 @@ const editorThemeSpec = {
     lineHeight: "1.75",
   },
   ".cm-content": {
-    padding: "28px 0",
+    // The page inset lives on the content, not on the host wrapper, so the
+    // scroller (and its vertical scrollbar) can span the whole window width.
+    padding: `28px ${WRITING_INSET_PX}px`,
     caretColor: "var(--qm-accent)",
   },
   ".cm-line": {
