@@ -48,6 +48,7 @@ export interface E2eLocaleCall {
 
 export interface E2eBridge {
   setDiskText(path: string, text: string): void;
+  deleteDiskFile(path: string): void;
   getFile(path: string): E2eFileSnapshot | undefined;
   setOpenFile(path: string | null): void;
   setSaveAsFile(path: string | null): void;

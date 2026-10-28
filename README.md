@@ -45,7 +45,8 @@ The editor is built around three non-negotiable goals:
 ### Built for real files
 
 - Open and save through native dialogs. Markdown files are the only source of truth — no database export, no proprietary container.
-- **Debounced autosave** with single-flight writes, save-state feedback and hash-based external-change detection. A conflict pauses saving and offers reload or overwrite instead of silently losing work.
+- **Debounced autosave** with single-flight writes, save-state feedback and hash-based conflict protection. A conflict pauses saving and offers reload or overwrite instead of silently losing work.
+- **Live external-change detection**: Rust checks the disk version of every open document. A clean buffer reloads automatically, unsaved edits raise the conflict banner immediately, and a deleted file keeps the editor text with a warning.
 - **Atomic writes** in Rust, so an interrupted save never leaves a truncated file.
 - **Encoding and line-ending aware**: UTF-8 and BOM-marked UTF-16, LF/CRLF preserved. MDX and mixed line endings open read-only with an explicit reason.
 - **Large-file mode** above 2M UTF-16 units: Live Preview turns off, the status bar says so, and editing continues up to the 10 MiB limit.
@@ -67,7 +68,7 @@ Qingmo is **pre-1.0** and under active development. The editor MVP is usable tod
 | Area | State |
 | --- | --- |
 | Editor MVP (open, edit, save, Live Preview, themes, palette, large files) | ✅ Implemented and covered by unit, Rust integration and Playwright E2E tests |
-| Save reliability (autosave, atomic write, conflict banner, close guard) | ✅ Implemented |
+| Save reliability (autosave, atomic write, conflict banner, live external-change detection, close guard) | ✅ Implemented |
 | Native menu, multi-window, runtime i18n (zh-CN / en) | ✅ Implemented and covered by unit, Rust contract and Playwright E2E tests; real-device menu smoke pending |
 | macOS signed auto-update | ✅ Local release chain validated; real-device install smoke test still pending |
 | Workspace file tree, full-text search, SQLite index, crash recovery | 🚧 Planned for P2 |
@@ -205,7 +206,7 @@ docs/                Local design docs and task records (not versioned)
 
 ## Roadmap
 
-- **P2 — Workspace**: file tree, indexed search, recovery, external-change watching, unified settings.
+- **P2 — Workspace**: file tree, indexed search, recovery, workspace-wide file watching, unified settings.
 - **P3 — Plugins**: signed manifests, Worker logic host, sandboxed iframe UI, capability broker, three first-party plugins (Mermaid, math, export).
 - **Release engineering**: Windows/Linux installers, cross-platform updates, real-device update verification, changelog automation.
 

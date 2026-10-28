@@ -694,6 +694,11 @@ pub fn run() {
         .manage(state::ShellLocale::default())
         .setup(|app| {
             app.manage(app.handle().clone());
+            let registry = app.state::<state::DocumentRegistry>().inner().clone();
+            app.manage(state::DocumentWatcher::start(
+                app.handle().clone(),
+                registry,
+            ));
             let log_dir = app.path().app_log_dir().ok();
             if let Some(dir) = log_dir.as_ref() {
                 if let Err(error) = services::logging::init(dir.clone()) {
@@ -754,6 +759,17 @@ pub fn run() {
         } => {
             app_handle.state::<state::FocusTracker>().clear(&label);
             app_handle.state::<state::PreviewModes>().clear(&label);
+            // A window can be destroyed without the normal close handshake
+            // (for example a crashed webview); release the document and its
+            // watcher so the registry does not outlive the window.
+            if let Some(token) = app_handle.state::<state::WindowSessions>().release(&label) {
+                app_handle
+                    .state::<state::DocumentRegistry>()
+                    .release(&token);
+                if let Some(watcher) = app_handle.try_state::<state::DocumentWatcher>() {
+                    watcher.unwatch(&token);
+                }
+            }
         }
         RunEvent::WindowEvent {
             label,

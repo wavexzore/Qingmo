@@ -7,6 +7,7 @@ import { EditorHost } from "./EditorHost";
 import { useDocumentSession } from "./DocumentSessionContext";
 import { useEditor } from "./useEditor";
 import { useEditorStatus } from "./useEditorStatus";
+import { useExternalDocumentChanges } from "./useExternalDocumentChanges";
 import { useSaveCoordinator } from "./useSaveCoordinator";
 
 function DocumentEditor() {
@@ -15,6 +16,7 @@ function DocumentEditor() {
   const { coordinator } = useDocumentSession();
   const status = useEditorStatus(session);
   const save = useSaveCoordinator(coordinator);
+  useExternalDocumentChanges(session, coordinator);
   const [dismissedConflict, setDismissedConflict] = useState<string | null>(null);
   const [conflictActionError, setConflictActionError] = useState<string | null>(null);
 

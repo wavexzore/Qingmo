@@ -217,6 +217,11 @@ export const editor = {
     info: "Info",
     unknown: "Diagram",
   },
+  external: {
+    reloaded: "The file changed on disk and was reloaded.",
+    deleted: "The file was deleted or moved; the editor still holds your text.",
+    reloadFailed: "A disk change was detected but could not be reloaded.",
+  },
 } as const;
 
 export const errors = {

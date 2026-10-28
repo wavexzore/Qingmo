@@ -7,7 +7,7 @@ use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{FilePayload, SaveResult};
 use crate::services::AtomicWriter;
 use crate::state::document_registry::ensure_supported_extension;
-use crate::state::{DocumentRegistry, FocusTracker, WindowSessions};
+use crate::state::{DocumentRegistry, DocumentWatcher, FocusTracker, WindowSessions};
 
 /// Native window title for an open document.
 ///
@@ -136,8 +136,24 @@ pub(crate) fn opened_paths(urls: &[Url]) -> Vec<PathBuf> {
 pub fn document_take_pending<R: tauri::Runtime>(
     window: WebviewWindow<R>,
     sessions: State<'_, WindowSessions>,
+    registry: State<'_, DocumentRegistry>,
 ) -> Result<Option<FilePayload>, AppError> {
-    Ok(sessions.take_pending(window.label()))
+    let payload = sessions.take_pending(window.label());
+
+    // Start watching only after the window has consumed its payload, so the
+    // first event cannot be emitted before the webview has installed its
+    // listener.
+    if let Some(current) = payload.as_ref() {
+        if let Ok(record) = registry.get(&current.doc_token) {
+            let path = record.canonical_target.clone();
+            drop(record);
+            if let Some(watcher) = window.try_state::<DocumentWatcher>() {
+                watcher.watch(&current.doc_token, &path);
+            }
+        }
+    }
+
+    Ok(payload)
 }
 
 #[tauri::command]
@@ -149,6 +165,7 @@ pub async fn document_save_as<R: tauri::Runtime>(
     text: String,
 ) -> Result<FilePayload, AppError> {
     let registry = registry.inner().clone();
+    let watch_registry = registry.clone();
     let sessions = sessions.inner().clone();
     let untitled_file_name = locale.untitled_file_name();
     let app_name = locale
@@ -191,6 +208,13 @@ pub async fn document_save_as<R: tauri::Runtime>(
         tracing::warn!(%error, "failed to update the window title");
     }
     sessions.set_token(window.label(), payload.doc_token.clone());
+    if let Ok(record) = watch_registry.get(&payload.doc_token) {
+        let path = record.canonical_target.clone();
+        drop(record);
+        if let Some(watcher) = window.try_state::<DocumentWatcher>() {
+            watcher.watch(&payload.doc_token, &path);
+        }
+    }
     Ok(payload)
 }
 

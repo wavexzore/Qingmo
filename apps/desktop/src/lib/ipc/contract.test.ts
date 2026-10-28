@@ -48,17 +48,19 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.appAboutOpenLink]).toBe("allow-app-about-open-link");
   });
 
-  it("keeps the four events stable", () => {
+  it("keeps the five events stable", () => {
     expect(EVENT_NAMES).toEqual([
       "app://close-requested",
       "app://update-state",
       "app://update-progress",
       "app://menu-action",
+      "app://document-changed",
     ]);
     expect(EVENTS.closeRequested).toBe("app://close-requested");
     expect(EVENTS.updateState).toBe("app://update-state");
     expect(EVENTS.updateProgress).toBe("app://update-progress");
     expect(EVENTS.menuAction).toBe("app://menu-action");
+    expect(EVENTS.documentChanged).toBe("app://document-changed");
   });
 
   it("exposes every native menu action once", () => {

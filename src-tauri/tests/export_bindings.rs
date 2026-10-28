@@ -1,8 +1,9 @@
 use qingmo_lib::error::AppError;
 use qingmo_lib::ipc::dto::{
     AboutInfo, AboutLink, AppLanguage, ApplyLocaleRequest, CloseRequestedPayload, ConflictDetails,
-    FilePayload, LogEntry, LogLevel, LogStats, MenuActionPayload, NativeShellLabels, SaveRequest,
-    SaveResult, UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
+    DocumentChangeKind, DocumentChangedPayload, FilePayload, LogEntry, LogLevel, LogStats,
+    MenuActionPayload, NativeShellLabels, SaveRequest, SaveResult, UpdateInfo, UpdatePhase,
+    UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
 };
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
@@ -37,4 +38,7 @@ fn export_bindings() {
     AppLanguage::export_all(&config).expect("AppLanguage bindings must export");
     NativeShellLabels::export_all(&config).expect("NativeShellLabels bindings must export");
     ApplyLocaleRequest::export_all(&config).expect("ApplyLocaleRequest bindings must export");
+    DocumentChangeKind::export_all(&config).expect("DocumentChangeKind bindings must export");
+    DocumentChangedPayload::export_all(&config)
+        .expect("DocumentChangedPayload bindings must export");
 }

@@ -32,3 +32,6 @@ playwright-report/
 blob-report/
 
 third_party/
+AGENTS.md
+.gitignore
+CLAUDE.md
