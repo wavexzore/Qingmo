@@ -10,3 +10,4 @@ src-tauri/gen
 .claude
 third_party
 packages/shared/src/generated
+src-tauri/linux/*.hbs

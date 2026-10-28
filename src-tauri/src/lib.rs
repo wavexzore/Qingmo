@@ -321,7 +321,7 @@ fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
     let mut menus = Vec::new();
     if macos {
         menus.push(MenuSpec {
-            title: "Qingmo",
+            title: "青墨",
             items: vec![
                 MenuEntry::Separator,
                 action(MENU_QUIT, "Quit", Some("CmdOrCtrl+Q")),
