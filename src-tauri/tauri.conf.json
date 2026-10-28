@@ -38,6 +38,14 @@
     "createUpdaterArtifacts": true,
     "license": "Apache-2.0",
     "licenseFile": "../LICENSE",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown", "mdx"],
+        "name": "Markdown",
+        "description": "Markdown 文档",
+        "role": "Editor"
+      }
+    ],
     "copyright": "Copyright 2026 Qingmo Contributors",
     "icon": [
       "icons/32x32.png",
