@@ -9,8 +9,8 @@ describe("buildEditorUiCopy", () => {
     const zh = buildEditorUiCopy("zh-CN");
     const en = buildEditorUiCopy("en");
 
-    expect(zh.version).toBe("zh-CN:1");
-    expect(en.version).toBe("en:1");
+    expect(zh.version).toBe("zh-CN:2");
+    expect(en.version).toBe("en:2");
     expect(zh.version).not.toBe(en.version);
   });
 
@@ -76,6 +76,19 @@ describe("buildEditorUiCopy", () => {
         copy.mermaid.renderTimeout,
         copy.math.editSource,
         copy.table.editSource,
+        copy.search.find,
+        copy.search.findPlaceholder,
+        copy.search.replace,
+        copy.search.replacePlaceholder,
+        copy.search.previous,
+        copy.search.next,
+        copy.search.matchCase,
+        copy.search.regexp,
+        copy.search.wholeWord,
+        copy.search.selectAll,
+        copy.search.replaceOne,
+        copy.search.replaceAll,
+        copy.search.close,
         copy.definitionList.editSource,
         copy.comments.wrapperTitle,
         copy.comments.html,
@@ -116,6 +129,7 @@ describe("buildEditorUiCopy", () => {
       ...Object.values(en.frontmatter),
       ...Object.values(en.media),
       ...Object.values(en.mermaid),
+      ...Object.values(en.search),
       ...Object.values(en.comments),
       ...Object.values(en.diagramKinds),
     ]) {

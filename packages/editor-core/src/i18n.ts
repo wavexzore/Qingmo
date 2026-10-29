@@ -4,7 +4,7 @@ import { EditorView, WidgetType } from "@codemirror/view";
 import type { MermaidDiagramKind } from "./live-preview/mermaid-kinds";
 
 /** Bump when fields are added/renamed or the default copy changes meaning. */
-export const EDITOR_COPY_SCHEMA_VERSION = 1;
+export const EDITOR_COPY_SCHEMA_VERSION = 2;
 
 /** True when a transaction changed the injected copy (language/schema). */
 export function editorCopyChanged(transaction: Transaction): boolean {
@@ -104,6 +104,21 @@ export interface EditorUiCopy {
     copyFailed: string;
     more: string;
     selectAll: string;
+  };
+  search: {
+    find: string;
+    findPlaceholder: string;
+    replace: string;
+    replacePlaceholder: string;
+    previous: string;
+    next: string;
+    matchCase: string;
+    regexp: string;
+    wholeWord: string;
+    selectAll: string;
+    replaceOne: string;
+    replaceAll: string;
+    close: string;
   };
   definitionList: { editSource: string };
   comments: {
@@ -234,6 +249,21 @@ export const DEFAULT_EDITOR_UI_COPY: EditorUiCopy = Object.freeze({
     copyFailed: "Copy failed",
     more: "More actions",
     selectAll: "Select all code",
+  },
+  search: {
+    find: "Find",
+    findPlaceholder: "Find…",
+    replace: "Replace",
+    replacePlaceholder: "Replace with…",
+    previous: "Previous match",
+    next: "Next match",
+    matchCase: "Match case",
+    regexp: "Use regular expression",
+    wholeWord: "Match whole word",
+    selectAll: "All",
+    replaceOne: "Replace",
+    replaceAll: "Replace all",
+    close: "Close",
   },
   definitionList: { editSource: "Click to edit the definition list source" },
   comments: {
