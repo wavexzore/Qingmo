@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { expect, type Page } from "@playwright/test";
 
-import type { SeedFile } from "./types";
+import type { SeedDraft, SeedFile, SeedViewState } from "./types";
 
 export const NOTE_PATH = "/docs/note.md";
 export const CONFLICT_PATH = "/docs/conflict.md";
@@ -49,13 +49,35 @@ export function editorActiveLine(page: Page) {
     .locator("> .cm-scroller > .cm-content > .cm-line.cm-activeLine");
 }
 
-export async function openApp(page: Page, files: SeedFile[] = BASE_FILES): Promise<void> {
-  await page.addInitScript((seed) => {
-    window.__QINGMO_E2E_SEED__ = seed;
-  }, files);
+export interface OpenAppSeeds {
+  drafts?: SeedDraft[];
+  viewStates?: Array<{ path: string; state: SeedViewState }>;
+}
+
+export async function openApp(
+  page: Page,
+  files: SeedFile[] = BASE_FILES,
+  seeds: OpenAppSeeds = {},
+): Promise<void> {
+  await page.addInitScript(
+    (payload) => {
+      window.__QINGMO_E2E_SEED__ = payload.files;
+      if (payload.drafts) {
+        window.__QINGMO_E2E_SEED_DRAFTS__ = payload.drafts;
+      }
+      if (payload.viewStates) {
+        window.__QINGMO_E2E_SEED_VIEW_STATE__ = payload.viewStates;
+      }
+    },
+    { files, ...seeds },
+  );
   await page.goto("/");
   await page.waitForFunction(() => Boolean(window.__QINGMO_E2E__));
   await expect(page.getByTestId("untitled-editor")).toBeVisible();
+}
+
+export async function getViewState(page: Page, path: string): Promise<SeedViewState | null> {
+  return page.evaluate((target) => window.__QINGMO_E2E__?.getViewState(target) ?? null, path);
 }
 
 export async function openSeededFile(page: Page, fileName: string): Promise<void> {
