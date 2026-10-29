@@ -13,6 +13,7 @@ import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { renderInlineMarkdown } from "./inline-render";
 import { readDetailsBlocks } from "./details";
+import { isLinkOpenGesture, isOpenableHref, linkHrefAt, openExternalLink } from "./link-click";
 import { readFrontMatter } from "./frontmatter";
 import { HtmlTableWidget, readHtmlTables } from "./html-tables";
 import { readTable, type ParsedTable, type TableAlignment, type TableCellRange } from "./specs";
@@ -149,7 +150,7 @@ function buildTableBlocks(state: EditorState): TableBlockState {
 }
 
 interface CellEditor {
-  input: HTMLInputElement;
+  editor: HTMLTextAreaElement;
   range: TableCellRange;
   original: string;
 }
@@ -257,7 +258,7 @@ class TableBlockWidget extends WidgetType {
       }
       const changes: CellChange[] = [];
       for (const editor of editors) {
-        if (editor.input.value === editor.original) {
+        if (editor.editor.value === editor.original) {
           continue;
         }
         const raw = doc.sliceString(editor.range.from, editor.range.to);
@@ -266,7 +267,7 @@ class TableBlockWidget extends WidgetType {
         changes.push({
           from: editor.range.from + leading,
           to: editor.range.to - trailing,
-          insert: escapeTableCell(editor.input.value),
+          insert: escapeTableCell(editor.editor.value),
         });
       }
       return changes.sort((left, right) => left.from - right.from);
@@ -296,7 +297,7 @@ class TableBlockWidget extends WidgetType {
       const tableTo = changeSet.mapPos(this.table.to, 1);
       originalSource = view.state.doc.sliceString(this.table.from, tableTo);
       for (const editor of editors) {
-        editor.original = editor.input.value;
+        editor.original = editor.editor.value;
       }
       return true;
     };
@@ -353,19 +354,21 @@ class TableBlockWidget extends WidgetType {
       cell.append(rendered);
 
       if (range && editable) {
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "cm-md-table-cell-input";
-        input.value = range.text;
-        input.dataset.row = String(row);
-        input.dataset.col = String(column);
-        input.spellcheck = false;
-        input.setAttribute(
+        // A textarea, not an input: raw cell text wraps inside the cell while
+        // editing instead of being clipped to a single horizontal line.
+        const editor = document.createElement("textarea");
+        editor.rows = 1;
+        editor.className = "cm-md-table-cell-input";
+        editor.value = range.text;
+        editor.dataset.row = String(row);
+        editor.dataset.col = String(column);
+        editor.spellcheck = false;
+        editor.setAttribute(
           "aria-label",
           `${this.copy.table.editSource} (${row < 0 ? 1 : row + 2}, ${column + 1})`,
         );
-        cell.append(input);
-        editors.push({ input, range, original: range.text });
+        cell.append(editor);
+        editors.push({ editor, range, original: range.text });
       }
 
       return cell;
@@ -415,24 +418,50 @@ class TableBlockWidget extends WidgetType {
     wrapper.append(table);
 
     if (!editable) {
+      // Read-only tables have no cell editors. Rendered links still open on a
+      // plain click, matching Typora's uneditable-document behaviour.
+      wrapper.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        const href = linkHrefAt(event.target);
+        if (!href || !isOpenableHref(href)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        openExternalLink(view, href);
+      });
       return wrapper;
     }
 
-    // The transparent cell inputs cover the content box; clicks on a cell
+    // The transparent cell editors cover the content box; clicks on a cell
     // border or the table frame would otherwise fall through to CodeMirror
     // and put the document selection inside the hidden Markdown source.
     wrapper.addEventListener("mousedown", (event) => {
-      if (event.button !== 0 || event.target instanceof HTMLInputElement) {
+      if (event.button !== 0) {
+        return;
+      }
+      const href = linkHrefAt(event.target);
+      if (href && isOpenableHref(href) && isLinkOpenGesture(event, this.readOnly)) {
+        // ⌘/Ctrl+Click opens the link and never moves the caret into the
+        // hidden Markdown source.
+        event.preventDefault();
+        event.stopPropagation();
+        openExternalLink(view, href);
+        return;
+      }
+      if (event.target instanceof HTMLTextAreaElement) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
       const cell = event.target instanceof Element ? event.target.closest("th, td") : null;
-      const input = cell?.querySelector<HTMLInputElement>(".cm-md-table-cell-input");
-      if (input) {
-        input.focus();
-        const end = input.value.length;
-        input.setSelectionRange(end, end);
+      const editor = cell?.querySelector<HTMLTextAreaElement>(".cm-md-table-cell-input");
+      if (editor) {
+        editor.focus();
+        const end = editor.value.length;
+        editor.setSelectionRange(end, end);
       }
     });
 
@@ -445,7 +474,7 @@ class TableBlockWidget extends WidgetType {
     });
 
     wrapper.addEventListener("keydown", (event) => {
-      if (!(event.target instanceof HTMLInputElement) || event.isComposing) {
+      if (!(event.target instanceof HTMLTextAreaElement) || event.isComposing) {
         return;
       }
       if (event.key === "Enter") {
@@ -461,7 +490,7 @@ class TableBlockWidget extends WidgetType {
       if (event.key === "Escape") {
         event.preventDefault();
         for (const editor of editors) {
-          editor.input.value = editor.original;
+          editor.editor.value = editor.original;
         }
         view.dispatch({
           selection: { anchor: Math.min(this.table.to + 1, view.state.doc.length) },
@@ -472,7 +501,7 @@ class TableBlockWidget extends WidgetType {
       if (
         event.key === "Tab" &&
         !event.shiftKey &&
-        editors[editors.length - 1]?.input === event.target
+        editors[editors.length - 1]?.editor === event.target
       ) {
         event.preventDefault();
         addRow();

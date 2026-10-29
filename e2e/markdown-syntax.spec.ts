@@ -7,6 +7,7 @@ import {
   editorActiveLine,
   editorContent,
   editorLines,
+  getOpenedLinks,
   modifier,
   openApp,
   openSeededFile,
@@ -780,6 +781,22 @@ test("renders inline, reference and bare links with titles", async ({ page }) =>
     "https://bare.example",
   );
   await expect(editorLines(page).first()).not.toContainText("[ref]");
+});
+
+test("opens an inline link with the platform modifier", async ({ page }) => {
+  await openApp(page, [{ path: "/docs/links.md", text: LINK_DOC }]);
+  await openSeededFile(page, "links.md");
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
+
+  const link = page.locator('.cm-md-link[title="悬停提示"]');
+  await expect(link).toBeVisible();
+  await link.click({ modifiers: [modifier()] });
+  await expect.poll(() => getOpenedLinks(page)).toEqual(["https://example.com"]);
+
+  // A plain click keeps editing the document: it moves the caret instead of
+  // launching the browser.
+  await link.click();
+  expect(await getOpenedLinks(page)).toEqual(["https://example.com"]);
 });
 
 const HTML_ANCHOR_DOC = `<a id="install"></a>

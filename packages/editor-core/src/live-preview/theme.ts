@@ -1384,7 +1384,7 @@ export const livePreviewTheme = EditorView.theme(
       position: "relative",
     },
     // Rendered cells stay visible while another cell is edited; the
-    // transparent input on top handles clicks, caret placement and typing.
+    // transparent editor on top handles clicks, caret placement and typing.
     ".cm-md-table-cell-view": {
       display: "block",
     },
@@ -1401,6 +1401,11 @@ export const livePreviewTheme = EditorView.theme(
       textAlign: "inherit",
       opacity: "0",
       cursor: "text",
+      // Raw Markdown is often longer than the rendered cell; wrapping keeps
+      // the whole cell value readable instead of clipping one endless line.
+      whiteSpace: "pre-wrap",
+      overflowY: "auto",
+      resize: "none",
     },
     ".cm-md-table-cell-input:focus": {
       opacity: "1",
@@ -1408,6 +1413,14 @@ export const livePreviewTheme = EditorView.theme(
       outlineOffset: "-2px",
       borderRadius: "2px",
     },
+    // Unfocused cells raise rendered links above the transparent editor so
+    // ⌘/Ctrl+Click can open them; a focused cell hands the pointer back to
+    // its editor.
+    ".cm-md-table-block th:not(:focus-within) .cm-md-link[data-href], .cm-md-table-block td:not(:focus-within) .cm-md-link[data-href]":
+      {
+        position: "relative",
+        zIndex: "1",
+      },
     ".cm-md-table-block th": {
       backgroundColor: "var(--qm-surface-muted)",
       fontWeight: "600",

@@ -82,6 +82,9 @@ export function createTauriIpc(): IpcPort {
       // Rust takes `request: ApplyLocaleRequest`; Tauri does not spread structs.
       await invokeCommand(COMMANDS.appApplyLocale, { request });
     },
+    async appOpenExternal(href) {
+      await invokeCommand(COMMANDS.appOpenExternal, { href });
+    },
     sessionViewStateGet(path) {
       return invokeCommand(COMMANDS.sessionViewStateGet, { path });
     },

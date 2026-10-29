@@ -188,6 +188,11 @@ export async function getLocaleCalls(
   return page.evaluate(() => window.__QINGMO_E2E__?.getLocaleCalls() ?? []);
 }
 
+/** External links the editor asked the OS to open, in call order. */
+export async function getOpenedLinks(page: Page): Promise<string[]> {
+  return page.evaluate(() => window.__QINGMO_E2E__?.getOpenedLinks() ?? []);
+}
+
 export async function setLogFileCount(page: Page, count: number): Promise<void> {
   await page.evaluate((next) => window.__QINGMO_E2E__?.setLogFileCount(next), count);
 }

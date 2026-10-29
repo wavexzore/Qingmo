@@ -141,7 +141,7 @@ test("renders a GFM table and edits a cell without revealing its source", async 
   await expect(block.locator("th").first()).toHaveText("A");
   await expect(page.locator(".cm-content")).not.toContainText("|---|---|");
 
-  const cell = block.locator('input[data-row="0"][data-col="0"]');
+  const cell = block.locator('textarea[data-row="0"][data-col="0"]');
   await cell.click();
   await cell.fill("9");
   await page.keyboard.press("Enter");

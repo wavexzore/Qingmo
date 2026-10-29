@@ -1,9 +1,23 @@
 import { expect, test } from "@playwright/test";
 
-import { getFileText, modifier, openApp, openSeededFile } from "./helpers";
+import { getFileText, getOpenedLinks, modifier, openApp, openSeededFile } from "./helpers";
 
 const TABLE_PATH = "/docs/table-edit.md";
 const TABLE_DOC = "# 表格\n\n| 名称 | 数量 |\n| :--- | ---: |\n| 苹果 | 2 |\n\n结尾段落\n";
+
+const LINK_TABLE_PATH = "/docs/table-links.md";
+const LINK_TABLE_DOC = [
+  "# 链接表格",
+  "",
+  "| 名称 | 链接 |",
+  "| --- | --- |",
+  "| 长链接 | https://www.liepin.com/job/1982639449.shtml ｜ https://www.liepin.com/job/1980694393.shtml ｜ https://www.quanzhi.com/job/6a749e07f87cf99210b41cc0 |",
+  "",
+  "结尾段落",
+  "",
+].join("\n");
+const LINK_TABLE_VALUE =
+  "https://www.liepin.com/job/1982639449.shtml ｜ https://www.liepin.com/job/1980694393.shtml ｜ https://www.quanzhi.com/job/6a749e07f87cf99210b41cc0";
 
 const CODE_PATH = "/docs/code-badge.md";
 const CODE_DOC =
@@ -17,7 +31,7 @@ test("edits a rendered table cell without revealing Markdown source", async ({ p
   await expect(table).toBeVisible();
   await expect(page.locator(".cm-md-table-header")).toHaveCount(0);
 
-  const cell = table.locator('input[data-row="0"][data-col="1"]');
+  const cell = table.locator('textarea[data-row="0"][data-col="1"]');
   await cell.click();
   await cell.fill("5");
   await page.keyboard.press("Enter");
@@ -131,4 +145,73 @@ test("edits code in place and updates the fence language", async ({ page }) => {
 
   await expect.poll(() => getFileText(page, CODE_PATH)).toContain("```javascript\n");
   await expect(chip).toHaveText("javascript");
+});
+
+test("edits a long cell as wrapped raw Markdown instead of a clipped line", async ({ page }) => {
+  await openApp(page, [{ path: LINK_TABLE_PATH, text: LINK_TABLE_DOC }]);
+  await openSeededFile(page, "table-links.md");
+
+  // Bare GFM URLs inside a cell render as links and keep their destination.
+  await expect(
+    page.locator(
+      '.cm-md-table-block .cm-md-link[data-href="https://www.liepin.com/job/1980694393.shtml"]',
+    ),
+  ).toHaveCount(1);
+
+  const cell = page.locator('.cm-md-table-cell-input[data-row="0"][data-col="1"]');
+  await expect(cell).toHaveJSProperty("tagName", "TEXTAREA");
+  await expect(cell).toHaveValue(LINK_TABLE_VALUE);
+
+  await cell.focus();
+  const metrics = await cell.evaluate((element) => {
+    const textarea = element as HTMLTextAreaElement;
+    const style = getComputedStyle(textarea);
+    return {
+      whiteSpace: style.whiteSpace,
+      scrollWidth: textarea.scrollWidth,
+      clientWidth: textarea.clientWidth,
+      scrollHeight: textarea.scrollHeight,
+      clientHeight: textarea.clientHeight,
+    };
+  });
+  // The raw value wraps inside the cell: nothing is clipped horizontally and
+  // the whole cell text stays visible without inner scrolling.
+  expect(metrics.whiteSpace).toBe("pre-wrap");
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
+});
+
+test("opens a table link with the platform modifier and keeps a plain click editable", async ({
+  page,
+}) => {
+  await openApp(page, [{ path: LINK_TABLE_PATH, text: LINK_TABLE_DOC }]);
+  await openSeededFile(page, "table-links.md");
+
+  const second = "https://www.liepin.com/job/1980694393.shtml";
+  const link = page.locator(`.cm-md-table-block .cm-md-link[data-href="${second}"]`);
+  await expect(link).toBeVisible();
+  await link.click({ modifiers: [modifier()] });
+  await expect.poll(() => getOpenedLinks(page)).toEqual([second]);
+
+  // A plain click never opens the link; it focuses the cell editor so the raw
+  // destination stays editable.
+  const first = page.locator(
+    '.cm-md-table-block .cm-md-link[data-href="https://www.liepin.com/job/1982639449.shtml"]',
+  );
+  await first.click();
+  await expect(page.locator('.cm-md-table-cell-input[data-row="0"][data-col="1"]')).toBeFocused();
+  expect(await getOpenedLinks(page)).toEqual([second]);
+});
+
+test("opens a table link on a plain click in a read-only document", async ({ page }) => {
+  const path = "/docs/table-links.mdx";
+  await openApp(page, [{ path, text: LINK_TABLE_DOC, readOnlyReason: "mdx" }]);
+  await openSeededFile(page, "table-links.mdx");
+
+  const target = "https://www.quanzhi.com/job/6a749e07f87cf99210b41cc0";
+  const link = page.locator(`.cm-md-table-block .cm-md-link[data-href="${target}"]`);
+  await expect(link).toBeVisible();
+  await expect(page.locator(".cm-md-table-cell-input")).toHaveCount(0);
+  await link.click();
+  await expect.poll(() => getOpenedLinks(page)).toEqual([target]);
 });

@@ -143,6 +143,7 @@ describe("openFile", () => {
       appCloseConfirm: vi.fn(),
       appSetLivePreview: vi.fn(),
       appApplyLocale: vi.fn(),
+      appOpenExternal: vi.fn(),
       sessionViewStateGet: vi.fn(),
       sessionViewStateSet: vi.fn(),
       sessionDraftWrite: vi.fn(),

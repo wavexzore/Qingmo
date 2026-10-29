@@ -20,6 +20,7 @@ import { EditorSession } from "./EditorSession";
 import { SaveCoordinator } from "./save/SaveCoordinator";
 import { DraftJournal } from "./recovery/DraftJournal";
 import { createDocumentSession } from "./session/createDocumentSession";
+import { createOpenExternal } from "./session/open-external";
 import { ViewStateRecorder } from "./session/ViewStateRecorder";
 
 interface SessionBundle {
@@ -124,9 +125,10 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
       EditorSession.createUntitled(i18n.t("editor:empty.title"), {
         placeholder: i18n.t("editor:empty.placeholder"),
         uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
+        openExternal: createOpenExternal(ipc),
       }),
     );
-  }, [startSession]);
+  }, [ipc, startSession]);
 
   // The startup document is a resource with a subscription. Creating it in a
   // layout effect keeps StrictMode's setup/cleanup/setup sequence correct: a
@@ -257,6 +259,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
           initialDirty: true,
           placeholder: i18n.t("editor:empty.placeholder"),
           uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
+          openExternal: createOpenExternal(ipc),
         });
         setSession(session, { draftId: id });
         setDrafts((previous) => previous.filter((draft) => draft.id !== id));

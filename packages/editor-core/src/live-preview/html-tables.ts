@@ -5,6 +5,7 @@ import { EditorView, WidgetType } from "@codemirror/view";
 import { DEFAULT_EDITOR_UI_COPY, type EditorUiCopy } from "../i18n";
 import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { renderInlineMarkdown } from "./inline-render";
+import { isLinkOpenGesture, isOpenableHref, linkHrefAt, openExternalLink } from "./link-click";
 import type { MarkdownNode } from "./markdown-node";
 import type { TableAlignment } from "./specs";
 
@@ -427,9 +428,17 @@ class HtmlTableWidget extends WidgetType {
     wrapper.append(renderHtmlTable(this.table, this.copy));
 
     // The widget has no editable text: clicking it reveals the source and
-    // places the caret on the opening line.
+    // places the caret on the opening line. ⌘/Ctrl+Click on a rendered link
+    // opens it instead.
     wrapper.addEventListener("mousedown", (event) => {
       if (event.button !== 0) {
+        return;
+      }
+      const href = linkHrefAt(event.target);
+      if (href && isOpenableHref(href) && isLinkOpenGesture(event, view.state.readOnly)) {
+        event.preventDefault();
+        event.stopPropagation();
+        openExternalLink(view, href);
         return;
       }
       event.preventDefault();

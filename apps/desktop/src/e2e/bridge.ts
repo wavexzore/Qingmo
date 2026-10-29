@@ -53,6 +53,8 @@ export interface E2eBridge {
   getCloseConfirms(): CloseConfirmRequest[];
   getLivePreviewMenuCalls(): boolean[];
   getLocaleCalls(): ApplyLocaleRequest[];
+  /** External links the editor asked the OS to open, in call order. */
+  getOpenedLinks(): string[];
   setLogFileCount(count: number): void;
   setUpdateAvailable(update: E2eUpdateInfo | null): void;
   setUpdateError(operation: "check" | "download" | "install", code: AppErrorCode | null): void;
@@ -139,6 +141,7 @@ export function createE2eServices(): {
     getCloseConfirms: () => [...ipc.closeConfirmCalls],
     getLivePreviewMenuCalls: () => [...ipc.livePreviewCalls],
     getLocaleCalls: () => [...ipc.localeCalls],
+    getOpenedLinks: () => [...ipc.openedLinks],
     setLogFileCount: (count) => {
       logs.fileCount = count;
     },
