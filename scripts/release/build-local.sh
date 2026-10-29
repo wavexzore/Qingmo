@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Build, sign, notarize and validate a local macOS universal release.
 #
+# When the Windows installer from scripts/release/build-windows.sh is present
+# together with its updater signature, it is checksummed and added to
+# latest.json as windows-x86_64; `make build` runs the Windows step first.
+#
 # This script never uploads or publishes. It writes a self-contained
 # release-artifacts/v<version>/ directory that can be uploaded with gh.
 set -euo pipefail
@@ -289,7 +293,19 @@ if [[ "$out_dir" == "$macos_dir" ]]; then
   die "--out-dir must not be the Tauri macOS bundle directory"
 fi
 mkdir -p "$out_dir"
-cp -f "$tarball" "$sig" "$dmg" "$out_dir/"
+# Never overwrite a DMG in place while it is mounted: the write truncates the
+# backing file and the mounted volume starts returning I/O errors (Finder then
+# fails with error 101000). Stage each artifact under a temporary name and
+# rename it into place so a mounted image keeps its old inode.
+if hdiutil info 2>/dev/null | grep -Fq "$dmg"; then
+  info "WARNING: $dmg is currently mounted; replacing it with an atomic rename"
+fi
+for artifact in "$tarball" "$sig" "$dmg"; do
+  artifact_name="$(basename "$artifact")"
+  artifact_tmp="$out_dir/.$artifact_name.$$.tmp"
+  cp -f "$artifact" "$artifact_tmp"
+  mv -f "$artifact_tmp" "$out_dir/$artifact_name"
+done
 
 if [[ -n "$notes" ]]; then
   printf '%s\n' "$notes" >"$out_dir/RELEASE-NOTES.txt"
@@ -309,13 +325,27 @@ if [[ -f "$out_dir/RELEASE-NOTES.zh.txt" && -f "$out_dir/RELEASE-NOTES.en.txt" ]
 fi
 
 info "generating latest.json"
+# The Windows installer has no Authenticode signature, but its updater
+# (minisign) signature is what latest.json verifies; only list windows when
+# that signature exists.
+platform_args=(
+  --platform "darwin-aarch64=Qingmo.app.tar.gz"
+  --platform "darwin-x86_64=Qingmo.app.tar.gz"
+)
+required_platforms="darwin-aarch64,darwin-x86_64"
+win_setup="$out_dir/Qingmo_${version}_x64-setup.exe"
+if [[ -f "$win_setup" && -s "$win_setup.sig" ]]; then
+  info "including the Windows installer in latest.json"
+  platform_args+=(--platform "windows-x86_64=Qingmo_${version}_x64-setup.exe")
+  required_platforms+=",windows-x86_64"
+fi
+
 node scripts/release/make-latest-json.mjs \
   --version "$version" \
   --artifacts "$out_dir" \
   --out "$out_dir/latest.json" \
   --base-url "https://github.com/wavexzore/Qingmo/releases/download/$tag" \
-  --platform "darwin-aarch64=Qingmo.app.tar.gz" \
-  --platform "darwin-x86_64=Qingmo.app.tar.gz" \
+  "${platform_args[@]}" \
   "${notes_args[@]}"
 
 pubkey="$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")"
@@ -324,7 +354,8 @@ node scripts/release/check-latest-json.mjs \
   --latest-json "$out_dir/latest.json" \
   --tag "$tag" \
   --pubkey "$pubkey" \
-  --artifacts "$out_dir"
+  --artifacts "$out_dir" \
+  --require "$required_platforms"
 
 (
   cd "$out_dir"

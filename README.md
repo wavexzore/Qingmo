@@ -103,10 +103,14 @@ pnpm tauri dev     # desktop app with real file IO
 ```bash
 pnpm build              # frontend production build
 pnpm tauri build        # desktop bundle
-make build-mac          # local release: version/notes checks + sign + notarize + latest.json
-make build-mac-arch     # lightweight macOS DMG, unsigned (Apple Silicon by default)
-make build-mac-arch MAC_ARCH=x86_64
+make build              # macOS release + Windows installer
+make build-mac          # macOS release only: version/notes checks + sign + notarize + latest.json
+make build-win          # Windows NSIS installer only (cargo-xwin, unsigned Authenticode)
+make build-arch         # lightweight macOS DMG, unsigned (Apple Silicon by default)
+make build-arch MAC_ARCH=x86_64
 ```
+
+Windows cross-compilation needs `cargo-xwin`, the `x86_64-pc-windows-msvc` Rust target and `makensis` (for example `brew install makensis`). `make build` runs the Windows build first so the macOS pipeline can checksum the installer and add a `windows-x86_64` entry to `latest.json`.
 
 ### Distribution and install (macOS)
 
@@ -115,11 +119,17 @@ Ship release builds as the DMG, never as a bare `.app` folder: WeChat, archive t
 - Distribute: `release-artifacts/v<version>/Qingmo_<version>_universal.dmg` (Developer ID signed; app and DMG notarized and stapled)
 - Install: open the DMG, drag `青墨.app` into Applications, and verify the DMG against `SHA256SUMS.txt`
 - If a bare `.app` already fails, try `xattr -dr com.apple.quarantine /Applications/青墨.app` first; if `codesign --verify --deep --strict /Applications/青墨.app` still fails, send the DMG again
-- `make build-mac` runs the full local release pipeline (prefers `.release/release.sh`, falls back to `scripts/release/build-local.sh`), signing, notarizing and generating `latest.json`; `make build-mac-arch` is an unsigned local DMG
+- `make build` runs the full local release pipeline (prefers `.release/release.sh`, falls back to `scripts/release/build-local.sh`), signing, notarizing and generating `latest.json`; `make build-arch` is an unsigned local DMG
+
+### Distribution and install (Windows)
+
+- Distribute: `release-artifacts/v<version>/Qingmo_<version>_x64-setup.exe` (NSIS, built with `cargo-xwin` from macOS)
+- The installer has no Authenticode signature because Tauri cannot sign Windows binaries off a Windows host, so SmartScreen may warn; the updater (minisign) signature is still generated, so Windows auto-update works
+- `make build-win` builds only the installer; `make build` runs it before the macOS pipeline so the DMG, installer, signatures and `SHA256SUMS.txt` land in the same directory
 
 ### Releasing locally
 
-`make build-mac` (or `.release/release.sh`) builds, signs and notarizes the macOS universal app and writes `release-artifacts/v<version>/` with the DMG, updater tarball, `latest.json` and `SHA256SUMS.txt`. The outer asset names are ASCII (`Qingmo.app.tar.gz`, `Qingmo_<version>_universal.dmg`) because GitHub strips non-ASCII characters from release assets; the app bundle inside is `青墨.app`.
+`make build` builds the Windows installer first, then builds, signs and notarizes the macOS universal app and writes `release-artifacts/v<version>/` with the DMG, updater tarball, NSIS installer, `latest.json` and `SHA256SUMS.txt`. When the installer and its updater signature are present, `latest.json` also carries a `windows-x86_64` entry (the Authenticode signature is not required for updates). The outer asset names are ASCII (`Qingmo.app.tar.gz`, `Qingmo_<version>_universal.dmg`, `Qingmo_<version>_x64-setup.exe`) because GitHub strips non-ASCII characters from release assets; the app bundle inside is `青墨.app`.
 
 Publish manually after validating the artifacts:
 
@@ -130,11 +140,11 @@ gh release upload v<version> release-artifacts/v<version>/* --clobber
 gh release edit v<version> --draft=false --latest
 ```
 
-Windows and Linux packaging remains pending.
+Linux packaging remains pending.
 
 ### Release notes
 
-Every version being released must have a bilingual entry in `resources/notes.json`. `make build-mac` checks this before building and fails when the entry is missing:
+Every version being released must have a bilingual entry in `resources/notes.json`. `make build` checks this before building and fails when the entry is missing:
 
 ```json
 {
