@@ -3,6 +3,7 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import { renderInlineMarkdown } from "./inline-render";
@@ -12,8 +13,6 @@ import { renderInlineMarkdown } from "./inline-render";
  * They are detected only at the top level and only when the paragraph follows
  * the `Term\n: definition` shape.
  */
-export const DEFINITION_LIST_MAX_UNITS = 200_000;
-
 export interface DefinitionListData {
   terms: readonly string[];
   definitions: readonly string[];
@@ -96,7 +95,7 @@ function insideKey(state: EditorState, ranges: readonly DefinitionRange[]): stri
 }
 
 function buildDefinitionLists(state: EditorState): DefinitionListState {
-  if (state.doc.length > DEFINITION_LIST_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
 

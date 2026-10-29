@@ -26,6 +26,12 @@ pub const COMMANDS: &[&str] = &[
     "app_logs_open_dir",
     "app_logs_clear",
     "app_apply_locale",
+    "session_view_state_get",
+    "session_view_state_set",
+    "session_draft_write",
+    "session_draft_list",
+    "session_draft_read",
+    "session_draft_discard",
 ];
 
 pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";

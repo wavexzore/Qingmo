@@ -29,7 +29,14 @@ export { codeLanguages, languageForFilename } from "./extensions/languages";
 export { markdownExtensions, qingmoHighlightStyle } from "./extensions/markdown";
 export { codeBlockSelectAll, selectAllInCodeBlock } from "./extensions/select-all";
 export { qingmoEditorTheme, themeExtension, type EditorTheme } from "./extensions/theme";
-export { LP_MAX_UNITS, MAX_LINE_UNITS, SYNTAX_TREE_BUDGET_MS } from "./limits";
+export {
+  PREVIEW_FULL_MAX_UNITS,
+  PREVIEW_PARTIAL_MAX_UNITS,
+  MAX_LINE_UNITS,
+  SYNTAX_TREE_BUDGET_MS,
+  previewTierFor,
+  type PreviewTier,
+} from "./limits";
 export { buildLivePreviewDecorations, livePreview, livePreviewPlugin } from "./live-preview/plugin";
 export {
   collectDecorationSpecs,
@@ -41,48 +48,24 @@ export {
   type TableCellRange,
   type VisibleRange,
 } from "./live-preview/specs";
-export { TABLE_BLOCK_MAX_UNITS, tableBlockPreview } from "./live-preview/table-blocks";
-export {
-  CODE_BLOCK_MAX_UNITS,
-  codeBlockPreview,
-  type CodeBlockRange,
-} from "./live-preview/code-blocks";
-export { MATH_BLOCK_MAX_UNITS, mathBlockPreview } from "./live-preview/math-blocks";
-export { MERMAID_BLOCK_MAX_UNITS, mermaidBlockPreview } from "./live-preview/mermaid-blocks";
-export {
-  FRONTMATTER_MAX_UNITS,
-  frontMatterPreview,
-  readFrontMatter,
-} from "./live-preview/frontmatter";
+export { tableBlockPreview } from "./live-preview/table-blocks";
+export { codeBlockPreview, type CodeBlockRange } from "./live-preview/code-blocks";
+export { mathBlockPreview } from "./live-preview/math-blocks";
+export { mermaidBlockPreview } from "./live-preview/mermaid-blocks";
+export { frontMatterPreview, readFrontMatter } from "./live-preview/frontmatter";
 export type {
   FrontMatterEntry,
   FrontMatterFormat,
   ParsedFrontMatter,
 } from "./live-preview/frontmatter";
-export { TOC_BLOCK_MAX_UNITS, tocPreview } from "./live-preview/toc";
-export {
-  DEFINITION_LIST_MAX_UNITS,
-  definitionListPreview,
-  parseDefinitionList,
-} from "./live-preview/definition-lists";
+export { tocPreview } from "./live-preview/toc";
+export { definitionListPreview, parseDefinitionList } from "./live-preview/definition-lists";
 export type { DefinitionListData } from "./live-preview/definition-lists";
-export {
-  DETAILS_BLOCK_MAX_UNITS,
-  detailsBlockPreview,
-  readDetailsBlocks,
-} from "./live-preview/details";
+export { detailsBlockPreview, readDetailsBlocks } from "./live-preview/details";
 export type { DetailsBlock } from "./live-preview/details";
-export {
-  MEDIA_BLOCK_MAX_UNITS,
-  mediaBlockPreview,
-  readMediaBlocks,
-} from "./live-preview/media-blocks";
+export { mediaBlockPreview, readMediaBlocks } from "./live-preview/media-blocks";
 export type { MediaBlock, MediaKind, MediaSource } from "./live-preview/media-blocks";
-export {
-  COMMENT_BLOCK_MAX_UNITS,
-  commentBlockPreview,
-  readCommentBlocks,
-} from "./live-preview/comment-blocks";
+export { commentBlockPreview, readCommentBlocks } from "./live-preview/comment-blocks";
 export type { CommentBlock, CommentKind } from "./live-preview/comment-blocks";
 export { renderMermaid, type MermaidTheme } from "./live-preview/mermaid-render";
 export {

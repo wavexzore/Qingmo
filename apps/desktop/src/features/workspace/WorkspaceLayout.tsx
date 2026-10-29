@@ -19,7 +19,7 @@ import { commandRegistry } from "../commands/CommandRegistry";
 import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
-import { EditorSession } from "../editor/EditorSession";
+import { createDocumentSession } from "../editor/session/createDocumentSession";
 import { useEditorLocale } from "../editor/useEditorLocale";
 import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
 import { LogDialog } from "../logs/LogDialog";
@@ -38,8 +38,8 @@ export function WorkspaceLayout() {
   const toast = useToast();
   const navigate = useNavigate();
   const { ipc, platform } = useAppServices();
-  const { session, coordinator, setSession } = useDocumentSession();
-  const closeGuard = useCloseGuard({ ipc, platform, coordinator });
+  const { session, coordinator, recorder, setSession } = useDocumentSession();
+  const closeGuard = useCloseGuard({ ipc, platform, coordinator, viewState: recorder });
   const updateController = useUpdateController();
   const updateSnapshot = useUpdateSnapshot();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -120,11 +120,12 @@ export function WorkspaceLayout() {
         return;
       }
       // Browser harness fallback: no native window exists, adopt in place.
-      setSession(
-        EditorSession.create(result.value, {
-          uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
-        }),
+      const created = await createDocumentSession(
+        ipc,
+        result.value,
+        buildEditorUiCopy(normalizeLanguage(i18n.language)),
       );
+      setSession(created.session, { viewState: created.viewState });
       navigate("/editor");
     } finally {
       openingRef.current = false;
@@ -248,9 +249,10 @@ export function WorkspaceLayout() {
       id: "view.toggleLivePreview",
       titleKey: "commands:view.toggleLivePreview",
       category: "commands:category.view",
-      // Large files stay in source mode until they shrink below the budget;
-      // re-enabling preview there would only run the plugin's own no-op guard.
-      when: () => !sessionRef.current?.getSnapshot().largeFile,
+      // Source-tier documents stay in source mode until they shrink below the
+      // budget; re-enabling preview there would only run the plugin's own
+      // no-op guard.
+      when: () => (sessionRef.current?.getSnapshot().previewTier ?? "source") !== "source",
       run: () => {
         sessionRef.current?.toggleLivePreview();
       },

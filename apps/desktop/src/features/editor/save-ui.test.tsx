@@ -26,34 +26,77 @@ describe("StatusBar save actions", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the large-document badge while keeping source mode visible", () => {
+  it("shows the source-mode badge at the source tier", () => {
     render(
       <StatusBar
-        snapshot={{ ...EMPTY_STATUS_SNAPSHOT, saveState: "clean", mode: "source", largeFile: true }}
+        snapshot={{
+          ...EMPTY_STATUS_SNAPSHOT,
+          saveState: "clean",
+          mode: "source",
+          previewTier: "source",
+        }}
       />,
     );
 
     expect(screen.getByTestId("status-bar")).toHaveTextContent("源码");
-    expect(screen.getByTestId("large-file-hint")).toHaveTextContent("大文档 · 预览关闭");
+    expect(screen.getByTestId("large-file-hint")).toHaveTextContent("大文档 · 源码模式");
     expect(screen.getByTestId("large-file-hint")).toHaveAttribute(
       "title",
       expect.stringContaining("2,000,000"),
     );
   });
 
-  it("shows live preview mode without the large-document badge", () => {
+  it("shows the compact-preview badge at the partial tier", () => {
     render(
       <StatusBar
         snapshot={{
           ...EMPTY_STATUS_SNAPSHOT,
           saveState: "clean",
           mode: "livePreview",
-          largeFile: false,
+          previewTier: "partial",
         }}
       />,
     );
 
     expect(screen.getByTestId("status-bar")).toHaveTextContent("实时预览");
+    expect(screen.getByTestId("partial-preview-hint")).toHaveTextContent("精简预览");
+    expect(screen.getByTestId("partial-preview-hint")).toHaveAttribute(
+      "title",
+      expect.stringContaining("200,000"),
+    );
+    expect(screen.queryByTestId("large-file-hint")).not.toBeInTheDocument();
+  });
+
+  it("hides the partial badge when the user turned preview off", () => {
+    render(
+      <StatusBar
+        snapshot={{
+          ...EMPTY_STATUS_SNAPSHOT,
+          saveState: "clean",
+          mode: "source",
+          previewTier: "partial",
+        }}
+      />,
+    );
+
+    expect(screen.queryByTestId("partial-preview-hint")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("large-file-hint")).not.toBeInTheDocument();
+  });
+
+  it("shows live preview mode without a tier badge at the full tier", () => {
+    render(
+      <StatusBar
+        snapshot={{
+          ...EMPTY_STATUS_SNAPSHOT,
+          saveState: "clean",
+          mode: "livePreview",
+          previewTier: "full",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("status-bar")).toHaveTextContent("实时预览");
+    expect(screen.queryByTestId("partial-preview-hint")).not.toBeInTheDocument();
     expect(screen.queryByTestId("large-file-hint")).not.toBeInTheDocument();
   });
 

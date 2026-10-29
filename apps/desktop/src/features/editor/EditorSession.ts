@@ -2,8 +2,9 @@ import { StateEffect, type EditorState, type Extension } from "@codemirror/state
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import {
   createEditorState,
-  LP_MAX_UNITS,
   livePreview,
+  normalizeLineEndings,
+  previewTierFor,
   setEditorUiCopyEffect,
   setModeEffect,
   setPlaceholderEffect,
@@ -11,6 +12,7 @@ import {
   setThemeEffect,
   themeExtension,
   type EditorUiCopy,
+  type PreviewTier,
 } from "@qingmo/editor-core";
 import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
 
@@ -56,9 +58,11 @@ export interface EditorSessionSnapshot extends EditorMetadataSnapshot {
   saveState: SaveState;
   /** Derived: saveState is neither clean nor readonly. */
   dirty: boolean;
-  /** Doc length exceeds the Live Preview unit budget. */
-  largeFile: boolean;
-  /** Effective mode: user preference AND not a large file. */
+  /** Preview tier derived from the current document length. */
+  previewTier: PreviewTier;
+  /** User preference; survives reloads and is independent of affordability. */
+  livePreviewPreferred: boolean;
+  /** Effective mode: preference AND tier !== "source". */
   livePreview: boolean;
   selection: EditorSelectionSnapshot;
   cursor: EditorCursorSnapshot;
@@ -76,6 +80,13 @@ export interface EditorSessionOptions {
   untitledTitle?: string;
   /** Initial Widget/block copy; the locale hook replaces it on changes. */
   uiCopy?: EditorUiCopy;
+  /** User preference for Live Preview; defaults to true. */
+  previewPreference?: boolean;
+  /**
+   * Persisted selection restored before the first view exists. Clamped by
+   * `createEditorState` against the normalized document length.
+   */
+  initialSelection?: EditorSelectionSnapshot;
 }
 
 function fileNameOf(path: string): string {
@@ -149,7 +160,10 @@ export class EditorSession {
   private metadata: EditorMetadataSnapshot;
   private state: EditorState;
   private snapshot: EditorSessionSnapshot;
-  private previewEnabled: boolean;
+  private previewPreference: boolean;
+  private modeAttached = false;
+  private pendingModeSync = false;
+  private modeSyncScheduled = false;
   private untitled: boolean;
   private theme: "light" | "dark" = "light";
   private themeApplied = false;
@@ -165,27 +179,35 @@ export class EditorSession {
     this.placeholder = options.placeholder;
     this.uiCopy = options.uiCopy;
     this.untitled = options.untitledTitle !== undefined;
+    this.previewPreference = options.previewPreference ?? true;
 
-    this.state = createEditorState({
+    // `createEditorState` normalizes line endings, so derive the tier from the
+    // normalized length in the same way the factory does.
+    const tier = previewTierFor(normalizeLineEndings(payload.text).length);
+    const effective = this.previewPreference && tier !== "source";
+    const state = createEditorState({
       doc: payload.text,
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
+      previewEnabled: effective,
+      ...(options.initialSelection ? { selection: options.initialSelection } : {}),
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
       ...(this.uiCopy !== undefined ? { uiCopy: this.uiCopy } : {}),
     });
+    this.state = state;
+    this.modeAttached = effective;
 
     const selection = selectionOf(this.state);
     const saveState: SaveState = payload.readOnly ? "readonly" : "clean";
-    const largeFile = this.state.doc.length > LP_MAX_UNITS;
-    this.previewEnabled = !largeFile;
     this.metadata = metadataOf(payload, options.untitledTitle);
 
     this.snapshot = Object.freeze({
       ...this.metadata,
       saveState,
       dirty: false,
-      largeFile,
-      livePreview: this.previewEnabled,
+      previewTier: tier,
+      livePreviewPreferred: this.previewPreference,
+      livePreview: effective,
       selection,
       cursor: cursorAt(this.state, selection.head),
       version: 0,
@@ -324,10 +346,13 @@ export class EditorSession {
       throw new Error("reload returned a different docToken");
     }
 
+    const tier = previewTierFor(normalizeLineEndings(payload.text).length);
+    const effective = this.previewPreference && tier !== "source";
     let state = createEditorState({
       doc: payload.text,
       readOnly: payload.readOnly,
       extraExtensions: this.extraExtensions,
+      previewEnabled: effective,
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
       ...(this.uiCopy !== undefined ? { uiCopy: this.uiCopy } : {}),
     });
@@ -343,8 +368,9 @@ export class EditorSession {
         head: Math.min(previous.head, state.doc.length),
       },
     }).state;
-    const largeFile = state.doc.length > LP_MAX_UNITS;
-    this.previewEnabled = !largeFile;
+    // A reload must not reset the user's preview preference; only the tier
+    // and the effective mode are re-derived.
+    this.modeAttached = effective;
     this.metadata = metadataOf(payload);
 
     if (this.view) {
@@ -360,8 +386,9 @@ export class EditorSession {
       ...this.metadata,
       saveState: payload.readOnly ? "readonly" : "clean",
       dirty: false,
-      largeFile,
-      livePreview: this.previewEnabled,
+      previewTier: tier,
+      livePreviewPreferred: this.previewPreference,
+      livePreview: effective,
       selection,
       cursor: cursorAt(current, selection.head),
       version: this.snapshot.version + 1,
@@ -415,27 +442,37 @@ export class EditorSession {
 
   /**
    * Reconfigures the existing mode compartment. It never rebuilds the view or
-   * touches the document, so undo history and selection survive. Large files
-   * stay in source mode until they shrink below the unit budget.
+   * touches the document, so undo history and selection survive. Source-tier
+   * documents cannot enable preview; shrinking below the boundary restores
+   * the user's preference automatically through `handleUpdate`.
    */
   toggleLivePreview(): boolean {
     if (this.disposed) {
       return this.snapshot.livePreview;
     }
-    const largeFile = this.currentState.doc.length > LP_MAX_UNITS;
-    if (largeFile) {
+    const tier = previewTierFor(this.currentState.doc.length);
+    if (tier === "source") {
       return false;
     }
 
-    this.previewEnabled = !this.previewEnabled;
-    const effect = setModeEffect(this.previewEnabled ? livePreview() : []);
+    this.previewPreference = !this.previewPreference;
+    const effective = this.previewPreference;
+    this.modeAttached = effective;
+    const effect = setModeEffect(effective ? livePreview() : []);
     if (this.view) {
       this.view.dispatch({ effects: effect });
     } else {
       this.state = this.state.update({ effects: effect }).state;
     }
-    this.publish({ largeFile: false, livePreview: this.previewEnabled }, true);
-    return this.previewEnabled;
+    this.publish(
+      {
+        previewTier: tier,
+        livePreviewPreferred: this.previewPreference,
+        livePreview: effective,
+      },
+      true,
+    );
+    return effective;
   }
 
   /**
@@ -558,6 +595,8 @@ export class EditorSession {
     this.compositionCleanup?.();
     this.pendingPlaceholder = null;
     this.pendingUiCopy = null;
+    this.pendingModeSync = false;
+    this.modeSyncScheduled = false;
     this.listeners.clear();
     this.statusListeners.clear();
     this.docChangedListeners.clear();
@@ -568,6 +607,9 @@ export class EditorSession {
     const onCompositionEnd = (): void => {
       this.flushPlaceholder();
       this.flushUiCopy();
+      if (this.pendingModeSync) {
+        this.flushModeSync();
+      }
     };
     view.contentDOM.addEventListener("compositionend", onCompositionEnd);
     this.compositionCleanup = () => {
@@ -610,6 +652,54 @@ export class EditorSession {
     }
   }
 
+  /**
+   * Defers the mode compartment reconfiguration out of the update listener.
+   * CM6 forbids a synchronous dispatch while an update is being processed;
+   * an active IME composition additionally defers until `compositionend`.
+   */
+  private requestModeSync(): void {
+    if (this.disposed) {
+      return;
+    }
+    if (this.view?.composing) {
+      this.pendingModeSync = true;
+      return;
+    }
+    if (this.modeSyncScheduled) {
+      return;
+    }
+    this.modeSyncScheduled = true;
+    queueMicrotask(() => {
+      this.modeSyncScheduled = false;
+      this.flushModeSync();
+    });
+  }
+
+  private flushModeSync(): void {
+    if (this.disposed) {
+      return;
+    }
+    if (this.view?.composing) {
+      this.pendingModeSync = true;
+      return;
+    }
+    this.pendingModeSync = false;
+    const tier = previewTierFor(this.currentState.doc.length);
+    const effective = this.previewPreference && tier !== "source";
+    if (effective === this.modeAttached) {
+      return;
+    }
+    // Set the flag before dispatch: the update listener runs synchronously
+    // and would otherwise schedule the same sync again.
+    this.modeAttached = effective;
+    const effect = setModeEffect(effective ? livePreview() : []);
+    if (this.view) {
+      this.view.dispatch({ effects: effect });
+    } else {
+      this.state = this.state.update({ effects: effect }).state;
+    }
+  }
+
   private attachUpdateListener(view: EditorView): void {
     this.view = view;
     this.state = view.state;
@@ -641,14 +731,19 @@ export class EditorSession {
 
     const selection = selectionOf(update.state);
     const cursor = cursorAt(update.state, selection.head);
-    const largeFile = update.state.doc.length > LP_MAX_UNITS;
+    const tier = previewTierFor(update.state.doc.length);
+    const effective = this.previewPreference && tier !== "source";
+    if (effective !== this.modeAttached) {
+      this.requestModeSync();
+    }
     this.publish(
       {
         saveState,
         selection,
         cursor,
-        largeFile,
-        livePreview: this.previewEnabled && !largeFile,
+        previewTier: tier,
+        livePreviewPreferred: this.previewPreference,
+        livePreview: effective,
       },
       immediateStatus,
     );
@@ -667,7 +762,13 @@ export class EditorSession {
     patch: Partial<
       Pick<
         EditorSessionSnapshot,
-        "saveState" | "selection" | "cursor" | "largeFile" | "livePreview" | "fileName"
+        | "saveState"
+        | "selection"
+        | "cursor"
+        | "previewTier"
+        | "livePreviewPreferred"
+        | "livePreview"
+        | "fileName"
       >
     >,
     immediateStatus = false,
@@ -675,7 +776,8 @@ export class EditorSession {
     const saveState = patch.saveState ?? this.snapshot.saveState;
     const selection = patch.selection ?? this.snapshot.selection;
     const cursor = patch.cursor ?? this.snapshot.cursor;
-    const largeFile = patch.largeFile ?? this.snapshot.largeFile;
+    const previewTier = patch.previewTier ?? this.snapshot.previewTier;
+    const livePreviewPreferred = patch.livePreviewPreferred ?? this.snapshot.livePreviewPreferred;
     const livePreview = patch.livePreview ?? this.snapshot.livePreview;
     const fileName = patch.fileName ?? this.snapshot.fileName;
 
@@ -683,7 +785,8 @@ export class EditorSession {
       saveState === this.snapshot.saveState &&
       sameSelection(selection, this.snapshot.selection) &&
       sameCursor(cursor, this.snapshot.cursor) &&
-      largeFile === this.snapshot.largeFile &&
+      previewTier === this.snapshot.previewTier &&
+      livePreviewPreferred === this.snapshot.livePreviewPreferred &&
       livePreview === this.snapshot.livePreview &&
       fileName === this.snapshot.fileName
     ) {
@@ -694,7 +797,8 @@ export class EditorSession {
       ...this.snapshot,
       saveState,
       dirty: saveState !== "clean" && saveState !== "readonly",
-      largeFile,
+      previewTier,
+      livePreviewPreferred,
       livePreview,
       fileName,
       selection,

@@ -3,6 +3,7 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readDetailsBlocks } from "./details";
 import type { MarkdownNode } from "./markdown-node";
 
@@ -11,8 +12,6 @@ import type { MarkdownNode } from "./markdown-node";
  * mode. Live Preview keeps a small badge so they remain discoverable and
  * editable instead of silently swallowing document content.
  */
-export const COMMENT_BLOCK_MAX_UNITS = 200_000;
-
 export type CommentKind = "html" | "obsidian";
 
 export interface CommentBlock {
@@ -25,7 +24,7 @@ export interface CommentBlock {
 
 /** Reads top-level multi-line HTML comments and Obsidian comment blocks. */
 export function readCommentBlocks(state: EditorState): readonly CommentBlock[] {
-  if (state.doc.length > COMMENT_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return [];
   }
   const doc = state.doc;
@@ -98,7 +97,7 @@ function insideKey(state: EditorState, ranges: readonly CommentBlock[]): string 
 }
 
 function buildComments(state: EditorState): CommentState {
-  if (state.doc.length > COMMENT_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
   const ranges = readCommentBlocks(state);

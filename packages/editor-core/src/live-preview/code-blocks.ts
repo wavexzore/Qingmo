@@ -22,17 +22,10 @@ import { qingmoHighlightStyle } from "../extensions/markdown";
 import { selectionTextHighlight } from "../extensions/basic";
 import { qingmoEditorTheme } from "../extensions/theme";
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readFencedCode, type ParsedFencedCode } from "./specs";
 import type { MarkdownNode } from "./markdown-node";
 import { EXTERNAL_DIAGRAM_LANGUAGES } from "./widgets";
-
-/**
- * Above this size the code-block scan is disabled and top-level fences keep
- * their raw Markdown source. A document with hundreds of thousands of
- * characters does not benefit from mounting an embedded editor for every
- * fence.
- */
-export const CODE_BLOCK_MAX_UNITS = 200_000;
 
 export interface CodeBlockRange {
   from: number;
@@ -74,7 +67,7 @@ function touchedBlocks(state: EditorState, ranges: readonly CodeBlockRange[]): s
 }
 
 function buildCodeBlocks(state: EditorState): CodeBlockState {
-  if (state.doc.length > CODE_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
 

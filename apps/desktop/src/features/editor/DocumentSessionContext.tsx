@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { FilePayload } from "@qingmo/shared";
+import type { EditorViewState, FilePayload } from "@qingmo/shared";
 
 import { useAppServices } from "../../app/AppServices";
 import i18n from "../../i18n";
@@ -17,17 +17,29 @@ import { normalizeLanguage } from "../../i18n/language";
 import type { IpcPort } from "../../lib/ipc/port";
 import { EditorSession } from "./EditorSession";
 import { SaveCoordinator } from "./save/SaveCoordinator";
+import { createDocumentSession } from "./session/createDocumentSession";
+import { ViewStateRecorder } from "./session/ViewStateRecorder";
 
 interface SessionBundle {
   session: EditorSession;
   coordinator: SaveCoordinator;
+  recorder: ViewStateRecorder;
+  viewState: EditorViewState | null;
+}
+
+export interface SetSessionExtras {
+  /** Persisted scroll target, only meaningful for a named document. */
+  viewState?: EditorViewState | null;
 }
 
 interface DocumentSessionContextValue {
   session: EditorSession | null;
   /** One coordinator per open document; paired with `session`. */
   coordinator: SaveCoordinator | null;
-  setSession(next: EditorSession | null): void;
+  /** Records scroll/selection/preference for the attached view. */
+  recorder: ViewStateRecorder | null;
+  viewState: EditorViewState | null;
+  setSession(next: EditorSession | null, extras?: SetSessionExtras): void;
 }
 
 const DocumentSessionContext = createContext<DocumentSessionContextValue | null>(null);
@@ -63,13 +75,16 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
   const [bundle, setBundle] = useState<SessionBundle | null>(null);
   const currentRef = useRef<EditorSession | null>(null);
   const coordinatorRef = useRef<SaveCoordinator | null>(null);
+  const recorderRef = useRef<ViewStateRecorder | null>(null);
 
   const startSession = useCallback(
-    (session: EditorSession) => {
+    (session: EditorSession, viewState: EditorViewState | null = null) => {
       const coordinator = new SaveCoordinator({ session, ipc });
+      const recorder = new ViewStateRecorder({ ipc, session });
       currentRef.current = session;
       coordinatorRef.current = coordinator;
-      setBundle({ session, coordinator });
+      recorderRef.current = recorder;
+      setBundle({ session, coordinator, recorder, viewState });
     },
     [ipc],
   );
@@ -97,16 +112,23 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
       }
     } else if (!currentRef.current) {
       takePendingDocument(ipc)
-        .then((payload) => {
+        .then(async (payload) => {
           if (cancelled) {
             return;
           }
           if (payload) {
-            startSession(
-              EditorSession.create(payload, {
-                uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
-              }),
+            const created = await createDocumentSession(
+              ipc,
+              payload,
+              buildEditorUiCopy(normalizeLanguage(i18n.language)),
             );
+            // The effect may have been cleaned up while the view state was
+            // being read; never publish a session into a dead provider.
+            if (cancelled) {
+              created.session.dispose();
+              return;
+            }
+            startSession(created.session, created.viewState);
           } else {
             // Only reachable after a manual reload, which already discards
             // the webview session; keep the window usable.
@@ -123,28 +145,32 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      recorderRef.current?.dispose();
       coordinatorRef.current?.dispose();
       currentRef.current?.dispose();
+      recorderRef.current = null;
       coordinatorRef.current = null;
       currentRef.current = null;
     };
   }, [documentWindow, ipc, startSession, startUntitled]);
 
   const setSession = useCallback(
-    (next: EditorSession | null) => {
+    (next: EditorSession | null, extras: SetSessionExtras = {}) => {
       const previous = currentRef.current;
       if (previous === next) {
         return;
       }
 
+      recorderRef.current?.dispose();
       coordinatorRef.current?.dispose();
       previous?.dispose();
+      recorderRef.current = null;
+      coordinatorRef.current = null;
+      currentRef.current = null;
 
       if (next) {
-        startSession(next);
+        startSession(next, extras.viewState ?? null);
       } else {
-        currentRef.current = null;
-        coordinatorRef.current = null;
         setBundle(null);
       }
     },
@@ -156,6 +182,8 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
       value={{
         session: bundle?.session ?? null,
         coordinator: bundle?.coordinator ?? null,
+        recorder: bundle?.recorder ?? null,
+        viewState: bundle?.viewState ?? null,
         setSession,
       }}
     >

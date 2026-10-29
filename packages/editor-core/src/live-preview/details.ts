@@ -3,6 +3,7 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readFrontMatter } from "./frontmatter";
 import { headingLevel, headingText, isHeading } from "./heading-text";
 import { renderInlineMarkdown } from "./inline-render";
@@ -11,11 +12,10 @@ import type { MarkdownNode } from "./markdown-node";
 
 /**
  * `<details>` blocks are common in Markdown guides and READMEs. Their content
- * is Markdown, so a single HTML tag replacement is not enough: the whole block
- * is rendered as a read-only preview with a collapsible header. Clicking the
- * content or the “Source” button returns the caret to the opening tag.
+ * is Markdown, so the whole block is rendered as a read-only preview with a
+ * collapsible header; clicking the content or the "Source" button returns the
+ * caret to the opening tag.
  */
-export const DETAILS_BLOCK_MAX_UNITS = 200_000;
 const MAX_BODY_LENGTH = 100_000;
 
 export interface DetailsBlock {
@@ -94,7 +94,7 @@ const DETAILS_TAG = /<(\/?)\s*details\b([^>]*)>/gi;
  * cases consistent without treating Markdown code fences as HTML.
  */
 export function readDetailsBlocks(state: EditorState): readonly DetailsBlock[] {
-  if (state.doc.length > DETAILS_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return [];
   }
   const copy = state.facet(editorUiCopy);
@@ -612,7 +612,7 @@ function insideKey(state: EditorState, ranges: readonly DetailsBlock[]): string 
 }
 
 function buildDetails(state: EditorState): DetailsState {
-  if (state.doc.length > DETAILS_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
   const ranges = readDetailsBlocks(state);

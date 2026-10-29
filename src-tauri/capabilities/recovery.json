@@ -1,0 +1,6 @@
+{
+  "identifier": "recovery",
+  "description": "Least-privilege recovery surface: only the main window may list and read crash drafts.",
+  "windows": ["main"],
+  "permissions": ["allow-session-draft-list", "allow-session-draft-read"]
+}

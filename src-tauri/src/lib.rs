@@ -751,6 +751,40 @@ pub fn run() {
             }
             services::logging::install_panic_hook();
             init_tracing(log_dir.as_ref());
+            // Session storage is optional: a broken data directory disables
+            // drafts/view state but must never block startup or fall back to
+            // /tmp, which would leak plaintext drafts outside the app sandbox.
+            let session_store = match app.path().app_local_data_dir() {
+                Ok(dir) => match services::SessionStore::open(dir.join("session")) {
+                    Ok(store) => store,
+                    Err(error) => {
+                        tracing::warn!(%error, "session storage is unavailable; drafts and view state are disabled");
+                        services::SessionStore::disabled()
+                    }
+                },
+                Err(error) => {
+                    tracing::warn!(%error, "application data directory is unavailable; session storage is disabled");
+                    services::SessionStore::disabled()
+                }
+            };
+            if session_store.is_ready() {
+                let gc_store = session_store.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let report = gc_store.gc();
+                    if report.drafts_removed > 0
+                        || report.view_entries_removed > 0
+                        || report.corrupt_files_removed > 0
+                    {
+                        tracing::info!(
+                            drafts = report.drafts_removed,
+                            view_entries = report.view_entries_removed,
+                            corrupt = report.corrupt_files_removed,
+                            "session storage garbage-collected"
+                        );
+                    }
+                });
+            }
+            app.manage(session_store);
             tracing::info!(
                 version = %app.package_info().version,
                 log_dir = %services::logging::dir().display(),

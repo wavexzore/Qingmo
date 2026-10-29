@@ -31,11 +31,11 @@ async function measureOpen(name: FixtureName, text: string) {
     const sessionStart = performance.now();
     const session = EditorSession.create(payload);
     const sessionMs = performance.now() - sessionStart;
-    const largeFile = session.getSnapshot().largeFile;
+    const sourceTier = session.getSnapshot().previewTier === "source";
     session.dispose();
 
     if (index === 0) {
-      expect(largeFile).toBe(name === "large");
+      expect(sourceTier).toBe(name === "large");
       continue;
     }
 

@@ -53,7 +53,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 22);
+    assert_eq!(COMMANDS.len(), 28);
     assert_eq!(
         EVENTS,
         &[
@@ -84,6 +84,7 @@ fn capabilities_cover_exactly_the_application_commands() {
         "capabilities/default.json",
         "capabilities/about.json",
         "capabilities/settings.json",
+        "capabilities/recovery.json",
     ] {
         app_permissions.extend(
             capability_permissions(capability)
@@ -119,6 +120,17 @@ fn capabilities_cover_exactly_the_application_commands() {
     assert_eq!(
         read_json("capabilities/settings.json")["windows"],
         json!(["settings"])
+    );
+    assert_eq!(
+        read_json("capabilities/recovery.json")["windows"],
+        json!(["main"])
+    );
+    assert_eq!(
+        capability_permissions("capabilities/recovery.json"),
+        vec![
+            "allow-session-draft-list".to_string(),
+            "allow-session-draft-read".to_string(),
+        ]
     );
 }
 
@@ -307,7 +319,11 @@ fn invoke(
 
 #[test]
 fn invoke_handler_registers_every_contract_command() {
+    let session_dir = tempfile::tempdir().expect("session temp dir must be creatable");
+    let store = qingmo_lib::services::SessionStore::open(session_dir.path().join("session"))
+        .expect("session store must open");
     let app = tauri::test::mock_builder()
+        .manage(store)
         .manage(qingmo_lib::state::DocumentRegistry::new())
         .manage(qingmo_lib::state::WindowSessions::new())
         .manage(CloseGuard::new())
@@ -447,6 +463,79 @@ fn invoke_handler_registers_every_contract_command() {
     .expect_err("invalid labels must be rejected");
     assert_eq!(error["code"], "INVALID_LOCALE", "unexpected error: {error}");
     assert_eq!(error["details"]["field"], "open");
+
+    let absent = invoke(
+        &webview,
+        "session_view_state_get",
+        json!({"path": "/docs/absent.md"}),
+    )
+    .expect("an unknown view key must resolve to null");
+    assert_eq!(absent, Value::Null);
+
+    invoke(
+        &webview,
+        "session_view_state_set",
+        json!({
+            "path": "/docs/note.md",
+            "state": {
+                "anchor": -4,
+                "head": 12,
+                "topPos": 8,
+                "topOffset": 12.5,
+                "scrollLeft": 0,
+                "livePreviewPreferred": false
+            }
+        }),
+    )
+    .expect("view state writes must succeed with a writable store");
+    let restored = invoke(
+        &webview,
+        "session_view_state_get",
+        json!({"path": "/docs/note.md"}),
+    )
+    .expect("view state reads must succeed");
+    assert_eq!(
+        restored["anchor"], 0,
+        "negative anchors must clamp: {restored}"
+    );
+    assert_eq!(restored["head"], 12);
+    assert_eq!(restored["livePreviewPreferred"], false);
+    assert!(restored["updatedAtMs"].as_i64().unwrap_or_default() > 0);
+
+    let draft = invoke(
+        &webview,
+        "session_draft_write",
+        json!({
+            "request": {
+                "kind": "untitled",
+                "path": null,
+                "title": "Untitled",
+                "text": "draft body",
+                "anchor": 0,
+                "head": 10
+            }
+        }),
+    )
+    .expect("draft writes must succeed with a writable store");
+    let draft_id = draft["id"].as_str().expect("draft id must be a string");
+    assert_eq!(draft["textUnits"], 10);
+    assert_eq!(draft["sizeBytes"], 10);
+
+    let listed =
+        invoke(&webview, "session_draft_list", json!({})).expect("draft listing must succeed");
+    assert_eq!(listed.as_array().map(Vec::len), Some(1));
+
+    let record = invoke(&webview, "session_draft_read", json!({"id": draft_id}))
+        .expect("draft reads must succeed");
+    assert_eq!(record["text"], "draft body");
+    assert_eq!(record["kind"], "untitled");
+
+    let discarded = invoke(&webview, "session_draft_discard", json!({"id": draft_id}))
+        .expect("draft discard must succeed");
+    assert_eq!(discarded, json!(true));
+    let error = invoke(&webview, "session_draft_read", json!({"id": draft_id}))
+        .expect_err("a discarded draft must be gone");
+    assert_eq!(error["code"], "NOT_FOUND");
 
     let status = invoke(&webview, "app_update_status", json!({}))
         .expect("status must be available without the plugin");

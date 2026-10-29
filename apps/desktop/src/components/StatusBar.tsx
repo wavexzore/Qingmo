@@ -1,5 +1,10 @@
 import { useTranslation } from "react-i18next";
 
+import {
+  PREVIEW_FULL_MAX_UNITS,
+  PREVIEW_PARTIAL_MAX_UNITS,
+  type PreviewTier,
+} from "@qingmo/editor-core";
 import type { ReadOnlyReason } from "@qingmo/shared";
 import { cx } from "@qingmo/ui";
 
@@ -17,8 +22,8 @@ export interface StatusBarSnapshot {
   eol: string | null;
   size: number | null;
   mode: StatusBarMode;
-  /** Live Preview is off because the document exceeds the unit budget. */
-  largeFile: boolean;
+  /** Affordability tier; determines the partial/source badge. */
+  previewTier: PreviewTier;
   /** Read-only documents stay loadable but never accept edits. */
   readOnly: boolean;
   readOnlyReason: ReadOnlyReason | null;
@@ -32,7 +37,7 @@ export const EMPTY_STATUS_SNAPSHOT: StatusBarSnapshot = {
   eol: null,
   size: null,
   mode: "source",
-  largeFile: false,
+  previewTier: "full",
   readOnly: false,
   readOnlyReason: null,
 };
@@ -80,6 +85,9 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
         column: snapshot.cursor.column,
       })
     : t("common:status.notAvailable");
+  const formatLimit = (units: number) => new Intl.NumberFormat(i18n.language).format(units);
+  const partialPreview = snapshot.previewTier === "partial" && snapshot.mode === "livePreview";
+  const sourcePreview = snapshot.previewTier === "source";
 
   return (
     <footer
@@ -125,10 +133,23 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
       </div>
 
       <span className="ml-auto flex shrink-0 items-center gap-2">
-        {snapshot.largeFile ? (
+        {partialPreview ? (
+          <span
+            data-testid="partial-preview-hint"
+            title={t("common:status.partialPreviewHint", {
+              limit: formatLimit(PREVIEW_FULL_MAX_UNITS),
+            })}
+            className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-muted"
+          >
+            {t("common:status.partialPreview")}
+          </span>
+        ) : null}
+        {sourcePreview ? (
           <span
             data-testid="large-file-hint"
-            title={t("common:status.largeFileHint")}
+            title={t("common:status.largeFileHint", {
+              limit: formatLimit(PREVIEW_PARTIAL_MAX_UNITS),
+            })}
             className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-muted"
           >
             {t("common:status.largeFile")}

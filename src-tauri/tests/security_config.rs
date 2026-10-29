@@ -59,6 +59,10 @@ fn capability_contains_only_expected_permissions() {
             "allow-app-logs-export",
             "allow-app-logs-open-dir",
             "allow-app-logs-clear",
+            "allow-session-view-state-get",
+            "allow-session-view-state-set",
+            "allow-session-draft-write",
+            "allow-session-draft-discard",
         ]
     );
 
@@ -151,6 +155,32 @@ fn settings_capability_is_least_privilege() {
             assert!(
                 !permission.starts_with(prefix),
                 "forbidden settings permission {permission}"
+            );
+        }
+    }
+}
+
+#[test]
+fn recovery_capability_is_least_privilege() {
+    let capability = read_json("capabilities/recovery.json");
+    let permissions = capability["permissions"]
+        .as_array()
+        .expect("permissions must be an array")
+        .iter()
+        .map(|value| value.as_str().expect("permission must be a string"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(capability["windows"], serde_json::json!(["main"]));
+    assert_eq!(
+        permissions,
+        vec!["allow-session-draft-list", "allow-session-draft-read"]
+    );
+
+    for permission in &permissions {
+        for prefix in ["fs:", "shell:", "http:", "dialog:", "opener:", "updater:"] {
+            assert!(
+                !permission.starts_with(prefix),
+                "forbidden recovery permission {permission}"
             );
         }
     }
@@ -258,7 +288,7 @@ fn window_and_asset_protocol_are_locked_down() {
     );
     assert_eq!(
         app["security"]["capabilities"],
-        serde_json::json!(["default", "about", "settings"])
+        serde_json::json!(["default", "about", "settings", "recovery"])
     );
 
     let windows = app["windows"].as_array().expect("windows must be an array");

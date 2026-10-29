@@ -4,6 +4,11 @@ import type {
   AppError,
   ApplyLocaleRequest,
   CloseRequestedPayload,
+  DraftMeta,
+  DraftRecord,
+  DraftWriteRequest,
+  EditorViewState,
+  EditorViewStateInput,
   FilePayload,
   LogEntry,
   LogLevel,
@@ -42,6 +47,12 @@ export const COMMANDS = {
   appLogsOpenDir: "app_logs_open_dir",
   appLogsClear: "app_logs_clear",
   appApplyLocale: "app_apply_locale",
+  sessionViewStateGet: "session_view_state_get",
+  sessionViewStateSet: "session_view_state_set",
+  sessionDraftWrite: "session_draft_write",
+  sessionDraftList: "session_draft_list",
+  sessionDraftRead: "session_draft_read",
+  sessionDraftDiscard: "session_draft_discard",
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -69,6 +80,12 @@ export const COMMAND_NAMES = [
   COMMANDS.appLogsOpenDir,
   COMMANDS.appLogsClear,
   COMMANDS.appApplyLocale,
+  COMMANDS.sessionViewStateGet,
+  COMMANDS.sessionViewStateSet,
+  COMMANDS.sessionDraftWrite,
+  COMMANDS.sessionDraftList,
+  COMMANDS.sessionDraftRead,
+  COMMANDS.sessionDraftDiscard,
 ] as const satisfies readonly CommandName[];
 
 export const EVENTS = {
@@ -148,6 +165,12 @@ export interface CommandRequestMap {
   [COMMANDS.appLogsOpenDir]: Record<string, never>;
   [COMMANDS.appLogsClear]: { keepDays?: number };
   [COMMANDS.appApplyLocale]: { request: ApplyLocaleRequest };
+  [COMMANDS.sessionViewStateGet]: { path: string };
+  [COMMANDS.sessionViewStateSet]: { path: string; state: EditorViewStateInput };
+  [COMMANDS.sessionDraftWrite]: { request: DraftWriteRequest };
+  [COMMANDS.sessionDraftList]: Record<string, never>;
+  [COMMANDS.sessionDraftRead]: { id: string };
+  [COMMANDS.sessionDraftDiscard]: { id: string };
 }
 
 export interface CommandResponseMap {
@@ -173,6 +196,12 @@ export interface CommandResponseMap {
   [COMMANDS.appLogsOpenDir]: null;
   [COMMANDS.appLogsClear]: number;
   [COMMANDS.appApplyLocale]: null;
+  [COMMANDS.sessionViewStateGet]: EditorViewState | null;
+  [COMMANDS.sessionViewStateSet]: null;
+  [COMMANDS.sessionDraftWrite]: DraftMeta;
+  [COMMANDS.sessionDraftList]: DraftMeta[];
+  [COMMANDS.sessionDraftRead]: DraftRecord;
+  [COMMANDS.sessionDraftDiscard]: boolean;
 }
 
 export type CommandError = AppError;
@@ -208,6 +237,12 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.appLogsOpenDir]: commandPermission(COMMANDS.appLogsOpenDir),
   [COMMANDS.appLogsClear]: commandPermission(COMMANDS.appLogsClear),
   [COMMANDS.appApplyLocale]: commandPermission(COMMANDS.appApplyLocale),
+  [COMMANDS.sessionViewStateGet]: commandPermission(COMMANDS.sessionViewStateGet),
+  [COMMANDS.sessionViewStateSet]: commandPermission(COMMANDS.sessionViewStateSet),
+  [COMMANDS.sessionDraftWrite]: commandPermission(COMMANDS.sessionDraftWrite),
+  [COMMANDS.sessionDraftList]: commandPermission(COMMANDS.sessionDraftList),
+  [COMMANDS.sessionDraftRead]: commandPermission(COMMANDS.sessionDraftRead),
+  [COMMANDS.sessionDraftDiscard]: commandPermission(COMMANDS.sessionDraftDiscard),
 } as const satisfies Record<CommandName, string>;
 
 export type IpcInvoker = <K extends CommandName>(

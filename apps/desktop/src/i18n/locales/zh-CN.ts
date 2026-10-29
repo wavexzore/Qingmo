@@ -32,8 +32,11 @@ export const common = {
     mode: "模式",
     noFile: "未打开文档",
     notAvailable: "—",
-    largeFile: "大文档 · 预览关闭",
-    largeFileHint: "文档超过 2,000,000 个 UTF-16 单元，已关闭实时预览；编辑不受影响。",
+    partialPreview: "精简预览",
+    partialPreviewHint:
+      "文档超过 {{limit}} 个 UTF-16 单元，已收起代码块、表格、图片等块级组件；行内格式仍可预览。",
+    largeFile: "大文档 · 源码模式",
+    largeFileHint: "文档超过 {{limit}} 个 UTF-16 单元，已切换到源码模式；编辑不受影响。",
   },
   saveState: {
     clean: "已同步",

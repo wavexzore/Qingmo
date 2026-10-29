@@ -1,6 +1,11 @@
 import type {
   ApplyLocaleRequest,
   DocumentChangedPayload,
+  DraftMeta,
+  DraftRecord,
+  DraftWriteRequest,
+  EditorViewState,
+  EditorViewStateInput,
   FilePayload,
   SaveRequest,
   SaveResult,
@@ -46,4 +51,15 @@ export interface IpcPort {
   appSetLivePreview(request: LivePreviewRequest): Promise<void>;
   /** Projects the current language and native labels into the shell. */
   appApplyLocale(request: ApplyLocaleRequest): Promise<void>;
+  /** Persisted view state for a named document; `null` when unknown. */
+  sessionViewStateGet(path: string): Promise<EditorViewState | null>;
+  sessionViewStateSet(path: string, state: EditorViewStateInput): Promise<void>;
+  /** Creates or updates a crash draft; the returned id is owned by the caller. */
+  sessionDraftWrite(request: DraftWriteRequest): Promise<DraftMeta>;
+  /** Main window only: metadata for every recoverable draft. */
+  sessionDraftList(): Promise<DraftMeta[]>;
+  /** Main window only: the draft body, used only after an explicit restore. */
+  sessionDraftRead(id: string): Promise<DraftRecord>;
+  /** Deletes the draft; `false` means it was already gone. */
+  sessionDraftDiscard(id: string): Promise<boolean>;
 }

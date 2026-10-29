@@ -3,6 +3,7 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import {
   currentMermaidTheme,
   MermaidRenderError,
@@ -14,12 +15,6 @@ import { diagramInfo } from "./mermaid-theme";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import type { MarkdownNode } from "./markdown-node";
-
-/**
- * Above this size Mermaid fences keep their source treatment, matching the
- * table and math previews.
- */
-export const MERMAID_BLOCK_MAX_UNITS = 200_000;
 
 const MERMAID_ERROR_COPY: Record<MermaidRenderErrorCode, keyof EditorUiCopy["mermaid"]> = {
   unavailable: "unavailable",
@@ -99,7 +94,7 @@ function readMermaidFence(doc: EditorState["doc"], node: MarkdownNode): MermaidR
 }
 
 function buildMermaidBlocks(state: EditorState): MermaidBlockState {
-  if (state.doc.length > MERMAID_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
 

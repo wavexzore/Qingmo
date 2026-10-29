@@ -13,7 +13,7 @@ import { useSaveCoordinator } from "./useSaveCoordinator";
 function DocumentEditor() {
   const { t } = useTranslation(["common", "editor"]);
   const { session } = useEditor();
-  const { coordinator } = useDocumentSession();
+  const { coordinator, recorder, viewState } = useDocumentSession();
   const status = useEditorStatus(session);
   const save = useSaveCoordinator(coordinator);
   useExternalDocumentChanges(session, coordinator);
@@ -76,7 +76,12 @@ function DocumentEditor() {
       ) : null}
 
       <div className="min-h-0 w-full flex-1">
-        <EditorHost session={session} autoFocus={untitled} />
+        <EditorHost
+          session={session}
+          autoFocus={untitled}
+          viewState={viewState}
+          recorder={recorder}
+        />
       </div>
 
       {showStatusBar ? <StatusBar snapshot={status} onRetry={retrySave} /> : null}

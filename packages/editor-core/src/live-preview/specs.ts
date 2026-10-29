@@ -19,7 +19,7 @@ import { FOOTNOTE_DEFINITION, readFootnoteDefinitions, readInlineFootnotes } fro
 import { INLINE_HTML_TAGS } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
 import { editorUiCopy } from "../i18n";
-import { LP_MAX_UNITS, MAX_LINE_UNITS } from "../limits";
+import { previewTierFor, MAX_LINE_UNITS } from "../limits";
 
 export type { MarkdownNode } from "./markdown-node";
 
@@ -795,7 +795,7 @@ export function collectDecorationSpecs(
   blockedRanges: readonly VisibleRange[] = [],
 ): DecorationSpec[] {
   const doc = state.doc;
-  if (doc.length === 0 || doc.length > LP_MAX_UNITS) {
+  if (doc.length === 0 || previewTierFor(doc.length) === "source") {
     return [];
   }
 

@@ -3,18 +3,14 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import { headingLevel, headingText, isHeading } from "./heading-text";
 import { renderInlineMarkdown } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
 
-/**
- * Generating a table of contents means walking every heading in the document.
- * Very large files keep the placeholder as source instead.
- */
-export const TOC_BLOCK_MAX_UNITS = 200_000;
-
+/** Generating a table of contents means walking every heading in the document. */
 const MAX_TOC_ENTRIES = 200;
 const PLACEHOLDERS = new Set(["[toc]", "[[_toc_]]"]);
 
@@ -120,7 +116,7 @@ function scanDocument(state: EditorState): BuildResult {
 }
 
 function buildToc(state: EditorState): TocState {
-  if (state.doc.length > TOC_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
 

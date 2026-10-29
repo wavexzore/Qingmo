@@ -3,6 +3,7 @@ pub mod close;
 pub mod document;
 pub mod locale;
 pub mod logs;
+pub mod session;
 pub mod settings;
 pub mod update;
 pub mod view;
@@ -33,5 +34,11 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         logs::app_logs_open_dir,
         logs::app_logs_clear,
         locale::app_apply_locale,
+        session::session_view_state_get,
+        session::session_view_state_set,
+        session::session_draft_write,
+        session::session_draft_list,
+        session::session_draft_read,
+        session::session_draft_discard,
     ]
 }
