@@ -240,7 +240,12 @@ class MathBlockWidget extends WidgetType {
 
     const rendered = document.createElement("div");
     rendered.className = "cm-md-math-block-render";
-    wrapper.append(rendered);
+    // The visual formula card lives inside a padding-only root: CodeMirror
+    // measures block widgets without margins, so outer spacing must be padding.
+    const card = document.createElement("div");
+    card.className = "cm-md-math-block-card";
+    card.append(rendered);
+    wrapper.append(card);
     renderTeX(rendered, this.tex, true);
     return wrapper;
   }

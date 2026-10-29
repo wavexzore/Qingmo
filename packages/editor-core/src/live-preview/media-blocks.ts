@@ -523,7 +523,12 @@ class MediaWidget extends WidgetType {
       appendVideoOrAudio(body, this.block, fallback);
     }
 
-    wrapper.append(header, body);
+    // The padding-only root carries the measured spacing; the bordered card is
+    // an inner element so CodeMirror's height map stays aligned.
+    const card = document.createElement("div");
+    card.className = "cm-md-media-card";
+    card.append(header, body);
+    wrapper.append(card);
     wrapper.addEventListener("mousedown", (event) => {
       event.stopPropagation();
     });

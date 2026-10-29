@@ -145,9 +145,14 @@ class CommentWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
+    // Padding-only root; the dashed chip is an inner card so the block's
+    // spacing is included in CodeMirror's height measurement.
     const wrapper = document.createElement("div");
-    wrapper.className = `cm-md-comment cm-md-comment-${this.block.kind}`;
+    wrapper.className = "cm-md-comment-widget";
     wrapper.title = this.copy.comments.wrapperTitle;
+
+    const chip = document.createElement("div");
+    chip.className = `cm-md-comment cm-md-comment-${this.block.kind}`;
 
     const icon = document.createElement("span");
     icon.className = "cm-md-comment-icon";
@@ -181,7 +186,8 @@ class CommentWidget extends WidgetType {
     edit.addEventListener("mousedown", editSource);
     wrapper.addEventListener("mousedown", editSource);
 
-    wrapper.append(icon, badge, meta, edit);
+    chip.append(icon, badge, meta, edit);
+    wrapper.append(chip);
     return wrapper;
   }
 

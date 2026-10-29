@@ -193,16 +193,20 @@ class TocWidget extends WidgetType {
       view.focus();
     });
 
+    const card = document.createElement("div");
+    card.className = "cm-md-toc-card";
+
     const title = document.createElement("div");
     title.className = "cm-md-toc-title";
     title.textContent = this.copy.toc.title;
-    nav.append(title);
+    card.append(title);
 
     if (this.headings.length === 0) {
       const empty = document.createElement("div");
       empty.className = "cm-md-toc-empty";
       empty.textContent = this.copy.toc.empty;
-      nav.append(empty);
+      card.append(empty);
+      nav.append(card);
       return nav;
     }
 
@@ -246,7 +250,8 @@ class TocWidget extends WidgetType {
       list.append(item);
     }
 
-    nav.append(list);
+    card.append(list);
+    nav.append(card);
     return nav;
   }
 

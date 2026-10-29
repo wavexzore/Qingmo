@@ -296,7 +296,10 @@ class MermaidBlockWidget extends WidgetType {
     const figure = document.createElement("div");
     figure.className = "cm-md-mermaid-figure";
     canvas.append(figure);
-    wrapper.append(head, canvas);
+    const card = document.createElement("div");
+    card.className = "cm-md-mermaid-card";
+    card.append(head, canvas);
+    wrapper.append(card);
 
     let generation = 0;
     let theme = currentMermaidTheme();

@@ -1687,7 +1687,7 @@ describe("livePreviewPlugin", () => {
 
     view.dispatch({ selection: { anchor: doc.length } });
 
-    expect(view.dom.querySelector(".cm-md-frontmatter")?.getAttribute("title")).toBe(
+    expect(view.dom.querySelector(".cm-md-frontmatter-widget")?.getAttribute("title")).toBe(
       "点击编辑 Front Matter",
     );
     expect(view.dom.querySelector(".cm-md-wiki-link")?.getAttribute("title")).toBe("双链：Note");
@@ -1701,7 +1701,7 @@ describe("livePreviewPlugin", () => {
 
     expect(view.state.doc.toString()).toBe(before.doc.toString());
     expect(view.state.selection.eq(before.selection)).toBe(true);
-    expect(view.dom.querySelector(".cm-md-frontmatter")?.getAttribute("title")).toBe(
+    expect(view.dom.querySelector(".cm-md-frontmatter-widget")?.getAttribute("title")).toBe(
       "Click to edit Front Matter",
     );
     expect(view.dom.querySelector(".cm-md-wiki-link")?.getAttribute("title")).toBe(
