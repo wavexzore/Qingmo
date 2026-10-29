@@ -178,6 +178,7 @@ class TocWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const nav = document.createElement("nav");
     nav.className = "cm-md-toc";
+    nav.dataset.blockGap = "";
     nav.title = this.copy.toc.wrapperTitle;
 
     nav.addEventListener("mousedown", (event) => {

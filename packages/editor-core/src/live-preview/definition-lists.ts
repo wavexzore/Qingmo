@@ -171,6 +171,7 @@ class DefinitionListWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const list = document.createElement("dl");
     list.className = "cm-md-definition-list";
+    list.dataset.blockGap = "";
     list.title = this.copy.definitionList.editSource;
 
     list.addEventListener("mousedown", (event) => {

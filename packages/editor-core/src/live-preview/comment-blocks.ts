@@ -149,6 +149,7 @@ class CommentWidget extends WidgetType {
     // spacing is included in CodeMirror's height measurement.
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-comment-widget";
+    wrapper.dataset.blockGap = "";
     wrapper.title = this.copy.comments.wrapperTitle;
 
     const chip = document.createElement("div");
