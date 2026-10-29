@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 
 import { StatusBar } from "../../components/StatusBar";
 import { ConflictBanner } from "./ConflictBanner";
+import { RecoveryBanner } from "./recovery/RecoveryBanner";
+import { RecoveryDialog } from "./recovery/RecoveryDialog";
 import { EditorHost } from "./EditorHost";
 import { useDocumentSession } from "./DocumentSessionContext";
 import { useEditor } from "./useEditor";
@@ -13,17 +15,21 @@ import { useSaveCoordinator } from "./useSaveCoordinator";
 function DocumentEditor() {
   const { t } = useTranslation(["common", "editor"]);
   const { session } = useEditor();
-  const { coordinator, recorder, viewState } = useDocumentSession();
+  const { coordinator, drafts, recorder, viewState, restoreDraft, discardDraft } =
+    useDocumentSession();
   const status = useEditorStatus(session);
   const save = useSaveCoordinator(coordinator);
   useExternalDocumentChanges(session, coordinator);
   const [dismissedConflict, setDismissedConflict] = useState<string | null>(null);
   const [conflictActionError, setConflictActionError] = useState<string | null>(null);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   const untitled = session.isUntitled;
   const conflict = save.state === "conflict" ? save.conflict : null;
   const showConflict = !untitled && conflict !== null && conflict.currentHash !== dismissedConflict;
   const showStatusBar = !untitled || status.saveState !== "clean";
+  const canRestoreDraft =
+    untitled && session.getSnapshot().saveState === "clean" && session.readText().length === 0;
 
   const retrySave = useCallback(() => {
     if (coordinator) {
@@ -48,6 +54,22 @@ function DocumentEditor() {
       data-testid={untitled ? "untitled-editor" : "document-session"}
       className="flex h-full flex-col bg-paper text-ink"
     >
+      <RecoveryBanner drafts={drafts} onOpen={() => setRecoveryOpen(true)} />
+      <RecoveryDialog
+        drafts={drafts}
+        open={recoveryOpen}
+        canRestore={canRestoreDraft}
+        onClose={() => setRecoveryOpen(false)}
+        onRestore={async (id) => {
+          const result = await restoreDraft(id);
+          if (result.ok) {
+            setRecoveryOpen(false);
+          }
+          return result;
+        }}
+        onDiscard={discardDraft}
+      />
+
       {showConflict && conflict ? (
         <ConflictBanner
           conflict={conflict}

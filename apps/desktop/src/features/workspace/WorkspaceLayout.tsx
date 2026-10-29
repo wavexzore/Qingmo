@@ -38,8 +38,14 @@ export function WorkspaceLayout() {
   const toast = useToast();
   const navigate = useNavigate();
   const { ipc, platform } = useAppServices();
-  const { session, coordinator, recorder, setSession } = useDocumentSession();
-  const closeGuard = useCloseGuard({ ipc, platform, coordinator, viewState: recorder });
+  const { session, coordinator, recorder, journal, setSession } = useDocumentSession();
+  const closeGuard = useCloseGuard({
+    ipc,
+    platform,
+    coordinator,
+    viewState: recorder,
+    journal,
+  });
   const updateController = useUpdateController();
   const updateSnapshot = useUpdateSnapshot();
   const [paletteOpen, setPaletteOpen] = useState(false);

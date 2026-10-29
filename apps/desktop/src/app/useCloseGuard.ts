@@ -5,6 +5,7 @@ import type { CloseReason } from "@qingmo/shared";
 import type { IpcPort } from "../lib/ipc/port";
 import type { PlatformPort } from "../lib/platform/port";
 import type { SaveCoordinator } from "../features/editor/save/SaveCoordinator";
+import type { DraftJournal } from "../features/editor/recovery/DraftJournal";
 import type { ViewStateRecorder } from "../features/editor/session/ViewStateRecorder";
 
 export type ClosePromptKind = "unsaved" | "conflict" | "error";
@@ -29,6 +30,8 @@ export interface UseCloseGuardOptions {
   coordinator: SaveCoordinator | null;
   /** Optional view-state recorder flushed before an allowed close. */
   viewState?: ViewStateRecorder | null;
+  /** Optional crash-draft journal flushed before an allowed close. */
+  journal?: DraftJournal | null;
 }
 
 /**
@@ -47,20 +50,28 @@ export function useCloseGuard({
   platform,
   coordinator,
   viewState = null,
+  journal = null,
 }: UseCloseGuardOptions): CloseGuardState {
   const [prompt, setPrompt] = useState<ClosePrompt | null>(null);
   const [closing, setClosing] = useState(false);
   const coordinatorRef = useRef<SaveCoordinator | null>(coordinator);
   const viewStateRef = useRef<ViewStateRecorder | null>(viewState);
+  const journalRef = useRef<DraftJournal | null>(journal);
   const closingRef = useRef(false);
   coordinatorRef.current = coordinator;
   viewStateRef.current = viewState;
+  journalRef.current = journal;
 
   const confirmClose = useCallback(
     async (allow: boolean) => {
       if (allow) {
-        // Flush the latest scroll/selection before Rust destroys the
-        // webview. A storage failure must not block the close.
+        // Flush the latest draft and scroll/selection before Rust destroys
+        // the webview. A storage failure must not block the close.
+        try {
+          await journalRef.current?.flushNow();
+        } catch (error) {
+          console.warn("failed to flush the crash draft before closing", error);
+        }
         try {
           await viewStateRef.current?.flushNow();
         } catch (error) {
@@ -84,6 +95,13 @@ export function useCloseGuard({
         if (result.ok) {
           await confirmClose(true);
           return;
+        }
+        // Preserve a crash draft for the conflict/error prompt: the user may
+        // still choose to close without resolving it.
+        try {
+          await journalRef.current?.flushNow();
+        } catch (error) {
+          console.warn("failed to flush the crash draft before prompting", error);
         }
         setPrompt({ reason, kind: result.failure ?? "error" });
       } catch (error) {
@@ -113,6 +131,11 @@ export function useCloseGuard({
         // Untitled text has no path to autosave to, so exit only asks whether
         // to discard it. Saving stays an explicit user action.
         if (unsavedUntitled) {
+          try {
+            await journalRef.current?.flushNow();
+          } catch (error) {
+            console.warn("failed to flush the crash draft before prompting", error);
+          }
           setPrompt({ reason, kind: "unsaved" });
           return;
         }
@@ -160,11 +183,14 @@ export function useCloseGuard({
 
   const allowClose = useCallback(async () => {
     try {
+      if (prompt?.kind === "unsaved") {
+        await journalRef.current?.discardNow();
+      }
       await confirmClose(true);
     } catch (error) {
       console.error("close was not authorized", error);
     }
-  }, [confirmClose]);
+  }, [confirmClose, prompt?.kind]);
 
   const cancelClose = useCallback(async () => {
     try {

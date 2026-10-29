@@ -115,6 +115,24 @@ export const editor = {
     overwriting: "Saving…",
     failed: "The action did not finish. Try again.",
   },
+  recovery: {
+    kicker: "Session recovery",
+    banner: "{{count}} unsaved draft(s) found",
+    open: "Review",
+    title: "Unsaved drafts",
+    description:
+      "These drafts come from an abnormal exit or a failed save. Restoring creates a new untitled document and never writes the original path.",
+    empty: "No drafts to recover.",
+    untitled: "Untitled",
+    updatedAt: "Saved {{time}}",
+    restore: "Restore",
+    discard: "Discard",
+    close: "Close",
+    restoreBlocked:
+      "The current document has unsaved content. Save or close it before restoring a draft.",
+    restoring: "Restoring…",
+    actionFailed: "The action did not finish ({{code}}). Try again.",
+  },
   widgets: {
     externalRender: "External render",
     externalRenderHint: "{{name}} requires an external renderer; the editor shows the source only",
