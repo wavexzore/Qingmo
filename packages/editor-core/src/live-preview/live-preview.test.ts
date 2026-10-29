@@ -1287,6 +1287,51 @@ describe("livePreviewPlugin", () => {
     expect(view.state.selection.main.head).toBe(edited.indexOf("\n\nTail") + 1);
   });
 
+  it("keeps Shift+Enter as a cell line break and commits it as <br>", () => {
+    const doc = "| A | B |\n| --- | --- |\n| one | 2 |\n\nTail\n";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: stateFor(doc), parent });
+    views.push({ view, parent });
+
+    const cell = view.dom.querySelector<HTMLTextAreaElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    expect(cell).not.toBeNull();
+    if (!cell) {
+      return;
+    }
+    cell.focus();
+    cell.setSelectionRange(3, 3);
+
+    const shiftEnter = new KeyboardEvent("keydown", {
+      key: "Enter",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    cell.dispatchEvent(shiftEnter);
+    // The cell keeps editing: no commit, no prevented default.
+    expect(shiftEnter.defaultPrevented).toBe(false);
+    expect(view.state.doc.toString()).toBe(doc);
+
+    // jsdom has no native textarea editing, so mirror what the browser does
+    // with the default action: insert a newline at the caret.
+    cell.setRangeText("\n", 3, 3, "end");
+    cell.dispatchEvent(new Event("input", { bubbles: true }));
+    cell.setRangeText("two", 4, 4, "end");
+    expect(cell.value).toBe("one\ntwo");
+
+    cell.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+
+    // A real newline would break the table row, so it serializes as inline <br>.
+    expect(view.state.doc.toString()).toContain("| one<br>two | 2 |");
+    const rendered = view.dom.querySelectorAll(".cm-md-table-block tbody td")[0];
+    expect(rendered?.querySelector("br")).not.toBeNull();
+  });
+
   it("renders highlight, sub/sup and safe inline HTML inside table cells", () => {
     const doc =
       "| 语法 | 渲染 |\n" +
