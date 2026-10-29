@@ -45,7 +45,6 @@ export { TABLE_BLOCK_MAX_UNITS, tableBlockPreview } from "./live-preview/table-b
 export {
   CODE_BLOCK_MAX_UNITS,
   codeBlockPreview,
-  codeBlockSelectionGuard,
   type CodeBlockRange,
 } from "./live-preview/code-blocks";
 export { MATH_BLOCK_MAX_UNITS, mathBlockPreview } from "./live-preview/math-blocks";

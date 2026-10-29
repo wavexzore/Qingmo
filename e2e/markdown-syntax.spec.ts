@@ -569,10 +569,14 @@ test("renders code block titles and highlighted lines", async ({ page }) => {
   await expect(highlighted.nth(1)).toContainText("console.log(b);");
   await expect(highlighted.nth(2)).toContainText("console.log(a + b);");
 
-  // The block stays rendered while the caret is on its first line. The
-  // embedded editor owns the source, so fences are never revealed.
+  // Moving the caret into the fence reveals its Markdown source so it stays
+  // editable; the widget returns once the caret leaves the block.
   await page.keyboard.press(`${modifier()}+Home`);
-  await expect(page.locator(".cm-md-code-block-widget")).toBeVisible();
+  await expect(page.locator(".cm-md-code-block-widget")).toHaveCount(0);
+  await expect(editorContent(page)).toContainText('```js title="app.js"');
+
+  await page.keyboard.press(`${modifier()}+End`);
+  await expect(header).toBeVisible();
   await expect(header.locator("button.cm-md-code-language")).toHaveText("js");
   await expect(header.locator(".cm-md-code-title")).toHaveText("app.js");
   await expect(editorContent(page)).not.toContainText('```js title="app.js"');

@@ -11,12 +11,10 @@ import {
 import {
   Decoration,
   EditorView,
-  ViewPlugin,
   WidgetType,
   drawSelection,
   keymap,
   type DecorationSet,
-  type ViewUpdate,
 } from "@codemirror/view";
 
 import { codeLanguages } from "../extensions/languages";
@@ -46,10 +44,33 @@ export interface CodeBlockRange {
 interface CodeBlockState {
   ranges: readonly CodeBlockRange[];
   decorations: DecorationSet;
+  /** Block starts whose range the document selection currently touches. */
+  touched: string;
 }
 
 function emptyState(): CodeBlockState {
-  return { ranges: [], decorations: Decoration.none };
+  return { ranges: [], decorations: Decoration.none, touched: "" };
+}
+
+function selectionTouches(state: EditorState, range: { from: number; to: number }): boolean {
+  return state.selection.ranges.some(
+    (selection) => selection.from <= range.to && selection.to >= range.from,
+  );
+}
+
+/**
+ * A stable key for the set of code blocks the selection touches. The field
+ * only rebuilds when this set changes, so moving the caret around inside a
+ * revealed fence does not tear down every widget in the viewport.
+ */
+function touchedBlocks(state: EditorState, ranges: readonly CodeBlockRange[]): string {
+  let key = "";
+  for (const range of ranges) {
+    if (selectionTouches(state, range)) {
+      key += `${range.from},`;
+    }
+  }
+  return key;
 }
 
 function buildCodeBlocks(state: EditorState): CodeBlockState {
@@ -91,6 +112,13 @@ function buildCodeBlocks(state: EditorState): CodeBlockState {
         codeFrom: code.contentFrom,
         codeTo: code.contentTo,
       });
+      // While the document selection is inside the fence, show its Markdown
+      // source. Rendering a fresh widget during typing would swallow nearby
+      // content (a new opening fence can pair with an existing closing fence)
+      // and leave the caret in hidden text; render only once editing leaves.
+      if (selectionTouches(state, { from, to })) {
+        return false;
+      }
       decorations.push(
         Decoration.replace({
           block: true,
@@ -104,6 +132,7 @@ function buildCodeBlocks(state: EditorState): CodeBlockState {
   return {
     ranges,
     decorations: decorations.length > 0 ? Decoration.set(decorations, true) : Decoration.none,
+    touched: touchedBlocks(state, ranges),
   };
 }
 
@@ -1206,6 +1235,9 @@ export const codeBlockPreview = StateField.define<CodeBlockState>({
     ) {
       return buildCodeBlocks(transaction.state);
     }
+    if (touchedBlocks(transaction.state, value.ranges) !== value.touched) {
+      return buildCodeBlocks(transaction.state);
+    }
     return value;
   },
   provide: (field) => [
@@ -1213,96 +1245,3 @@ export const codeBlockPreview = StateField.define<CodeBlockState>({
     EditorView.atomicRanges.of((view) => view.state.field(field).decorations),
   ],
 });
-
-/**
- * A code block is a single atomic widget, so an external selection (search,
- * go-to-line, restored session) can land inside its hidden source. Hand that
- * selection to the embedded editor instead of leaving an invisible caret in
- * the Markdown text.
- */
-export const codeBlockSelectionGuard = ViewPlugin.fromClass(
-  class {
-    private destroyed = false;
-
-    constructor(private readonly view: EditorView) {
-      this.view.dom.addEventListener("focusin", this.handleFocusIn);
-    }
-
-    destroy(): void {
-      this.destroyed = true;
-      this.view.dom.removeEventListener("focusin", this.handleFocusIn);
-    }
-
-    update(update: ViewUpdate): void {
-      if (!update.selectionSet || update.docChanged) {
-        return;
-      }
-      const field = update.state.field(codeBlockPreview, false);
-      if (!field) {
-        return;
-      }
-      const selection = update.state.selection.main;
-      const block = field.ranges.find(
-        (range) => selection.head >= range.from && selection.head <= range.to,
-      );
-      if (!block) {
-        return;
-      }
-      queueMicrotask(() => this.focusBlock(block));
-    }
-
-    private readonly handleFocusIn = (event: FocusEvent): void => {
-      if (event.target !== this.view.contentDOM) {
-        return;
-      }
-      const field = this.view.state.field(codeBlockPreview, false);
-      const selection = this.view.state.selection.main;
-      const block = field?.ranges.find(
-        (range) => selection.head >= range.from && selection.head <= range.to,
-      );
-      if (block) {
-        this.focusBlock(block);
-      }
-    };
-
-    private focusBlock(block: CodeBlockRange): void {
-      if (this.destroyed) {
-        return;
-      }
-      const active = this.view.dom.ownerDocument.activeElement;
-      // The find panel keeps keyboard focus while stepping through matches.
-      if (active instanceof HTMLElement && active.closest(".cm-search")) {
-        return;
-      }
-      const field = this.view.state.field(codeBlockPreview, false);
-      const selection = this.view.state.selection.main;
-      const current = field?.ranges.find(
-        (range) => selection.head >= range.from && selection.head <= range.to,
-      );
-      if (!current || current.from !== block.from) {
-        return;
-      }
-      const dom = this.view.dom.querySelector<HTMLElement>(
-        `.cm-md-code-block-widget[data-code-from="${current.from}"]`,
-      );
-      if (!dom) {
-        return;
-      }
-      const editor = dom.querySelector<HTMLElement>(".cm-editor");
-      const nested = editor ? EditorView.findFromDOM(editor) : null;
-      if (!nested) {
-        return;
-      }
-      if (dom.contains(active)) {
-        return;
-      }
-      const from = Math.max(
-        0,
-        Math.min(nested.state.doc.length, selection.from - current.codeFrom),
-      );
-      const to = Math.max(from, Math.min(nested.state.doc.length, selection.to - current.codeFrom));
-      nested.focus();
-      nested.dispatch({ selection: EditorSelection.single(from, to) });
-    }
-  },
-);
