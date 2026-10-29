@@ -60,6 +60,36 @@ test("edits a rendered table cell without revealing Markdown source", async ({ p
   await expect.poll(() => getFileText(page, TABLE_PATH)).toContain("| :--- | ---: |");
 });
 
+test("inserts a cell line break with Shift+Enter and keeps Enter as commit", async ({ page }) => {
+  await openApp(page, [{ path: TABLE_PATH, text: TABLE_DOC }]);
+  await openSeededFile(page, "table-edit.md");
+
+  const cell = page.locator('.cm-md-table-cell-input[data-row="0"][data-col="0"]');
+  await cell.click();
+  await cell.press("Shift+Enter");
+  await page.keyboard.type("红富士");
+
+  expect(await cell.inputValue()).toBe("苹果\n红富士");
+  // The row grows with the cell so the second line is visible instead of
+  // scrolling inside a one-line textarea.
+  const metrics = await cell.evaluate((element) => {
+    const textarea = element as HTMLTextAreaElement;
+    return { scrollHeight: textarea.scrollHeight, clientHeight: textarea.clientHeight };
+  });
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
+
+  await page.keyboard.press("Enter");
+
+  const rendered = page.locator(".cm-md-table-block tbody tr").first().locator("td").first();
+  await expect(rendered.locator("br")).toHaveCount(1);
+  await expect(rendered).toContainText("苹果");
+  await expect(rendered).toContainText("红富士");
+  await expect.poll(() => getFileText(page, TABLE_PATH)).toContain("| 苹果<br>红富士 | 2 |");
+  expect(
+    await page.evaluate(() => document.activeElement?.classList.contains("cm-md-table-cell-input")),
+  ).toBe(false);
+});
+
 test("renders terminal chrome with a top-right language chip", async ({ page }) => {
   await openApp(page, [{ path: CODE_PATH, text: CODE_DOC }]);
   await openSeededFile(page, "code-badge.md");

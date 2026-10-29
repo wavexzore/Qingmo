@@ -168,24 +168,26 @@ interface CellChange {
 }
 
 /**
- * A Markdown cell cannot contain an unescaped pipe. Preserve already-escaped
- * pipes and newlines from pasted text so the serialized table stays valid.
+ * A Markdown cell cannot contain an unescaped pipe or a real line break.
+ * Preserve already-escaped pipes, and serialize line breaks (typed with
+ * Shift+Enter or pasted) as `<br>` so the table keeps its row structure while
+ * the rendered cell still shows the break.
  */
 function escapeTableCell(value: string): string {
   let result = "";
-  let lineBreaks = 0;
-  for (const character of value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value.charAt(index);
     if (character === "\r" || character === "\n") {
-      if (lineBreaks === 0) {
-        result += " ";
+      // CRLF is one logical break.
+      if (character === "\r" && value.charAt(index + 1) === "\n") {
+        index += 1;
       }
-      lineBreaks += 1;
+      result += "<br>";
       continue;
     }
-    lineBreaks = 0;
     if (character === "|") {
       let backslashes = 0;
-      for (let index = result.length - 1; index >= 0 && result[index] === "\\"; index -= 1) {
+      for (let cursor = result.length - 1; cursor >= 0 && result[cursor] === "\\"; cursor -= 1) {
         backslashes += 1;
       }
       if (backslashes % 2 === 0) {
@@ -195,6 +197,33 @@ function escapeTableCell(value: string): string {
     result += character;
   }
   return result;
+}
+
+/**
+ * Cell editors are absolutely positioned inside the cell, so a multi-line
+ * value would scroll inside a one-line box. Grow the owning cell instead; the
+ * editor then fills the taller cell and every line stays visible.
+ */
+function syncCellHeight(editor: HTMLTextAreaElement): void {
+  const cell = editor.closest<HTMLElement>("th, td");
+  if (!cell) {
+    return;
+  }
+  if (!editor.value.includes("\n")) {
+    cell.style.height = "";
+    return;
+  }
+  const style = window.getComputedStyle(cell);
+  const border =
+    Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.borderBottomWidth);
+  const padding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+  const extra = Number.isFinite(border) ? border : 0;
+  const box = Number.isFinite(padding) ? padding : 0;
+  const height =
+    style.boxSizing === "border-box" ? editor.scrollHeight + extra : editor.scrollHeight - box;
+  if (height > 0) {
+    cell.style.height = `${height}px`;
+  }
 }
 
 /**
@@ -500,8 +529,21 @@ class TableBlockWidget extends WidgetType {
       commit();
     });
 
+    wrapper.addEventListener("input", (event) => {
+      if (event.target instanceof HTMLTextAreaElement) {
+        syncCellHeight(event.target);
+      }
+    });
+
     wrapper.addEventListener("keydown", (event) => {
       if (!(event.target instanceof HTMLTextAreaElement) || event.isComposing) {
+        return;
+      }
+      if (event.key === "Enter" && event.shiftKey) {
+        // Keep the line break inside the cell. Let the textarea perform its
+        // native insertion (which keeps undo working) and stop the event here
+        // so CodeMirror never sees an Enter of its own.
+        event.stopPropagation();
         return;
       }
       if (event.key === "Enter") {
@@ -518,6 +560,7 @@ class TableBlockWidget extends WidgetType {
         event.preventDefault();
         for (const editor of editors) {
           editor.editor.value = editor.original;
+          syncCellHeight(editor.editor);
         }
         view.dispatch({
           selection: { anchor: Math.min(this.table.to + 1, view.state.doc.length) },
