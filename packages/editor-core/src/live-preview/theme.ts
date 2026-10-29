@@ -1382,6 +1382,10 @@ export const livePreviewTheme = EditorView.theme(
       verticalAlign: "top",
       lineHeight: "1.5",
       position: "relative",
+      // URLs have no spaces: without this a cell can force the whole table
+      // into horizontal scrolling instead of wrapping.
+      overflowWrap: "anywhere",
+      wordBreak: "break-word",
     },
     // Rendered cells stay visible while another cell is edited; the
     // transparent editor on top handles clicks, caret placement and typing.
@@ -1404,6 +1408,8 @@ export const livePreviewTheme = EditorView.theme(
       // Raw Markdown is often longer than the rendered cell; wrapping keeps
       // the whole cell value readable instead of clipping one endless line.
       whiteSpace: "pre-wrap",
+      overflowWrap: "anywhere",
+      wordBreak: "break-word",
       overflowY: "auto",
       resize: "none",
     },

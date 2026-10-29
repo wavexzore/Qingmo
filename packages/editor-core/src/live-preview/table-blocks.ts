@@ -13,7 +13,13 @@ import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { renderInlineMarkdown } from "./inline-render";
 import { readDetailsBlocks } from "./details";
-import { isLinkOpenGesture, isOpenableHref, linkHrefAt, openExternalLink } from "./link-click";
+import {
+  isLinkOpenGesture,
+  isOpenableHref,
+  linkHrefAt,
+  linkHrefAtPoint,
+  openExternalLink,
+} from "./link-click";
 import { readFrontMatter } from "./frontmatter";
 import { HtmlTableWidget, readHtmlTables } from "./html-tables";
 import { readTable, type ParsedTable, type TableAlignment, type TableCellRange } from "./specs";
@@ -452,6 +458,27 @@ class TableBlockWidget extends WidgetType {
         return;
       }
       if (event.target instanceof HTMLTextAreaElement) {
+        // The focused cell's transparent editor covers the rendered link. A
+        // modifier click still opens the link under the pointer, matching
+        // Typora's editable-table behaviour. Only trust the rendered
+        // rectangles while the editor is not scrolled, since the layers then
+        // share the same origin.
+        if (
+          isLinkOpenGesture(event, this.readOnly) &&
+          event.target.scrollTop === 0 &&
+          event.target.scrollLeft === 0
+        ) {
+          const href = linkHrefAtPoint(
+            event.target.closest("th, td"),
+            event.clientX,
+            event.clientY,
+          );
+          if (href && isOpenableHref(href)) {
+            event.preventDefault();
+            event.stopPropagation();
+            openExternalLink(view, href);
+          }
+        }
         return;
       }
       event.preventDefault();

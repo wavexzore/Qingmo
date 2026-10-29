@@ -19,6 +19,20 @@ const LINK_TABLE_DOC = [
 const LINK_TABLE_VALUE =
   "https://www.liepin.com/job/1982639449.shtml ｜ https://www.liepin.com/job/1980694393.shtml ｜ https://www.quanzhi.com/job/6a749e07f87cf99210b41cc0";
 
+// One unbroken URL: unlike the value above it offers no space or hyphen to
+// break at, which is the real-world shape from the ledger documents.
+const LONG_URL_PATH = "/docs/table-long-url.md";
+const LONG_URL =
+  "https://cn.69gl.com/shop69392153/productdetail_1000822060312345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
+const LONG_URL_DOC = [
+  "# 长链接",
+  "",
+  "| 名称 | 链接 |",
+  "| --- | --- |",
+  `| 长链接 | ${LONG_URL} |`,
+  "",
+].join("\n");
+
 const CODE_PATH = "/docs/code-badge.md";
 const CODE_DOC =
   "# 代码\n\n```ts\nconst answer: number = 42;\nconsole.log(answer);\n```\n\n结尾段落\n";
@@ -181,6 +195,37 @@ test("edits a long cell as wrapped raw Markdown instead of a clipped line", asyn
   expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
 });
 
+test("wraps one unbroken long URL inside its cell", async ({ page }) => {
+  await openApp(page, [{ path: LONG_URL_PATH, text: LONG_URL_DOC }]);
+  await openSeededFile(page, "table-long-url.md");
+
+  const link = page.locator(`.cm-md-table-block .cm-md-link[data-href="${LONG_URL}"]`);
+  await expect(link).toHaveCount(1);
+
+  // The resting table must not grow wider than its container; a long URL has
+  // to break inside the cell instead of turning the table into a scroller.
+  const wrapper = page.locator(".cm-md-table-block");
+  const resting = await wrapper.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+  }));
+  expect(resting.scrollWidth).toBeLessThanOrEqual(resting.clientWidth + 1);
+
+  const cell = page.locator('.cm-md-table-cell-input[data-row="0"][data-col="1"]');
+  await cell.focus();
+  const metrics = await cell.evaluate((element) => {
+    const textarea = element as HTMLTextAreaElement;
+    return {
+      scrollWidth: textarea.scrollWidth,
+      clientWidth: textarea.clientWidth,
+      scrollHeight: textarea.scrollHeight,
+      clientHeight: textarea.clientHeight,
+    };
+  });
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
+});
+
 test("opens a table link with the platform modifier and keeps a plain click editable", async ({
   page,
 }) => {
@@ -201,6 +246,17 @@ test("opens a table link with the platform modifier and keeps a plain click edit
   await first.click();
   await expect(page.locator('.cm-md-table-cell-input[data-row="0"][data-col="1"]')).toBeFocused();
   expect(await getOpenedLinks(page)).toEqual([second]);
+
+  // The focused cell's textarea covers the rendered links; a modifier click
+  // still opens the link under the pointer (Typora's editable-table gesture).
+  const box = await first.boundingBox();
+  expect(box).not.toBeNull();
+  await page.keyboard.down(modifier());
+  await page.mouse.click(box!.x + 4, box!.y + box!.height / 2);
+  await page.keyboard.up(modifier());
+  await expect
+    .poll(() => getOpenedLinks(page))
+    .toEqual([second, "https://www.liepin.com/job/1982639449.shtml"]);
 });
 
 test("opens a table link on a plain click in a read-only document", async ({ page }) => {
