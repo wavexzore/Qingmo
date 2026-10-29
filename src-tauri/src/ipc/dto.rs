@@ -488,3 +488,124 @@ pub fn test_native_labels(app_name: &str) -> NativeShellLabels {
         untitled_file_name: "Untitled.md".to_string(),
     }
 }
+
+/// Persisted CodeMirror view state for one named document.
+///
+/// The store stamps `updatedAtMs`; the webview only supplies the input shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorViewState {
+    pub anchor: u32,
+    pub head: u32,
+    /// Document position of the block at the top of the viewport.
+    pub top_pos: u32,
+    /// Pixel offset between that block's top and the viewport top.
+    pub top_offset: f64,
+    pub scroll_left: f64,
+    /// User preference, not the effective mode.
+    pub live_preview_preferred: bool,
+    pub updated_at_ms: i64,
+}
+
+/// Lenient write shape for `session_view_state_set`.
+///
+/// Numbers arrive as `i64`/`f64` so an out-of-range value is clamped by the
+/// store instead of failing at the serde boundary and losing the AppError.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorViewStateInput {
+    pub anchor: i64,
+    pub head: i64,
+    pub top_pos: i64,
+    pub top_offset: f64,
+    pub scroll_left: f64,
+    pub live_preview_preferred: bool,
+}
+
+/// Why a crash draft exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum DraftKind {
+    /// Never bound to a path; recovery always creates a new untitled session.
+    Untitled,
+    /// A named document whose save failed or conflicted.
+    Named,
+}
+
+/// Request body for `session_draft_write`.
+///
+/// `kind` stays a string so an unknown value produces `INVALID_PATH` instead
+/// of a deserialization error outside the AppError contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftWriteRequest {
+    /// Existing draft id; omitted for the first write of a session.
+    #[ts(optional)]
+    pub id: Option<String>,
+    pub kind: String,
+    #[ts(optional)]
+    pub path: Option<String>,
+    pub title: String,
+    pub text: String,
+    pub anchor: i64,
+    pub head: i64,
+}
+
+/// Metadata shown by the recovery banner/dialog; never carries the body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftMeta {
+    pub id: String,
+    pub kind: DraftKind,
+    pub path: Option<String>,
+    pub title: String,
+    /// UTF-16 code units, matching JavaScript `String.length`.
+    pub text_units: u64,
+    /// UTF-8 byte length of `text`.
+    pub size_bytes: u64,
+    pub anchor: u32,
+    pub head: u32,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub app_version: String,
+}
+
+/// On-disk draft file, returned by `session_draft_read`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftRecord {
+    pub schema_version: u32,
+    pub id: String,
+    pub kind: DraftKind,
+    pub path: Option<String>,
+    pub title: String,
+    pub text: String,
+    pub text_units: u64,
+    pub size_bytes: u64,
+    pub anchor: u32,
+    pub head: u32,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub app_version: String,
+}
+
+impl DraftRecord {
+    pub fn meta(&self) -> DraftMeta {
+        DraftMeta {
+            id: self.id.clone(),
+            kind: self.kind,
+            path: self.path.clone(),
+            title: self.title.clone(),
+            text_units: self.text_units,
+            size_bytes: self.size_bytes,
+            anchor: self.anchor,
+            head: self.head,
+            created_at_ms: self.created_at_ms,
+            updated_at_ms: self.updated_at_ms,
+            app_version: self.app_version.clone(),
+        }
+    }
+}
+
+pub const DRAFT_SCHEMA_VERSION: u32 = 1;
+pub const VIEW_STATE_SCHEMA_VERSION: u32 = 1;

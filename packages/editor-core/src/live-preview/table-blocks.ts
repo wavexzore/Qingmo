@@ -10,19 +10,13 @@ import {
 } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { renderInlineMarkdown } from "./inline-render";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import { HtmlTableWidget, readHtmlTables } from "./html-tables";
 import { readTable, type ParsedTable, type TableAlignment, type TableCellRange } from "./specs";
 import type { MarkdownNode } from "./markdown-node";
-
-/**
- * Above this size the multi-line table scan is disabled. The table then keeps
- * the lean source styling from the view plugin instead of paying a full-tree
- * block-decoration rebuild on every keystroke.
- */
-export const TABLE_BLOCK_MAX_UNITS = 200_000;
 
 interface TableRange {
   from: number;
@@ -71,7 +65,7 @@ function emptyState(): TableBlockState {
  * is not modelled yet.
  */
 function buildTableBlocks(state: EditorState): TableBlockState {
-  if (state.doc.length > TABLE_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
 

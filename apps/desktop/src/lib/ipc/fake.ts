@@ -2,6 +2,12 @@ import type {
   AppErrorCode,
   ApplyLocaleRequest,
   DocumentChangedPayload,
+  DraftKind,
+  DraftMeta,
+  DraftRecord,
+  DraftWriteRequest,
+  EditorViewState,
+  EditorViewStateInput,
   FilePayload,
   JsonValue,
   ReadOnlyReason,
@@ -15,6 +21,11 @@ import { AppError } from "./errors";
 import type { CloseConfirmRequest, IpcPort, LivePreviewRequest } from "./port";
 
 export const FAKE_MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const FAKE_MAX_DRAFT_BYTES = 2 * 1024 * 1024;
+const FAKE_MAX_DRAFT_COUNT = 20;
+const FAKE_MAX_DRAFT_TOTAL_BYTES = 8 * 1024 * 1024;
+const FAKE_MAX_DRAFT_TITLE = 200;
+const FAKE_MAX_VIEW_STATES = 200;
 
 const textEncoder = new TextEncoder();
 
@@ -111,6 +122,8 @@ export class FakeIpc implements IpcPort {
   private readonly persistentErrors = new Map<CommandName, AppError>();
   private readonly commandDelays = new Map<CommandName, number>();
   private readonly documentChangedListeners = new Set<(change: DocumentChangedPayload) => void>();
+  private readonly viewStates = new Map<string, EditorViewState>();
+  private readonly drafts = new Map<string, DraftRecord>();
   private active: { token: string; path: string } | null = null;
   private pending: FilePayload | null = null;
   private openFile: string | null;
@@ -121,6 +134,7 @@ export class FakeIpc implements IpcPort {
 
   readonly closeConfirmCalls: CloseConfirmRequest[] = [];
   readonly livePreviewCalls: boolean[] = [];
+  readonly viewStateWrites: Array<{ path: string; state: EditorViewState }> = [];
   readonly localeCalls: ApplyLocaleRequest[] = [];
 
   constructor(options: FakeIpcOptions = {}) {
@@ -499,8 +513,180 @@ export class FakeIpc implements IpcPort {
     throw next;
   }
 
+  /** Seeds a persisted view state exactly as Rust would return it. */
+  seedViewState(path: string, state: EditorViewState): void {
+    this.viewStates.set(path, { ...state });
+  }
+
+  /** Seeds a crash draft, e.g. to drive the recovery banner in browser tests. */
+  seedDraft(record: DraftRecord): void {
+    this.drafts.set(record.id, { ...record });
+  }
+
+  async sessionViewStateGet(path: string): Promise<EditorViewState | null> {
+    await this.wait(COMMANDS.sessionViewStateGet);
+    this.maybeThrow(COMMANDS.sessionViewStateGet);
+    const state = this.viewStates.get(path);
+    return state ? { ...state } : null;
+  }
+
+  async sessionViewStateSet(path: string, state: EditorViewStateInput): Promise<void> {
+    await this.wait(COMMANDS.sessionViewStateSet);
+    this.maybeThrow(COMMANDS.sessionViewStateSet);
+    if (!path) {
+      throw new AppError("INVALID_PATH", "view state path must not be empty");
+    }
+    const entry: EditorViewState = {
+      anchor: clampInt(state.anchor, 0, 0xffff_ffff),
+      head: clampInt(state.head, 0, 0xffff_ffff),
+      topPos: clampInt(state.topPos, 0, 0xffff_ffff),
+      topOffset: clampNumber(state.topOffset, -1_000_000, 1_000_000),
+      scrollLeft: clampNumber(state.scrollLeft, 0, 1_000_000),
+      livePreviewPreferred: state.livePreviewPreferred,
+      updatedAtMs: this.tick(),
+    };
+    // Mirrors the Rust cap: drop the oldest keys above 200 entries.
+    if (!this.viewStates.has(path) && this.viewStates.size >= FAKE_MAX_VIEW_STATES) {
+      const oldest = [...this.viewStates.entries()].sort(
+        (left, right) => left[1].updatedAtMs - right[1].updatedAtMs,
+      )[0];
+      if (oldest) {
+        this.viewStates.delete(oldest[0]);
+      }
+    }
+    this.viewStates.set(path, entry);
+    this.viewStateWrites.push({ path, state: entry });
+  }
+
+  async sessionDraftWrite(request: DraftWriteRequest): Promise<DraftMeta> {
+    await this.wait(COMMANDS.sessionDraftWrite);
+    this.maybeThrow(COMMANDS.sessionDraftWrite);
+
+    const kind = request.kind.trim().toLowerCase();
+    if (kind !== "untitled" && kind !== "named") {
+      throw new AppError("INVALID_PATH", `unknown draft kind: ${request.kind}`);
+    }
+    if (kind === "named" && !request.path) {
+      throw new AppError("INVALID_PATH", "named drafts require a path");
+    }
+    const bytes = byteLength(request.text);
+    if (bytes > FAKE_MAX_DRAFT_BYTES) {
+      throw new AppError("FILE_TOO_LARGE", `draft text exceeds ${FAKE_MAX_DRAFT_BYTES} bytes`);
+    }
+
+    const existing = request.id ? this.drafts.get(request.id) : undefined;
+    const id = existing?.id ?? request.id ?? newUuid();
+    const createdAtMs = existing?.createdAtMs ?? this.tick();
+    const record: DraftRecord = {
+      schemaVersion: 1,
+      id,
+      kind: (existing?.kind ?? kind) as DraftKind,
+      path: existing ? existing.path : kind === "named" ? (request.path ?? null) : null,
+      title: sanitizeDraftTitle(request.title),
+      text: request.text,
+      textUnits: request.text.length,
+      sizeBytes: bytes,
+      anchor: clampInt(request.anchor, 0, 0xffff_ffff),
+      head: clampInt(request.head, 0, 0xffff_ffff),
+      createdAtMs,
+      updatedAtMs: this.tick(),
+      appVersion: "fake",
+    };
+    this.drafts.set(id, record);
+    this.pruneDrafts();
+    return toDraftMeta(record);
+  }
+
+  async sessionDraftList(): Promise<DraftMeta[]> {
+    await this.wait(COMMANDS.sessionDraftList);
+    this.maybeThrow(COMMANDS.sessionDraftList);
+    this.pruneDrafts();
+    return [...this.drafts.values()]
+      .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+      .map(toDraftMeta);
+  }
+
+  async sessionDraftRead(id: string): Promise<DraftRecord> {
+    await this.wait(COMMANDS.sessionDraftRead);
+    this.maybeThrow(COMMANDS.sessionDraftRead);
+    const record = this.drafts.get(id);
+    if (!record) {
+      throw new AppError("NOT_FOUND", `draft not found: ${id}`);
+    }
+    return { ...record };
+  }
+
+  async sessionDraftDiscard(id: string): Promise<boolean> {
+    await this.wait(COMMANDS.sessionDraftDiscard);
+    this.maybeThrow(COMMANDS.sessionDraftDiscard);
+    return this.drafts.delete(id);
+  }
+
+  private pruneDrafts(): void {
+    const oldestFirst = [...this.drafts.values()].sort(
+      (left, right) => left.updatedAtMs - right.updatedAtMs,
+    );
+    let total = oldestFirst.reduce((sum, record) => sum + record.sizeBytes, 0);
+    for (const record of oldestFirst) {
+      if (this.drafts.size <= FAKE_MAX_DRAFT_COUNT && total <= FAKE_MAX_DRAFT_TOTAL_BYTES) {
+        break;
+      }
+      this.drafts.delete(record.id);
+      total -= record.sizeBytes;
+    }
+  }
+
   private tick(): number {
     this.clock = Math.max(Date.now(), this.clock + 1);
     return this.clock;
   }
+}
+
+function sanitizeDraftTitle(title: string): string {
+  return Array.from(title)
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      // Mirrors Rust `char::is_control`: C0, DEL and C1 controls only.
+      return !(code < 0x20 || (code >= 0x7f && code <= 0x9f));
+    })
+    .slice(0, FAKE_MAX_DRAFT_TITLE)
+    .join("");
+}
+
+function clampInt(value: number, minimum: number, maximum: number): number {
+  if (!Number.isFinite(value)) {
+    return minimum;
+  }
+  return Math.min(maximum, Math.max(minimum, Math.trunc(value)));
+}
+
+function clampNumber(value: number, minimum: number, maximum: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function toDraftMeta(record: DraftRecord): DraftMeta {
+  return {
+    id: record.id,
+    kind: record.kind,
+    path: record.path,
+    title: record.title,
+    textUnits: record.textUnits,
+    sizeBytes: record.sizeBytes,
+    anchor: record.anchor,
+    head: record.head,
+    createdAtMs: record.createdAtMs,
+    updatedAtMs: record.updatedAtMs,
+    appVersion: record.appVersion,
+  };
+}
+
+function newUuid(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  return `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, "0").slice(-12)}`;
 }

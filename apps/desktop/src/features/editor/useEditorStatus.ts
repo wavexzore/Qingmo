@@ -35,7 +35,7 @@ export function useEditorStatus(session: EditorSession): StatusBarSnapshot {
     eol: snapshot.format.eol,
     size: snapshot.size,
     mode: snapshot.livePreview ? "livePreview" : "source",
-    largeFile: snapshot.largeFile,
+    previewTier: snapshot.previewTier,
     readOnly: snapshot.readOnly,
     readOnlyReason: snapshot.readOnlyReason,
   };

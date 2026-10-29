@@ -8,7 +8,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
-import { LP_MAX_UNITS, SYNTAX_TREE_BUDGET_MS } from "../limits";
+import { previewTierFor, SYNTAX_TREE_BUDGET_MS } from "../limits";
 import { editorUiCopy, type EditorUiCopy } from "../i18n";
 import { blockWidgetGapClicks } from "./block-widget-gaps";
 import { codeFenceAutoClose } from "./code-fence-input";
@@ -128,7 +128,7 @@ export function buildLivePreviewDecorations(
 
 function buildForView(view: EditorView): LivePreviewBuild {
   const { state } = view;
-  if (state.doc.length === 0 || state.doc.length > LP_MAX_UNITS) {
+  if (state.doc.length === 0 || previewTierFor(state.doc.length) === "source") {
     return emptyBuild();
   }
 

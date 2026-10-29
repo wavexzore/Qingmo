@@ -3,16 +3,11 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { renderTeX } from "./widgets";
 import { readDetailsBlocks } from "./details";
 import { readFrontMatter } from "./frontmatter";
 import type { MarkdownNode } from "./markdown-node";
-
-/**
- * Above this size the scan is disabled and `$$` / ` ```math ` blocks keep
- * their source styling, matching the table preview's degradation strategy.
- */
-export const MATH_BLOCK_MAX_UNITS = 200_000;
 
 interface MathRange {
   from: number;
@@ -117,7 +112,7 @@ function readMathFence(
 }
 
 function buildMathBlocks(state: EditorState): MathBlockState {
-  if (state.doc.length > MATH_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
 

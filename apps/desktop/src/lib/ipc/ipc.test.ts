@@ -159,6 +159,53 @@ describe("Tauri IpcPort adapter", () => {
     expect(tauriMocks.invoke).toHaveBeenCalledWith("app_apply_locale", { request });
   });
 
+  it("wraps session view state and draft arguments like Rust expects", async () => {
+    const state = {
+      anchor: 1,
+      head: 2,
+      topPos: 3,
+      topOffset: 4,
+      scrollLeft: 5,
+      livePreviewPreferred: true,
+    };
+    const request = {
+      kind: "untitled",
+      title: "Untitled",
+      text: "body",
+      anchor: 0,
+      head: 4,
+    };
+    tauriMocks.invoke
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ schemaVersion: 1 })
+      .mockResolvedValueOnce(true);
+    const ipc = createTauriIpc();
+
+    await expect(ipc.sessionViewStateGet("/docs/a.md")).resolves.toBeNull();
+    await expect(ipc.sessionViewStateSet("/docs/a.md", state)).resolves.toBeUndefined();
+    await expect(ipc.sessionDraftWrite(request)).resolves.toBeNull();
+    await expect(ipc.sessionDraftList()).resolves.toEqual([]);
+    await expect(ipc.sessionDraftRead("id")).resolves.toEqual({ schemaVersion: 1 });
+    await expect(ipc.sessionDraftDiscard("id")).resolves.toBe(true);
+
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(1, "session_view_state_get", {
+      path: "/docs/a.md",
+    });
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(2, "session_view_state_set", {
+      path: "/docs/a.md",
+      state,
+    });
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(3, "session_draft_write", { request });
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(4, "session_draft_list", {});
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(5, "session_draft_read", { id: "id" });
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(6, "session_draft_discard", {
+      id: "id",
+    });
+  });
+
   it("turns a Tauri rejection object into AppError", async () => {
     tauriMocks.invoke.mockRejectedValueOnce({
       code: "CONFLICT",
@@ -467,6 +514,61 @@ describe("FakeIpc", () => {
     await ipc.appApplyLocale(request);
 
     expect(ipc.localeCalls).toEqual([request]);
+  });
+
+  it("round-trips view state and drafts with the Rust clamp semantics", async () => {
+    const ipc = new FakeIpc();
+
+    await ipc.sessionViewStateSet("/docs/a.md", {
+      anchor: -5,
+      head: 12.9,
+      topPos: 4,
+      topOffset: 2_000_000,
+      scrollLeft: -1,
+      livePreviewPreferred: false,
+    });
+    const state = await ipc.sessionViewStateGet("/docs/a.md");
+    expect(state).toMatchObject({
+      anchor: 0,
+      head: 12,
+      topPos: 4,
+      topOffset: 1_000_000,
+      scrollLeft: 0,
+      livePreviewPreferred: false,
+    });
+    expect(state?.updatedAtMs).toBeGreaterThan(0);
+    await expect(ipc.sessionViewStateGet("/docs/missing.md")).resolves.toBeNull();
+
+    const meta = await ipc.sessionDraftWrite({
+      kind: "untitled",
+      title: "未命名",
+      text: "a😀b",
+      anchor: 0,
+      head: 4,
+    });
+    expect(meta).toMatchObject({ kind: "untitled", path: null, textUnits: 4, sizeBytes: 6 });
+    await expect(ipc.sessionDraftList()).resolves.toHaveLength(1);
+    await expect(ipc.sessionDraftRead(meta.id)).resolves.toMatchObject({ text: "a😀b" });
+
+    const updated = await ipc.sessionDraftWrite({
+      id: meta.id,
+      kind: "named",
+      path: "/docs/a.md",
+      title: "a.md",
+      text: "next",
+      anchor: 1,
+      head: 1,
+    });
+    expect(updated).toMatchObject({
+      id: meta.id,
+      kind: "untitled",
+      path: null,
+      createdAtMs: meta.createdAtMs,
+    });
+
+    await expect(ipc.sessionDraftDiscard(meta.id)).resolves.toBe(true);
+    await expect(ipc.sessionDraftDiscard(meta.id)).resolves.toBe(false);
+    await expect(ipc.sessionDraftRead(meta.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("honors per-command delay overrides", async () => {

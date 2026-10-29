@@ -3,6 +3,7 @@ import type { EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 
 import { DEFAULT_EDITOR_UI_COPY, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { renderInlineMarkdown } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
 import type { TableAlignment } from "./specs";
@@ -13,7 +14,6 @@ import type { TableAlignment } from "./specs";
  * tag or attribute stays inert text, and cell content goes through the shared
  * Markdown renderer (which never uses innerHTML).
  */
-export const HTML_TABLE_MAX_UNITS = 200_000;
 export const HTML_TABLE_MAX_ROWS = 500;
 export const HTML_TABLE_MAX_CELLS = 5_000;
 const MAX_SPAN = 1_000;
@@ -293,7 +293,7 @@ function linePrefixIsBlank(state: EditorState, from: number): boolean {
  * relying on Lezer's blank-line-delimited HTMLBlock alone.
  */
 export function readHtmlTables(state: EditorState): readonly HtmlTable[] {
-  if (state.doc.length > HTML_TABLE_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return [];
   }
 

@@ -6,8 +6,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildLivePreviewDecorations,
   createEditorState,
-  LP_MAX_UNITS,
+  previewTierFor,
   SYNTAX_TREE_BUDGET_MS,
+  type PreviewTier,
   type VisibleRange,
 } from "../packages/editor-core/src/index";
 import { iterationsFor, loadFixture, selectedFixtures } from "./lib/fixtures";
@@ -22,7 +23,7 @@ function viewportFor(state: EditorState): VisibleRange[] {
 
 /** Mirrors the plugin's `buildForView` without relying on jsdom layout. */
 function decorateOnce(state: EditorState, ranges: readonly VisibleRange[]): number {
-  if (state.doc.length > LP_MAX_UNITS) {
+  if (previewTierFor(state.doc.length) === "source") {
     return buildLivePreviewDecorations(state, ranges, []).size;
   }
   ensureSyntaxTree(state, ranges[0]?.to ?? 0, SYNTAX_TREE_BUDGET_MS);
@@ -83,7 +84,8 @@ describe("decorate + key benchmark", () => {
     it(`${name}: live preview decorations and key latency`, () => {
       const fixture = loadFixture(name);
       const state = createEditorState({ doc: fixture.text });
-      const largeFile = state.doc.length > LP_MAX_UNITS;
+      const tier: PreviewTier = previewTierFor(state.doc.length);
+      const largeFile = tier === "source";
       const ranges = viewportFor(state);
 
       const decorate = measureDecorate(state, ranges, iterationsFor(name, "key") / 4);
@@ -115,13 +117,14 @@ describe("decorate + key benchmark", () => {
         bytes: fixture.bytes,
         lines: fixture.lines,
         largeFile,
+        previewTier: tier,
         viewportLines: VIEWPORT_LINES,
         viewportUnits: ranges[0]?.to ?? 0,
         decorateIterations: decorate.samples.length,
         decorateMs: summarize(decorate.samples),
         decorationSpecs: decorate.specs,
         decorateSkipped: largeFile,
-        decorateSkipReason: largeFile ? "document exceeds LP_MAX_UNITS" : null,
+        decorateSkipReason: largeFile ? "document exceeds PREVIEW_PARTIAL_MAX_UNITS" : null,
         viewMountMs,
         viewVisibleUnits,
         keyIterations: keySamples.length,

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_EDITOR_UI_COPY,
-  LP_MAX_UNITS,
+  PREVIEW_PARTIAL_MAX_UNITS,
   MAX_LINE_UNITS,
   buildLivePreviewDecorations,
   codeBlockPreview,
@@ -660,7 +660,7 @@ describe("collectDecorationSpecs", () => {
   });
 
   it("returns no decorations above the Live Preview unit budget", () => {
-    const state = createEditorState({ doc: "a".repeat(LP_MAX_UNITS + 1) });
+    const state = createEditorState({ doc: "a".repeat(PREVIEW_PARTIAL_MAX_UNITS + 1) });
     expect(collectDecorationSpecs(state, [{ from: 0, to: state.doc.length }], [])).toEqual([]);
     expect(buildLivePreviewDecorations(state, [{ from: 0, to: state.doc.length }], []).size).toBe(
       0,

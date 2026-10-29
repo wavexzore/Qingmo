@@ -21,6 +21,10 @@
     "allow-app-logs-stats",
     "allow-app-logs-export",
     "allow-app-logs-open-dir",
-    "allow-app-logs-clear"
+    "allow-app-logs-clear",
+    "allow-session-view-state-get",
+    "allow-session-view-state-set",
+    "allow-session-draft-write",
+    "allow-session-draft-discard"
   ]
 }

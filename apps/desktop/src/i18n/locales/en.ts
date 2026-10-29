@@ -32,9 +32,12 @@ export const common = {
     mode: "Mode",
     noFile: "No document",
     notAvailable: "—",
-    largeFile: "Large file · preview off",
+    partialPreview: "Compact preview",
+    partialPreviewHint:
+      "The document exceeds {{limit}} UTF-16 units. Code blocks, tables, images and other block widgets are shown as source; inline formatting is still previewed.",
+    largeFile: "Large file · source mode",
     largeFileHint:
-      "The document exceeds 2,000,000 UTF-16 units. Live Preview is off; editing is unaffected.",
+      "The document exceeds {{limit}} UTF-16 units. Live Preview is off; editing is unaffected.",
   },
   saveState: {
     clean: "Synced",

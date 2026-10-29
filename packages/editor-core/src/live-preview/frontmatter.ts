@@ -2,13 +2,9 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 
-/**
- * Front matter is metadata, not prose. Very large documents should not pay for
- * the top-of-file scan on every keystroke.
- */
-export const FRONTMATTER_MAX_UNITS = 200_000;
-
+/** Front matter is metadata, not prose; it is parsed once at the top of the file. */
 const MAX_SCAN_LINES = 2_000;
 const MAX_DISPLAY_ENTRIES = 24;
 
@@ -197,7 +193,7 @@ function emptyState(): FrontMatterState {
 }
 
 function buildFrontMatter(state: EditorState): FrontMatterState {
-  if (state.doc.length > FRONTMATTER_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
   const data = readFrontMatter(state.doc);

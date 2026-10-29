@@ -12,7 +12,7 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the twenty-two command names stable", () => {
+  it("keeps the twenty-eight command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
       "document_take_pending",
@@ -36,8 +36,14 @@ describe("IPC contract mirror", () => {
       "app_logs_open_dir",
       "app_logs_clear",
       "app_apply_locale",
+      "session_view_state_get",
+      "session_view_state_set",
+      "session_draft_write",
+      "session_draft_list",
+      "session_draft_read",
+      "session_draft_discard",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(22);
+    expect(new Set(COMMAND_NAMES).size).toBe(28);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
@@ -48,6 +54,8 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.documentSaveAs]).toBe("allow-document-save-as");
     expect(COMMAND_PERMISSIONS[COMMANDS.documentWriteAtomic]).toBe("allow-document-write-atomic");
     expect(COMMAND_PERMISSIONS[COMMANDS.appAboutOpenLink]).toBe("allow-app-about-open-link");
+    expect(COMMAND_PERMISSIONS[COMMANDS.sessionViewStateGet]).toBe("allow-session-view-state-get");
+    expect(COMMAND_PERMISSIONS[COMMANDS.sessionDraftDiscard]).toBe("allow-session-draft-discard");
   });
 
   it("keeps the five events stable", () => {

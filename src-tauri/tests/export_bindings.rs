@@ -1,9 +1,10 @@
 use qingmo_lib::error::AppError;
 use qingmo_lib::ipc::dto::{
     AboutInfo, AboutLink, AppLanguage, ApplyLocaleRequest, CloseRequestedPayload, ConflictDetails,
-    DocumentChangeKind, DocumentChangedPayload, FilePayload, LogEntry, LogLevel, LogStats,
-    MenuActionPayload, NativeShellLabels, SaveRequest, SaveResult, UpdateInfo, UpdatePhase,
-    UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
+    DocumentChangeKind, DocumentChangedPayload, DraftKind, DraftMeta, DraftRecord,
+    DraftWriteRequest, EditorViewState, EditorViewStateInput, FilePayload, LogEntry, LogLevel,
+    LogStats, MenuActionPayload, NativeShellLabels, SaveRequest, SaveResult, UpdateInfo,
+    UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
 };
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
@@ -41,4 +42,10 @@ fn export_bindings() {
     DocumentChangeKind::export_all(&config).expect("DocumentChangeKind bindings must export");
     DocumentChangedPayload::export_all(&config)
         .expect("DocumentChangedPayload bindings must export");
+    EditorViewState::export_all(&config).expect("EditorViewState bindings must export");
+    EditorViewStateInput::export_all(&config).expect("EditorViewStateInput bindings must export");
+    DraftKind::export_all(&config).expect("DraftKind bindings must export");
+    DraftMeta::export_all(&config).expect("DraftMeta bindings must export");
+    DraftRecord::export_all(&config).expect("DraftRecord bindings must export");
+    DraftWriteRequest::export_all(&config).expect("DraftWriteRequest bindings must export");
 }

@@ -5,6 +5,7 @@ import type { CloseReason } from "@qingmo/shared";
 import type { IpcPort } from "../lib/ipc/port";
 import type { PlatformPort } from "../lib/platform/port";
 import type { SaveCoordinator } from "../features/editor/save/SaveCoordinator";
+import type { ViewStateRecorder } from "../features/editor/session/ViewStateRecorder";
 
 export type ClosePromptKind = "unsaved" | "conflict" | "error";
 
@@ -26,6 +27,8 @@ export interface UseCloseGuardOptions {
   ipc: Pick<IpcPort, "appCloseConfirm">;
   platform: PlatformPort;
   coordinator: SaveCoordinator | null;
+  /** Optional view-state recorder flushed before an allowed close. */
+  viewState?: ViewStateRecorder | null;
 }
 
 /**
@@ -43,15 +46,27 @@ export function useCloseGuard({
   ipc,
   platform,
   coordinator,
+  viewState = null,
 }: UseCloseGuardOptions): CloseGuardState {
   const [prompt, setPrompt] = useState<ClosePrompt | null>(null);
   const [closing, setClosing] = useState(false);
   const coordinatorRef = useRef<SaveCoordinator | null>(coordinator);
+  const viewStateRef = useRef<ViewStateRecorder | null>(viewState);
   const closingRef = useRef(false);
   coordinatorRef.current = coordinator;
+  viewStateRef.current = viewState;
 
   const confirmClose = useCallback(
     async (allow: boolean) => {
+      if (allow) {
+        // Flush the latest scroll/selection before Rust destroys the
+        // webview. A storage failure must not block the close.
+        try {
+          await viewStateRef.current?.flushNow();
+        } catch (error) {
+          console.warn("failed to flush the view state before closing", error);
+        }
+      }
       await ipc.appCloseConfirm({ allow });
       setPrompt(null);
     },

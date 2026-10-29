@@ -38,7 +38,7 @@ BENCH_SKIP_RUST=1 pnpm bench
 
 | 指标 | 测量方式 | 不是什么 |
 |---|---|---|
-| `open_ms` | `EditorSession.create(payload)`，即 `createEditorState`；包含 Markdown/语言扩展初始化、2M 单元阈值判断 | 不含原生读盘、Tauri IPC 传输、首次 DOM 渲染 |
+| `open_ms` | `EditorSession.create(payload)`，即 `createEditorState`；包含 Markdown/语言扩展初始化、`PreviewPolicy` 分档判断 | 不含原生读盘、Tauri IPC 传输、首次 DOM 渲染 |
 | `ipc_copy_ms` | `JSON.stringify` + `JSON.parse` 一个 `FilePayload` | 不是真实 Tauri 传输；只是字符串跨边界的代理值 |
 | `decorate_ms` | 80 行视口 + `ensureSyntaxTree(8ms)` + `buildLivePreviewDecorations`；10 KiB/1 MiB 另挂真实 `EditorView` 记录 `viewMountMs` | 不是像素级重绘时间 |
 | `key_p95_ms` | 单字符 dispatch/update 的 p95。10 KiB/1 MiB 用真实 `EditorView.dispatch`；10 MiB 关闭 LP 后用 `EditorState.update` | 10 MiB 不含渲染/合成器；不代表真实键盘端到端 |
@@ -47,7 +47,9 @@ BENCH_SKIP_RUST=1 pnpm bench
 | `view_mount_ms` | jsdom 中 `new EditorView({state, parent})` 的耗时 | 不是浏览器首屏；jsdom 无布局 |
 | `fake_save_ms` | `FakeIpc.documentWriteAtomic`（UTF-8 编码 + FNV 哈希 + 字符串替换） | 不是磁盘 I/O；只用于对比 JS 侧成本 |
 
-10 MiB 默认关闭 Live Preview（`LP_MAX_UNITS = 2_000_000`），所以 `decorate_ms` 记为 `skipped`、装饰规格为 0，而不是伪造一个全量装饰耗时。`open_ms` 对 10 MiB 只是状态创建；真实首屏以手动 Tauri 的 AX 上界为准。
+10 MiB 默认关闭 Live Preview（`PREVIEW_PARTIAL_MAX_UNITS = 2_000_000`，只有 source 档关闭），所以 `decorate_ms` 记为 `skipped`、装饰规格为 0，而不是伪造一个全量装饰耗时。`open_ms` 对 10 MiB 只是状态创建；真实首屏以手动 Tauri 的 AX 上界为准。
+
+1 MiB（1,048,576 UTF-16 units）落在 **partial** 档（`200_000 < units ≤ 2_000_000`）：行内装饰仍运行，11 个块级组件关闭。不要把 1 MiB 的数字当作 full 档基线。
 
 ## 真实 Tauri 手动记录
 
@@ -94,4 +96,4 @@ swift bench/tauri/measure.swift <pid> bench-large-1.md 180
 - jsdom 没有真实布局/合成器，`key_p95_ms` 与 `view_mount_ms` 不能替代浏览器 Performance 面板。
 - `ipc_copy_ms` 是 JSON 往返代理，真实 Tauri IPC 的序列化/协议开销未单独拆分。
 - Node 的 `maxRSS` 是进程峰值；Tauri 的 `ps` 是打开后的瞬时 RSS，两者不可直接相加。
-- 10 MiB 的 `decorate_ms` 为 skipped；若未来调高 `LP_MAX_UNITS`，这里必须重新测，不能沿用本基线。
+- 10 MiB 的 `decorate_ms` 为 skipped；若未来调高 `PREVIEW_PARTIAL_MAX_UNITS`，这里必须重新测，不能沿用本基线。

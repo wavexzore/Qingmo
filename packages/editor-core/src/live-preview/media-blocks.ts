@@ -3,6 +3,7 @@ import { StateField, type EditorState } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
+import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readDetailsBlocks } from "./details";
 import { renderInlineMarkdown } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
@@ -10,10 +11,7 @@ import type { MarkdownNode } from "./markdown-node";
 /**
  * Media HTML blocks are preview shells only: the source stays the single
  * document model, and relative files are resolved by the webview like images.
- * Very large documents keep the source untouched.
  */
-export const MEDIA_BLOCK_MAX_UNITS = 200_000;
-
 export type MediaKind = "video" | "audio" | "picture" | "iframe" | "img" | "figure" | "center";
 
 export interface MediaSource {
@@ -93,7 +91,7 @@ function fileNameOf(src: string | null): string {
 
 /** Reads top-level `<video>`, `<audio>`, `<picture>` and `<iframe>` blocks. */
 export function readMediaBlocks(state: EditorState): readonly MediaBlock[] {
-  if (state.doc.length > MEDIA_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return [];
   }
   const doc = state.doc;
@@ -208,7 +206,7 @@ function insideKey(state: EditorState, ranges: readonly MediaBlock[]): string {
 }
 
 function buildMedia(state: EditorState): MediaState {
-  if (state.doc.length > MEDIA_BLOCK_MAX_UNITS) {
+  if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
   }
   const ranges = readMediaBlocks(state);

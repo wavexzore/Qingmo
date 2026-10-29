@@ -143,6 +143,12 @@ describe("openFile", () => {
       appCloseConfirm: vi.fn(),
       appSetLivePreview: vi.fn(),
       appApplyLocale: vi.fn(),
+      sessionViewStateGet: vi.fn(),
+      sessionViewStateSet: vi.fn(),
+      sessionDraftWrite: vi.fn(),
+      sessionDraftList: vi.fn(),
+      sessionDraftRead: vi.fn(),
+      sessionDraftDiscard: vi.fn(),
     };
     const brokenResult = await openFile(broken);
     expect(brokenResult.ok).toBe(false);
@@ -302,7 +308,7 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByTestId("document-session")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md"));
-    expect(screen.getByTestId("large-file-hint")).toHaveTextContent("大文档 · 预览关闭");
+    expect(screen.getByTestId("large-file-hint")).toHaveTextContent("大文档 · 源码模式");
     expect(screen.getByTestId("status-bar")).toHaveTextContent("源码");
 
     const toggled = await commandRegistry.execute("view.toggleLivePreview");
