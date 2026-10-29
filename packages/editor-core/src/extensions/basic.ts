@@ -1,5 +1,5 @@
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
-import { search, searchKeymap } from "@codemirror/search";
+import { searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
@@ -16,6 +16,8 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
+
+import { qingmoSearch } from "./search";
 
 /**
  * `drawSelection` paints the selection behind the text, so a solid selection
@@ -95,7 +97,7 @@ export function createBasicExtensions(): Extension[] {
     EditorView.lineWrapping,
     EditorState.allowMultipleSelections.of(true),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-    search({ top: true }),
+    qingmoSearch(),
   ];
 }
 

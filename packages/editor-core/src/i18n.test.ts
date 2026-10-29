@@ -28,7 +28,7 @@ describe("EditorUiCopy facet", () => {
     const state = createEditorState({ doc: "hello\n" });
 
     expect(state.facet(editorUiCopy)).toBe(DEFAULT_EDITOR_UI_COPY);
-    expect(DEFAULT_EDITOR_UI_COPY.version).toBe("en:1");
+    expect(DEFAULT_EDITOR_UI_COPY.version).toBe("en:2");
     expect(JSON.stringify(DEFAULT_EDITOR_UI_COPY)).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
