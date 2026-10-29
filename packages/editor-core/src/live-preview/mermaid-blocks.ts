@@ -244,6 +244,7 @@ class MermaidBlockWidget extends WidgetType {
     const info = diagramInfo(this.code, this.copy);
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-mermaid";
+    wrapper.dataset.blockGap = "";
     wrapper.tabIndex = 0;
     wrapper.setAttribute("role", "group");
     wrapper.setAttribute("aria-label", `Mermaid ${info.label}`);

@@ -495,6 +495,7 @@ class CodeBlockWidget extends WidgetType {
     const wrapper = doc.createElement("div");
     wrapper.className = "cm-md-code-block-widget";
     wrapper.dataset.codeFrom = String(this.code.openingLine.from);
+    wrapper.dataset.blockGap = "";
 
     // The wrapper only carries the block's vertical rhythm (padding). CodeMirror
     // measures a block widget with getBoundingClientRect(), which excludes

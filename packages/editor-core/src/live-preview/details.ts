@@ -576,6 +576,7 @@ class DetailsWidget extends WidgetType {
     // the bordered card must live inside the measured element.
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-details-widget";
+    wrapper.dataset.blockGap = "";
     wrapper.append(buildDetailsElement(view, this.block, false));
     return wrapper;
   }

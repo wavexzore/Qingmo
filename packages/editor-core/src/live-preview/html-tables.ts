@@ -422,6 +422,7 @@ class HtmlTableWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-table-block cm-md-html-table-block";
+    wrapper.dataset.blockGap = "";
     wrapper.title = this.copy.table.editSource;
     wrapper.append(renderHtmlTable(this.table, this.copy));
 

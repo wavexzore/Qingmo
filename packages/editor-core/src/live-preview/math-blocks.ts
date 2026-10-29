@@ -223,6 +223,7 @@ class MathBlockWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-math-block";
+    wrapper.dataset.blockGap = "";
     wrapper.title = this.copy.math.editSource;
 
     wrapper.addEventListener("mousedown", (event) => {

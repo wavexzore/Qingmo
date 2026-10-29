@@ -246,6 +246,7 @@ class TableBlockWidget extends WidgetType {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-table-block";
     wrapper.dataset.tableFrom = String(this.table.from);
+    wrapper.dataset.blockGap = "";
     wrapper.title = this.readOnly ? "" : this.copy.table.editSource;
 
     const editable = !this.readOnly;

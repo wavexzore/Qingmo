@@ -485,6 +485,7 @@ class MediaWidget extends WidgetType {
     const wrapper = document.createElement("div");
     wrapper.className = `cm-md-media cm-md-media-${this.block.kind}`;
     wrapper.dataset.kind = this.block.kind;
+    wrapper.dataset.blockGap = "";
 
     const header = document.createElement("div");
     header.className = "cm-md-media-header";

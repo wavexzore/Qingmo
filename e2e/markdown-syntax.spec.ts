@@ -944,6 +944,10 @@ title: 测试
 
 # 标题
 
+[TOC]
+
+TOC后
+
 前置段落
 
 | 名称 | 数量 |
@@ -957,6 +961,38 @@ a^2 + b^2 = c^2
 $$
 
 公式后
+
+术语
+: 定义
+
+定义后
+
+<details>
+
+<summary>摘要</summary>
+
+隐藏内容
+
+</details>
+
+详情后
+
+%%
+注释
+%%
+
+注释后
+
+<iframe src="https://example.com/embed"></iframe>
+
+媒体后
+
+\`\`\`mermaid
+graph TD
+  A --> B
+\`\`\`
+
+图表后
 
 \`\`\`js
 const a = 1;
@@ -974,14 +1010,84 @@ test("keeps click hit-testing aligned below block widgets", async ({ page }) => 
     .evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });
+  await expect(page.locator(".cm-md-mermaid svg").first()).toBeVisible({ timeout: 30_000 });
+  await editorContent(page).focus();
 
-  for (const [text, line] of [
-    ["前置段落", 7],
-    ["表格后", 13],
-    ["公式后", 19],
-    ["代码后", 25],
-  ] as const) {
-    await editorLines(page).filter({ hasText: text }).click();
-    await expect(page.getByTestId("status-bar")).toContainText(`第 ${line} 行`);
+  for (const marker of [
+    "TOC后",
+    "前置段落",
+    "表格后",
+    "公式后",
+    "定义后",
+    "详情后",
+    "注释后",
+    "媒体后",
+    "图表后",
+    "代码后",
+  ]) {
+    const line = WIDGET_RHYTHM_DOC.slice(0, WIDGET_RHYTHM_DOC.indexOf(marker)).split("\n").length;
+    // Virtualised rendering keeps off-screen lines out of the DOM, so jump to
+    // the document line first, then click the centre of the active line. With
+    // the old margin-based rhythm this click landed on the following line.
+    await page.keyboard.press(`${modifier()}+Alt+g`);
+    await page.keyboard.type(String(line));
+    await page.keyboard.press("Enter");
+    const status = page.getByTestId("status-bar");
+    await expect(status).toContainText(`第 ${line} 行`);
+    const active = editorActiveLine(page);
+    await active.scrollIntoViewIfNeeded();
+    await active.click();
+    await expect(status).toContainText(`第 ${line} 行`);
   }
+});
+
+test("clicking a block widget's outer gap lands on the adjacent line", async ({ page }) => {
+  await openApp(page, [{ path: "/docs/widget-gaps.md", text: WIDGET_RHYTHM_DOC }]);
+  await openSeededFile(page, "widget-gaps.md");
+
+  const status = page.getByTestId("status-bar");
+  const lineOf = (marker: string) =>
+    WIDGET_RHYTHM_DOC.slice(0, WIDGET_RHYTHM_DOC.indexOf(marker)).split("\n").length;
+
+  const table = page.locator(".cm-md-table-block").first();
+  await table.scrollIntoViewIfNeeded();
+  const tableBox = await table.boundingBox();
+  expect(tableBox).not.toBeNull();
+  if (!tableBox) {
+    return;
+  }
+
+  // Above the table card: the blank line before the table source.
+  await page.mouse.click(tableBox.x + 40, tableBox.y + 2);
+  await expect(status).toContainText(`第 ${lineOf("前置段落") + 1} 行`);
+
+  // Below the table card: the blank line after the table source. The first
+  // gap click moves the selection out of the front matter, which collapses it
+  // and shifts the table, so measure the card again before clicking.
+  await table.scrollIntoViewIfNeeded();
+  const tableAfter = await table.boundingBox();
+  expect(tableAfter).not.toBeNull();
+  if (!tableAfter) {
+    return;
+  }
+  await page.mouse.click(tableAfter.x + 40, tableAfter.y + tableAfter.height - 2);
+  await expect(status).toContainText(`第 ${lineOf("表格后") - 1} 行`);
+
+  // The code block is far below the viewport and virtualised out of the DOM;
+  // jump to the following paragraph first so the widget is rendered.
+  const codeMarkerLine = lineOf("代码后");
+  await page.keyboard.press(`${modifier()}+Alt+g`);
+  await page.keyboard.type(String(codeMarkerLine));
+  await page.keyboard.press("Enter");
+  await expect(status).toContainText(`第 ${codeMarkerLine} 行`);
+
+  const code = page.locator(".cm-md-code-block-widget").first();
+  const codeBox = await code.boundingBox();
+  expect(codeBox).not.toBeNull();
+  if (!codeBox) {
+    return;
+  }
+
+  await page.mouse.click(codeBox.x + 40, codeBox.y + codeBox.height - 2);
+  await expect(status).toContainText(`第 ${codeMarkerLine - 1} 行`);
 });

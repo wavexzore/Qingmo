@@ -254,6 +254,7 @@ class FrontMatterWidget extends WidgetType {
     // an inner element so CodeMirror's height map includes the spacing.
     const wrapper = document.createElement("div");
     wrapper.className = "cm-md-frontmatter-widget";
+    wrapper.dataset.blockGap = "";
     wrapper.title = this.copy.frontmatter.wrapperTitle;
 
     wrapper.addEventListener("mousedown", (event) => {

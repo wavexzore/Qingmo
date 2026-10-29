@@ -10,6 +10,7 @@ import {
 
 import { LP_MAX_UNITS, SYNTAX_TREE_BUDGET_MS } from "../limits";
 import { editorUiCopy, type EditorUiCopy } from "../i18n";
+import { blockWidgetGapClicks } from "./block-widget-gaps";
 import { commentBlockPreview } from "./comment-blocks";
 import { codeBlockPreview, codeBlockSelectionGuard } from "./code-blocks";
 import { definitionListPreview } from "./definition-lists";
@@ -216,6 +217,7 @@ export function livePreview(): Extension {
     // document and owns no code gutter, while source mode keeps line numbers.
     EditorView.editorAttributes.of({ "data-live-preview": "true" }),
     livePreviewPlugin,
+    blockWidgetGapClicks,
     livePreviewAtomicRanges,
     frontMatterPreview,
     tocPreview,
