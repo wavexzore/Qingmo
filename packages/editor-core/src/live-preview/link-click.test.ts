@@ -182,6 +182,25 @@ describe("table cell links", () => {
     expect(document.activeElement).toBe(textarea);
   });
 
+  it("opens on a platform-modifier click when the cell editor is focused", () => {
+    const opened: string[] = [];
+    const view = mount(TABLE_LINK_DOC, (href) => opened.push(href));
+    const link = view.dom.querySelector<HTMLElement>(".cm-md-table-block .cm-md-link");
+    const textarea = view.dom.querySelector<HTMLTextAreaElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    expect(link).not.toBeNull();
+    expect(textarea).not.toBeNull();
+    // jsdom has no layout: give the rendered link a rectangle and aim the
+    // modifier click at the transparent textarea that covers it.
+    link!.getClientRects = () => [new DOMRect(0, 0, 120, 20)] as unknown as DOMRectList;
+
+    textarea!.focus();
+    mouseDown(textarea!, { metaKey: true, clientX: 10, clientY: 10 });
+
+    expect(opened).toEqual(["https://example.com/x"]);
+  });
+
   it("opens on a plain click when the table is read-only", () => {
     const opened: string[] = [];
     const view = mount(TABLE_LINK_DOC, (href) => opened.push(href), true);

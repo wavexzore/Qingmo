@@ -31,6 +31,42 @@ export function linkHrefAt(target: EventTarget | null): string | null {
 }
 
 /**
+ * The rendered link under a point. A focused table cell puts its transparent
+ * textarea on top of the rendered links, so ⌘/Ctrl+Click inside the editor
+ * hit-tests the link rectangles underneath instead of the event target.
+ */
+export function linkHrefAtPoint(
+  root: Element | null,
+  clientX: number,
+  clientY: number,
+): string | null {
+  if (!root) {
+    return null;
+  }
+  const links = root.querySelectorAll<HTMLElement>(LINK_HREF_SELECTOR);
+  for (let index = 0; index < links.length; index += 1) {
+    const link = links[index]!;
+    const href = link.dataset.href?.trim();
+    if (!href) {
+      continue;
+    }
+    const rects = link.getClientRects();
+    for (let rectIndex = 0; rectIndex < rects.length; rectIndex += 1) {
+      const rect = rects[rectIndex]!;
+      if (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      ) {
+        return href;
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Destinations the OS opener may receive. `#fragment` links are handled by the
  * anchor widgets, and relative paths need a workspace before they can resolve,
  * so both stay inert for now.
