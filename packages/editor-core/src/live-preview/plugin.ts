@@ -11,8 +11,9 @@ import {
 import { LP_MAX_UNITS, SYNTAX_TREE_BUDGET_MS } from "../limits";
 import { editorUiCopy, type EditorUiCopy } from "../i18n";
 import { blockWidgetGapClicks } from "./block-widget-gaps";
+import { codeFenceAutoClose } from "./code-fence-input";
 import { commentBlockPreview } from "./comment-blocks";
-import { codeBlockPreview, codeBlockSelectionGuard } from "./code-blocks";
+import { codeBlockPreview } from "./code-blocks";
 import { definitionListPreview } from "./definition-lists";
 import { detailsBlockPreview } from "./details";
 import { frontMatterPreview } from "./frontmatter";
@@ -226,7 +227,7 @@ export function livePreview(): Extension {
     mediaBlockPreview,
     commentBlockPreview,
     codeBlockPreview,
-    codeBlockSelectionGuard,
+    codeFenceAutoClose,
     tableBlockPreview,
     tableSelectionGuard,
     mathBlockPreview,

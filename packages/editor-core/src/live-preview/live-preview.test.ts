@@ -805,6 +805,9 @@ describe("livePreviewPlugin", () => {
       const view = new EditorView({ state: stateFor(doc), parent });
       views.push({ view, parent });
 
+      // The selection starts inside the fence, where the block shows its
+      // Markdown source; move it out to render the embedded editor.
+      view.dispatch({ selection: { anchor: doc.length } });
       const copy = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-copy");
       expect(copy).not.toBeNull();
       copy!.click();
@@ -846,6 +849,7 @@ describe("livePreviewPlugin", () => {
     const view = new EditorView({ state: stateFor(doc), parent });
     views.push({ view, parent });
 
+    view.dispatch({ selection: { anchor: doc.length } });
     const nestedDom = view.dom.querySelector<HTMLElement>(".cm-editor");
     const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
     expect(nested).not.toBeNull();
@@ -863,6 +867,7 @@ describe("livePreviewPlugin", () => {
     const view = new EditorView({ state: stateFor(doc), parent });
     views.push({ view, parent });
 
+    view.dispatch({ selection: { anchor: doc.length } });
     const button = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language");
     expect(button?.textContent).toContain("js");
 
@@ -907,6 +912,7 @@ describe("livePreviewPlugin", () => {
     const view = new EditorView({ state: stateFor(doc), parent });
     views.push({ view, parent });
 
+    view.dispatch({ selection: { anchor: doc.length } });
     view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language")!.click();
     const search = view.dom.querySelector<HTMLInputElement>(".cm-md-code-language-search");
     search!.value = "Kotlin";
@@ -934,6 +940,7 @@ describe("livePreviewPlugin", () => {
     const view = new EditorView({ state: state.update({}).state, parent });
     views.push({ view, parent });
 
+    view.dispatch({ selection: { anchor: doc.length } });
     const languageButton = view.dom.querySelector<HTMLButtonElement>(".cm-md-code-language");
     expect(languageButton?.disabled).toBe(true);
     expect(languageButton?.tabIndex).toBe(-1);
@@ -944,22 +951,27 @@ describe("livePreviewPlugin", () => {
     expect(nested?.contentDOM.getAttribute("contenteditable")).toBe("false");
   });
 
-  it("focuses the embedded editor when a selection lands inside the hidden fence", async () => {
+  it("reveals the fence source while the selection is inside the block", () => {
     const doc = "```js\nconst x = 1;\n```\n\n尾段\n";
     const parent = document.createElement("div");
     document.body.append(parent);
     const view = new EditorView({ state: stateFor(doc), parent });
     views.push({ view, parent });
 
-    view.dispatch({ selection: { anchor: 2 } });
-    await vi.waitFor(() => {
-      const nestedDom = view.dom.querySelector<HTMLElement>(".cm-md-code-block-widget .cm-editor");
-      const nested = nestedDom ? EditorView.findFromDOM(nestedDom) : null;
-      expect(nested?.hasFocus).toBe(true);
-      // Outer offset 2 is the "s" of "js"; inside the code surface the guard
-      // clamps the position to the start of the block.
-      expect(nested?.state.selection.main.head).toBe(0);
-    });
+    // The initial caret sits inside the fence, so the Markdown source stays
+    // visible instead of hiding it behind a widget.
+    expect(view.dom.querySelector(".cm-md-code-block-widget")).toBeNull();
+    expect(view.dom.textContent).toContain("```js");
+
+    view.dispatch({ selection: { anchor: doc.length } });
+    expect(view.dom.querySelector(".cm-md-code-block-widget")).not.toBeNull();
+    expect(view.dom.querySelector(".cm-md-code-block-widget")?.textContent).toContain(
+      "const x = 1;",
+    );
+
+    view.dispatch({ selection: { anchor: 0 } });
+    expect(view.dom.querySelector(".cm-md-code-block-widget")).toBeNull();
+    expect(view.dom.textContent).toContain("const x = 1;");
   });
 
   it("syntax-highlights the language declared on a fenced block", async () => {
@@ -1030,11 +1042,12 @@ describe("livePreviewPlugin", () => {
       "console.log(a + b); // 高亮",
     ]);
 
-    // The block stays rendered while the caret is on its first line; the
-    // embedded editor owns the source instead of revealing the fence.
+    // A selection inside the fence reveals its Markdown source, so no widget
+    // can hide the caret while the author is editing the block.
     view.dispatch({ selection: { anchor: 0 } });
-    expect(view.dom.querySelector(".cm-md-code-title")?.textContent).toBe("app.js");
-    expect(view.dom.querySelector(".cm-md-code-block-widget")?.textContent).not.toContain("```js");
+    expect(view.dom.querySelector(".cm-md-code-title")).toBeNull();
+    expect(view.dom.querySelector(".cm-md-code-block-widget")).toBeNull();
+    expect(view.dom.textContent).toContain('```js title="app.js"');
   });
 
   it("colors diff code block lines", () => {
