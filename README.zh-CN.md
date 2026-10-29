@@ -103,10 +103,14 @@ pnpm tauri dev     # 带真实文件 IO 的桌面应用
 ```bash
 pnpm build              # 前端生产构建
 pnpm tauri build        # 桌面安装包
-make build-mac          # 本地发布：版本/说明检查 + 签名 + 公证 + latest.json
-make build-mac-arch     # 轻量 macOS DMG，不签名、不公证（默认 Apple Silicon）
-make build-mac-arch MAC_ARCH=x86_64
+make build              # macOS 发布 + Windows 安装包
+make build-mac          # 仅 macOS 发布：版本/说明检查 + 签名 + 公证 + latest.json
+make build-win          # 仅 Windows NSIS 安装包（cargo-xwin，未做 Authenticode 签名）
+make build-arch         # 轻量 macOS DMG，不签名、不公证（默认 Apple Silicon）
+make build-arch MAC_ARCH=x86_64
 ```
+
+Windows 交叉编译需要 `cargo-xwin`、`x86_64-pc-windows-msvc` Rust target 和 `makensis`（例如 `brew install makensis`）。`make build` 先跑 Windows 构建，这样 macOS 链路可以把安装包算进 `SHA256SUMS.txt`，并在 `latest.json` 中写入 `windows-x86_64`。
 
 ### 分发与安装（macOS）
 
@@ -115,11 +119,17 @@ make build-mac-arch MAC_ARCH=x86_64
 - 分发：`release-artifacts/v<version>/Qingmo_<version>_universal.dmg`（Developer ID 签名、App 与 DMG 公证并 stapled）
 - 安装：打开 DMG，把 `青墨.app` 拖入“应用程序”，并按 `SHA256SUMS.txt` 校验 DMG
 - 已经拿到损坏的 `.app` 时，先尝试 `xattr -dr com.apple.quarantine /Applications/青墨.app`；若 `codesign --verify --deep --strict /Applications/青墨.app` 仍失败，重新发送 DMG
-- `make build-mac` 走完整本地发布链路（优先 `.release/release.sh`，缺失时用 `scripts/release/build-local.sh`），会签名、公证并生成 `latest.json`；`make build-mac-arch` 只是未签名的本地 DMG
+- `make build` 走完整本地发布链路（优先 `.release/release.sh`，缺失时用 `scripts/release/build-local.sh`），会签名、公证并生成 `latest.json`；`make build-arch` 只是未签名的本地 DMG
+
+### 分发与安装（Windows）
+
+- 分发：`release-artifacts/v<version>/Qingmo_<version>_x64-setup.exe`（NSIS 安装包，在 macOS 上用 `cargo-xwin` 交叉编译）
+- 安装包没有 Authenticode 签名（Tauri 无法在非 Windows 主机上生成），首次运行可能触发 SmartScreen 提示；但更新用的 minisign 签名仍会生成，Windows 自动更新正常工作
+- `make build-win` 只构建安装包；`make build` 会先构建它，使 DMG、安装包、签名与 `SHA256SUMS.txt` 落在同一目录
 
 ### 本地发布
 
-`make build-mac`（或 `.release/release.sh`）会构建、签名并公证 macOS universal 应用，产物写入 `release-artifacts/v<version>/`，包含 DMG、更新 tarball、`latest.json` 与 `SHA256SUMS.txt`。对外资产名使用 ASCII（`Qingmo.app.tar.gz`、`Qingmo_<version>_universal.dmg`），因为 GitHub 会剥离 release asset 名称中的非 ASCII 字符；包内的应用仍是 `青墨.app`。
+`make build` 先构建 Windows 安装包，再构建、签名并公证 macOS universal 应用，产物写入 `release-artifacts/v<version>/`，包含 DMG、更新 tarball、NSIS 安装包、`latest.json` 与 `SHA256SUMS.txt`；当安装包及其更新签名存在时，`latest.json` 还会带上 `windows-x86_64` 条目（自动更新不依赖 Authenticode 签名）。对外资产名使用 ASCII（`Qingmo.app.tar.gz`、`Qingmo_<version>_universal.dmg`、`Qingmo_<version>_x64-setup.exe`），因为 GitHub 会剥离 release asset 名称中的非 ASCII 字符；包内的应用仍是 `青墨.app`。
 
 校验产物后手动发布：
 
@@ -130,11 +140,11 @@ gh release upload v<version> release-artifacts/v<version>/* --clobber
 gh release edit v<version> --draft=false --latest
 ```
 
-Windows 与 Linux 打包仍待完成。
+Linux 打包仍待完成。
 
 ### 发布说明
 
-每个待发布版本都必须在 `resources/notes.json` 中有中英双语条目，`make build-mac` 会在构建前强制校验，缺失即失败：
+每个待发布版本都必须在 `resources/notes.json` 中有中英双语条目，`make build` 会在构建前强制校验，缺失即失败：
 
 ```json
 {
