@@ -933,3 +933,55 @@ test("renders inline footnotes with a content tooltip", async ({ page }) => {
   await expect(note).toHaveAttribute("title", "脚注内容直接写在正文中。");
   await expect(editorContent(page)).not.toContainText("^[");
 });
+
+// Every block widget's vertical rhythm must live inside its measured box
+// (padding) instead of in margins, which CodeMirror's height map ignores. If a
+// margin creeps back in, the centre of the paragraph below the widget maps to
+// the next document line.
+const WIDGET_RHYTHM_DOC = `---
+title: 测试
+---
+
+# 标题
+
+前置段落
+
+| 名称 | 数量 |
+| :--- | ---: |
+| 苹果 | 2 |
+
+表格后
+
+$$
+a^2 + b^2 = c^2
+$$
+
+公式后
+
+\`\`\`js
+const a = 1;
+\`\`\`
+
+代码后
+`;
+
+test("keeps click hit-testing aligned below block widgets", async ({ page }) => {
+  await openApp(page, [{ path: "/docs/widget-rhythm.md", text: WIDGET_RHYTHM_DOC }]);
+  await openSeededFile(page, "widget-rhythm.md");
+  await page
+    .locator(".cm-scroller")
+    .first()
+    .evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
+
+  for (const [text, line] of [
+    ["前置段落", 7],
+    ["表格后", 13],
+    ["公式后", 19],
+    ["代码后", 25],
+  ] as const) {
+    await editorLines(page).filter({ hasText: text }).click();
+    await expect(page.getByTestId("status-bar")).toContainText(`第 ${line} 行`);
+  }
+});

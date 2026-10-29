@@ -126,33 +126,41 @@ export const livePreviewTheme = EditorView.theme(
       padding: "0 0.08em",
     },
     ".cm-md-math-block": {
-      margin: "0.6em 0",
+      // Outer spacing belongs to the measured root (padding); the visual card
+      // sits inside so margins cannot desynchronise the height map.
+      padding: "0.6em 0",
+      contain: "inline-size",
+      cursor: "text",
+    },
+    ".cm-md-math-block-card": {
       padding: "0.5em 0.75em",
       overflowX: "auto",
-      contain: "inline-size",
       backgroundColor: "var(--qm-surface-muted)",
       borderRadius: "6px",
-      cursor: "text",
     },
     ".cm-md-math-block-render": {
       display: "flex",
       justifyContent: "center",
     },
     ".cm-md-mermaid": {
-      margin: "0.75em 0",
+      // CodeMirror ignores block-widget margins when measuring, so the outer
+      // rhythm is padding and the bordered card is an inner element.
+      padding: "0.75em 0",
+      contain: "inline-size",
+      cursor: "default",
+      outline: "none",
+    },
+    ".cm-md-mermaid-card": {
       border: "1px solid var(--qm-line)",
       borderRadius: "var(--qm-radius-md)",
       backgroundColor: "var(--qm-surface)",
       overflow: "hidden",
-      contain: "inline-size",
-      cursor: "default",
-      outline: "none",
       transition: "border-color var(--qm-duration-fast) var(--qm-ease-out)",
     },
-    ".cm-md-mermaid:hover, .cm-md-mermaid:focus-visible": {
+    ".cm-md-mermaid:hover .cm-md-mermaid-card, .cm-md-mermaid:focus-visible .cm-md-mermaid-card": {
       borderColor: "var(--qm-line-strong)",
     },
-    ".cm-md-mermaid:focus-visible": {
+    ".cm-md-mermaid:focus-visible .cm-md-mermaid-card": {
       boxShadow: "0 0 0 1px var(--qm-accent-soft)",
     },
     ".cm-md-mermaid-head": {
@@ -360,8 +368,11 @@ export const livePreviewTheme = EditorView.theme(
       "0%, 100%": { opacity: "0.55" },
       "50%": { opacity: "1" },
     },
+    ".cm-md-frontmatter-widget": {
+      // Padding keeps the block's spacing inside its measured height.
+      padding: "0.6em 0",
+    },
     ".cm-md-frontmatter": {
-      margin: "0.6em 0",
       padding: "0.55em 0.75em",
       border: "1px solid var(--qm-line)",
       borderRadius: "var(--qm-radius-sm)",
@@ -429,7 +440,10 @@ export const livePreviewTheme = EditorView.theme(
       marginTop: "0.35em",
     },
     ".cm-md-toc": {
-      margin: "0.5em 0",
+      // The nav is the measured block root, so its rhythm is padding.
+      padding: "0.5em 0",
+    },
+    ".cm-md-toc-card": {
       padding: "0.55em 0.75em",
       border: "1px solid var(--qm-line)",
       borderRadius: "var(--qm-radius-sm)",
@@ -477,8 +491,9 @@ export const livePreviewTheme = EditorView.theme(
       fontSize: "0.78em",
     },
     ".cm-md-definition-list": {
-      margin: "0.5em 0",
-      padding: "0",
+      // Padding, not margin: CodeMirror's block-widget height map ignores
+      // margins and would let clicks below the block land on the next line.
+      padding: "0.5em 0",
     },
     ".cm-md-definition-item": {
       display: "grid",
@@ -577,8 +592,11 @@ export const livePreviewTheme = EditorView.theme(
       color: "var(--qm-accent)",
       fontFamily: "var(--qm-font-mono)",
     },
+    ".cm-md-details-widget": {
+      // Padding keeps the block's rhythm inside its measured height.
+      padding: "0.6em 0",
+    },
     ".cm-md-details": {
-      margin: "0.6em 0",
       border: "1px solid var(--qm-line)",
       borderRadius: "var(--qm-radius-sm)",
       backgroundColor: "var(--qm-surface-muted)",
@@ -717,12 +735,15 @@ export const livePreviewTheme = EditorView.theme(
       fontSize: "0.8em",
     },
     ".cm-md-media": {
-      margin: "0.6em 0",
+      // Outer rhythm lives in padding so it is part of the measured height.
+      padding: "0.6em 0",
+      contain: "inline-size",
+    },
+    ".cm-md-media-card": {
       border: "1px solid var(--qm-line)",
       borderRadius: "var(--qm-radius-sm)",
       backgroundColor: "var(--qm-surface-muted)",
       overflow: "hidden",
-      contain: "inline-size",
     },
     ".cm-md-media-header": {
       display: "flex",
@@ -817,11 +838,14 @@ export const livePreviewTheme = EditorView.theme(
       color: "var(--qm-accent)",
       fontFamily: "var(--qm-font-mono)",
     },
+    ".cm-md-comment-widget": {
+      // Padding keeps the block's rhythm inside its measured height.
+      padding: "0.35em 0",
+    },
     ".cm-md-comment": {
       display: "flex",
       alignItems: "center",
       gap: "0.45em",
-      margin: "0.35em 0",
       padding: "0.28em 0.55em",
       border: "1px dashed var(--qm-line-strong)",
       borderRadius: "var(--qm-radius-sm)",
@@ -948,17 +972,22 @@ export const livePreviewTheme = EditorView.theme(
     },
     // Top-level fences render as a small terminal window: a chrome bar with
     // traffic lights, title, language and actions, then the embedded editor.
+    // The vertical rhythm must be padding on the block widget root: CodeMirror
+    // measures block widgets without their margins, so margins here would shift
+    // the hit-testing of every line below the block.
     ".cm-md-code-block-widget": {
+      padding: "0.7em 0",
+      fontFamily: "var(--qm-font-mono)",
+      fontSize: "0.92em",
+    },
+    ".cm-md-code-block-card": {
       position: "relative",
-      margin: "0.7em 0",
       border: "1px solid var(--qm-line)",
       borderRadius: "var(--qm-radius-md)",
       backgroundColor: "var(--qm-surface)",
       boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
-      fontFamily: "var(--qm-font-mono)",
-      fontSize: "0.92em",
     },
-    ".cm-md-code-block-widget:focus-within": {
+    ".cm-md-code-block-card:focus-within": {
       borderColor: "var(--qm-line-strong)",
       boxShadow: "0 0 0 2px var(--qm-accent-soft), 0 1px 2px rgba(0, 0, 0, 0.05)",
     },
@@ -1326,7 +1355,9 @@ export const livePreviewTheme = EditorView.theme(
       color: "var(--qm-ink-faint)",
     },
     ".cm-md-table-block": {
-      margin: "0.55em 0",
+      // Padding, not margin, so the block's measured height matches its layout
+      // and hit-testing stays aligned for the lines that follow the table.
+      padding: "0.55em 0",
       overflowX: "auto",
       contain: "inline-size",
       cursor: "text",

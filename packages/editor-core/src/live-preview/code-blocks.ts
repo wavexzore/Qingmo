@@ -483,7 +483,7 @@ class CodeBlockWidget extends WidgetType {
   }
 
   override get estimatedHeight(): number {
-    return Math.max(1, this.codeText.split("\n").length) * 26 + 64;
+    return Math.max(1, this.codeText.split("\n").length) * 26 + 84;
   }
 
   private get codeText(): string {
@@ -495,6 +495,13 @@ class CodeBlockWidget extends WidgetType {
     const wrapper = doc.createElement("div");
     wrapper.className = "cm-md-code-block-widget";
     wrapper.dataset.codeFrom = String(this.code.openingLine.from);
+
+    // The wrapper only carries the block's vertical rhythm (padding). CodeMirror
+    // measures a block widget with getBoundingClientRect(), which excludes
+    // margins, so spacing implemented as margin would desynchronise the height
+    // map and shift click hit-testing for every line after the block.
+    const card = doc.createElement("div");
+    card.className = "cm-md-code-block-card";
 
     const header = doc.createElement("div");
     header.className = "cm-md-code-header";
@@ -585,11 +592,11 @@ class CodeBlockWidget extends WidgetType {
 
     actions.append(picker, copyButton, moreButton);
     header.append(dots, title, spacer, actions, menu);
-    wrapper.append(header);
 
     const editorHost = doc.createElement("div");
     editorHost.className = "cm-md-code-editor";
-    wrapper.append(editorHost);
+    card.append(header, editorHost);
+    wrapper.append(card);
 
     const handle: CodeBlockHandle = {
       outer,
@@ -964,7 +971,7 @@ class CodeBlockWidget extends WidgetType {
     });
 
     wrapper.addEventListener("mousedown", (event) => {
-      if (event.target === wrapper || event.target === editorHost) {
+      if (event.target === wrapper || event.target === card || event.target === editorHost) {
         event.preventDefault();
         handle.nested.focus();
       }

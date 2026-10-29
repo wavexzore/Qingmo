@@ -250,11 +250,13 @@ class FrontMatterWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
-    const card = document.createElement("div");
-    card.className = "cm-md-frontmatter";
-    card.title = this.copy.frontmatter.wrapperTitle;
+    // Outer padding supplies the measured vertical rhythm; the bordered card is
+    // an inner element so CodeMirror's height map includes the spacing.
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-md-frontmatter-widget";
+    wrapper.title = this.copy.frontmatter.wrapperTitle;
 
-    card.addEventListener("mousedown", (event) => {
+    wrapper.addEventListener("mousedown", (event) => {
       if (event.button !== 0) {
         return;
       }
@@ -263,6 +265,9 @@ class FrontMatterWidget extends WidgetType {
       view.dispatch({ selection: { anchor: this.data.from }, scrollIntoView: true });
       view.focus();
     });
+
+    const card = document.createElement("div");
+    card.className = "cm-md-frontmatter";
 
     const header = document.createElement("div");
     header.className = "cm-md-frontmatter-header";
@@ -285,7 +290,8 @@ class FrontMatterWidget extends WidgetType {
       } else {
         addCell(card, "cm-md-frontmatter-empty", this.copy.frontmatter.empty);
       }
-      return card;
+      wrapper.append(card);
+      return wrapper;
     }
 
     const grid = document.createElement("div");
@@ -307,7 +313,8 @@ class FrontMatterWidget extends WidgetType {
     if (hidden > 0) {
       addCell(card, "cm-md-frontmatter-more", this.copy.frontmatter.more(hidden));
     }
-    return card;
+    wrapper.append(card);
+    return wrapper;
   }
 
   override ignoreEvent(): boolean {

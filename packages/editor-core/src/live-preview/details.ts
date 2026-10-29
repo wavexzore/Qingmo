@@ -572,7 +572,12 @@ class DetailsWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
-    return buildDetailsElement(view, this.block, false);
+    // Padding-only root: CodeMirror's block measurement excludes margins, so
+    // the bordered card must live inside the measured element.
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-md-details-widget";
+    wrapper.append(buildDetailsElement(view, this.block, false));
+    return wrapper;
   }
 
   override ignoreEvent(): boolean {
