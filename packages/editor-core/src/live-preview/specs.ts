@@ -1171,12 +1171,12 @@ export function collectDecorationSpecs(
               }
             }
             if (opening && closing) {
-              // `data-href` is the activation target; `title` stays the
-              // hover tooltip and may carry the title instead of the URL.
-              const tooltip = title ?? href;
+              // `data-href` is the activation target. Only an explicit
+              // Markdown title becomes a native hover tooltip; the URL itself
+              // must not pop up over the editor.
               const attributes: Record<string, string> = {};
-              if (tooltip) {
-                attributes.title = tooltip;
+              if (title) {
+                attributes.title = title;
               }
               if (href) {
                 attributes["data-href"] = href;
@@ -1194,7 +1194,7 @@ export function collectDecorationSpecs(
             const url = firstChild(syntaxNode, "URL");
             if (url) {
               const href = doc.sliceString(url.from, url.to);
-              addMark(url.from, url.to, "cm-md-link", { title: href, "data-href": href });
+              addMark(url.from, url.to, "cm-md-link", { "data-href": href });
             }
             break;
           }
@@ -1550,7 +1550,7 @@ export function collectDecorationSpecs(
             } else if (parentName === "Paragraph") {
               // GFM bare autolink: keep the URL, style it like a link.
               const href = doc.sliceString(node.from, node.to);
-              addMark(node.from, node.to, "cm-md-link", { title: href, "data-href": href });
+              addMark(node.from, node.to, "cm-md-link", { "data-href": href });
             }
             break;
           }

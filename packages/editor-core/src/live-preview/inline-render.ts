@@ -121,7 +121,6 @@ function atEmailBoundary(text: string, index: number): boolean {
 function appendLink(parent: HTMLElement, href: string, label: string): HTMLElement {
   const link = document.createElement("span");
   link.className = "cm-md-link";
-  link.title = label;
   link.dataset.href = href;
   link.textContent = label;
   parent.append(link);
@@ -231,7 +230,6 @@ function renderInlineTokens(parent: HTMLElement, text: string, copy: EditorUiCop
       flush();
       const link = document.createElement("span");
       link.className = "cm-md-link";
-      link.title = capture(match, 2);
       link.dataset.href = capture(match, 2);
       renderInlineTokens(link, capture(match, 1), copy);
       parent.append(link);

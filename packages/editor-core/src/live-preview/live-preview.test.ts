@@ -635,7 +635,7 @@ describe("collectDecorationSpecs", () => {
 
     expect(titleFor("inline")).toBe("Inline title");
     expect(titleFor("ref")).toBe("OpenAI");
-    expect(titleFor("shortcut")).toBe("https://shortcut.example");
+    expect(titleFor("shortcut")).toBeUndefined();
   });
 
   it("does not replace markers of a cross-line link", () => {
