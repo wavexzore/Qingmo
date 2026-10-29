@@ -80,7 +80,7 @@ describe("inline link activation", () => {
     expect(link?.textContent).toBe("参考");
     expect(link?.dataset.href).toBe("https://example.com/a");
     expect(link?.getAttribute("href")).toBeNull();
-    expect(link?.title).toBe("https://example.com/a");
+    expect(link?.getAttribute("title")).toBeNull();
   });
 
   it("opens on a platform-modifier click without moving the caret", () => {
@@ -139,6 +139,88 @@ describe("inline link activation", () => {
     mouseDown(anchor!, { metaKey: true });
 
     expect(opened).toEqual([]);
+  });
+});
+
+describe("modifier link affordance", () => {
+  it("marks inline links while the platform modifier is held", () => {
+    const view = mount(INLINE_LINK_DOC, () => undefined);
+    const link = view.dom.querySelector<HTMLElement>(".cm-md-link");
+    expect(link).not.toBeNull();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Meta", metaKey: true }));
+    link!.dispatchEvent(
+      new MouseEvent("mousemove", { bubbles: true, metaKey: true, clientX: 8, clientY: 8 }),
+    );
+    expect(link!.hasAttribute("data-link-hover")).toBe(true);
+
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "Meta" }));
+    expect(link!.hasAttribute("data-link-hover")).toBe(false);
+  });
+
+  it("does not advertise inert document-local links", () => {
+    const view = mount("[说明](./OTHER.md) 结尾\n", () => undefined);
+    const link = view.dom.querySelector<HTMLElement>(".cm-md-link");
+    expect(link).not.toBeNull();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Meta", metaKey: true }));
+    link!.dispatchEvent(
+      new MouseEvent("mousemove", { bubbles: true, metaKey: true, clientX: 8, clientY: 8 }),
+    );
+    expect(link!.hasAttribute("data-link-hover")).toBe(false);
+  });
+
+  it("marks a focused table cell whose link is covered by its editor", () => {
+    const view = mount(TABLE_LINK_DOC, () => undefined);
+    const link = view.dom.querySelector<HTMLElement>(".cm-md-table-block .cm-md-link");
+    const textarea = view.dom.querySelector<HTMLTextAreaElement>(
+      '.cm-md-table-cell-input[data-row="0"][data-col="0"]',
+    );
+    expect(link).not.toBeNull();
+    expect(textarea).not.toBeNull();
+    link!.getClientRects = () => [new DOMRect(0, 0, 120, 20)] as unknown as DOMRectList;
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Meta", metaKey: true }));
+    textarea!.dispatchEvent(
+      new MouseEvent("mousemove", {
+        bubbles: true,
+        metaKey: true,
+        clientX: 10,
+        clientY: 10,
+      }),
+    );
+
+    expect(textarea!.hasAttribute("data-link-hover")).toBe(true);
+  });
+
+  it("keeps read-only links discoverable without a modifier", () => {
+    const view = mount(INLINE_LINK_DOC, () => undefined, true);
+    const link = view.dom.querySelector<HTMLElement>(".cm-md-link");
+    expect(link).not.toBeNull();
+
+    link!.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 8, clientY: 8 }));
+
+    expect(link!.hasAttribute("data-link-hover")).toBe(true);
+  });
+
+  it("marks line-end links so the trailing badge stays at the baseline", () => {
+    const endView = mount("[参考](https://example.com/a)\n", () => undefined);
+    const endLink = endView.dom.querySelector<HTMLElement>(".cm-md-link");
+    expect(endLink).not.toBeNull();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Meta", metaKey: true }));
+    endLink!.dispatchEvent(
+      new MouseEvent("mousemove", { bubbles: true, metaKey: true, clientX: 8, clientY: 8 }),
+    );
+    expect(endLink!.hasAttribute("data-link-tail")).toBe(true);
+
+    const inlineView = mount("[参考](https://example.com/a) 之后\n", () => undefined);
+    const inlineLink = inlineView.dom.querySelector<HTMLElement>(".cm-md-link");
+    expect(inlineLink).not.toBeNull();
+    inlineLink!.dispatchEvent(
+      new MouseEvent("mousemove", { bubbles: true, metaKey: true, clientX: 8, clientY: 8 }),
+    );
+    expect(inlineLink!.hasAttribute("data-link-tail")).toBe(false);
   });
 });
 
