@@ -8,15 +8,17 @@ import {
   type ReactNode,
 } from "react";
 
-import type { EditorViewState, FilePayload } from "@qingmo/shared";
+import type { AppError, DraftMeta, EditorViewState, FilePayload, Result } from "@qingmo/shared";
 
 import { useAppServices } from "../../app/AppServices";
 import i18n from "../../i18n";
 import { buildEditorUiCopy } from "../../i18n/editorCopy";
 import { normalizeLanguage } from "../../i18n/language";
+import { AppError as AppErrorClass, normalizeError } from "../../lib/ipc/errors";
 import type { IpcPort } from "../../lib/ipc/port";
 import { EditorSession } from "./EditorSession";
 import { SaveCoordinator } from "./save/SaveCoordinator";
+import { DraftJournal } from "./recovery/DraftJournal";
 import { createDocumentSession } from "./session/createDocumentSession";
 import { ViewStateRecorder } from "./session/ViewStateRecorder";
 
@@ -24,12 +26,15 @@ interface SessionBundle {
   session: EditorSession;
   coordinator: SaveCoordinator;
   recorder: ViewStateRecorder;
+  journal: DraftJournal;
   viewState: EditorViewState | null;
 }
 
 export interface SetSessionExtras {
   /** Persisted scroll target, only meaningful for a named document. */
   viewState?: EditorViewState | null;
+  /** Restored crash draft; the new session owns it for later cleanup. */
+  draftId?: string | null;
 }
 
 interface DocumentSessionContextValue {
@@ -38,8 +43,14 @@ interface DocumentSessionContextValue {
   coordinator: SaveCoordinator | null;
   /** Records scroll/selection/preference for the attached view. */
   recorder: ViewStateRecorder | null;
+  /** Writes crash drafts for untitled/error/conflict documents. */
+  journal: DraftJournal | null;
   viewState: EditorViewState | null;
+  /** Main-window recovery list; empty in document windows. */
+  drafts: DraftMeta[];
   setSession(next: EditorSession | null, extras?: SetSessionExtras): void;
+  restoreDraft(id: string): Promise<Result<void, AppError>>;
+  discardDraft(id: string): Promise<Result<void, AppError>>;
 }
 
 const DocumentSessionContext = createContext<DocumentSessionContextValue | null>(null);
@@ -73,18 +84,37 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
   const { ipc } = useAppServices();
   const documentWindow = isDocumentWindow();
   const [bundle, setBundle] = useState<SessionBundle | null>(null);
+  const [drafts, setDrafts] = useState<DraftMeta[]>([]);
   const currentRef = useRef<EditorSession | null>(null);
   const coordinatorRef = useRef<SaveCoordinator | null>(null);
   const recorderRef = useRef<ViewStateRecorder | null>(null);
+  const journalRef = useRef<DraftJournal | null>(null);
 
   const startSession = useCallback(
-    (session: EditorSession, viewState: EditorViewState | null = null) => {
+    (
+      session: EditorSession,
+      viewState: EditorViewState | null = null,
+      draftId: string | null = null,
+    ) => {
       const coordinator = new SaveCoordinator({ session, ipc });
       const recorder = new ViewStateRecorder({ ipc, session });
+      const journal = new DraftJournal({
+        session,
+        coordinator,
+        ipc,
+        ...(draftId ? { initialDraftId: draftId } : {}),
+        onDiscarded: (id) => {
+          setDrafts((previous) => previous.filter((draft) => draft.id !== id));
+        },
+      });
       currentRef.current = session;
       coordinatorRef.current = coordinator;
       recorderRef.current = recorder;
-      setBundle({ session, coordinator, recorder, viewState });
+      journalRef.current = journal;
+      setBundle({ session, coordinator, recorder, journal, viewState });
+      // A restored dirty session must be journaled immediately, without
+      // waiting for the first edit.
+      journal.evaluate();
     },
     [ipc],
   );
@@ -145,9 +175,11 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      journalRef.current?.dispose();
       recorderRef.current?.dispose();
       coordinatorRef.current?.dispose();
       currentRef.current?.dispose();
+      journalRef.current = null;
       recorderRef.current = null;
       coordinatorRef.current = null;
       currentRef.current = null;
@@ -161,20 +193,94 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      journalRef.current?.dispose();
       recorderRef.current?.dispose();
       coordinatorRef.current?.dispose();
       previous?.dispose();
+      journalRef.current = null;
       recorderRef.current = null;
       coordinatorRef.current = null;
       currentRef.current = null;
 
       if (next) {
-        startSession(next, extras.viewState ?? null);
+        startSession(next, extras.viewState ?? null, extras.draftId ?? null);
       } else {
         setBundle(null);
       }
     },
     [startSession],
+  );
+
+  useLayoutEffect(() => {
+    if (documentWindow) {
+      return;
+    }
+    let cancelled = false;
+    ipc
+      .sessionDraftList()
+      .then((list) => {
+        if (!cancelled) {
+          setDrafts(list);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn("failed to list crash drafts", normalizeError(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [documentWindow, ipc]);
+
+  const restoreDraft = useCallback(
+    async (id: string): Promise<Result<void, AppError>> => {
+      const current = currentRef.current;
+      if (
+        !current ||
+        !current.isUntitled ||
+        current.readText().length > 0 ||
+        current.getSnapshot().saveState !== "clean"
+      ) {
+        return {
+          ok: false,
+          error: new AppErrorClass(
+            "BUSY",
+            "restoring a draft requires an empty, unchanged untitled document",
+          ),
+        };
+      }
+
+      try {
+        const record = await ipc.sessionDraftRead(id);
+        const session = EditorSession.createUntitled(record.title, {
+          initialText: record.text,
+          initialSelection: { anchor: record.anchor, head: record.head },
+          initialDirty: true,
+          placeholder: i18n.t("editor:empty.placeholder"),
+          uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
+        });
+        setSession(session, { draftId: id });
+        setDrafts((previous) => previous.filter((draft) => draft.id !== id));
+        return { ok: true, value: undefined };
+      } catch (error) {
+        return { ok: false, error: normalizeError(error) };
+      }
+    },
+    [ipc, setSession],
+  );
+
+  const discardDraft = useCallback(
+    async (id: string): Promise<Result<void, AppError>> => {
+      try {
+        const removed = await ipc.sessionDraftDiscard(id);
+        if (removed) {
+          setDrafts((previous) => previous.filter((draft) => draft.id !== id));
+        }
+        return { ok: true, value: undefined };
+      } catch (error) {
+        return { ok: false, error: normalizeError(error) };
+      }
+    },
+    [ipc],
   );
 
   return (
@@ -183,8 +289,12 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         session: bundle?.session ?? null,
         coordinator: bundle?.coordinator ?? null,
         recorder: bundle?.recorder ?? null,
+        journal: bundle?.journal ?? null,
         viewState: bundle?.viewState ?? null,
+        drafts,
         setSession,
+        restoreDraft,
+        discardDraft,
       }}
     >
       {children}

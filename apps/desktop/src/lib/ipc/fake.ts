@@ -135,6 +135,7 @@ export class FakeIpc implements IpcPort {
   readonly closeConfirmCalls: CloseConfirmRequest[] = [];
   readonly livePreviewCalls: boolean[] = [];
   readonly viewStateWrites: Array<{ path: string; state: EditorViewState }> = [];
+  readonly draftWrites: DraftWriteRequest[] = [];
   readonly localeCalls: ApplyLocaleRequest[] = [];
 
   constructor(options: FakeIpcOptions = {}) {
@@ -577,6 +578,7 @@ export class FakeIpc implements IpcPort {
     const existing = request.id ? this.drafts.get(request.id) : undefined;
     const id = existing?.id ?? request.id ?? newUuid();
     const createdAtMs = existing?.createdAtMs ?? this.tick();
+    this.draftWrites.push(request);
     const record: DraftRecord = {
       schemaVersion: 1,
       id,

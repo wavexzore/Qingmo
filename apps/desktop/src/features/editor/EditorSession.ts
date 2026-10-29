@@ -87,6 +87,10 @@ export interface EditorSessionOptions {
    * `createEditorState` against the normalized document length.
    */
   initialSelection?: EditorSelectionSnapshot;
+  /** Initial text for a restored untitled draft; ignored for named files. */
+  initialText?: string;
+  /** Marks a restored untitled draft as dirty before the first edit. */
+  initialDirty?: boolean;
 }
 
 function fileNameOf(path: string): string {
@@ -198,13 +202,14 @@ export class EditorSession {
     this.modeAttached = effective;
 
     const selection = selectionOf(this.state);
-    const saveState: SaveState = payload.readOnly ? "readonly" : "clean";
+    const initialDirty = options.initialDirty === true && !payload.readOnly;
+    const saveState: SaveState = payload.readOnly ? "readonly" : initialDirty ? "dirty" : "clean";
     this.metadata = metadataOf(payload, options.untitledTitle);
 
     this.snapshot = Object.freeze({
       ...this.metadata,
       saveState,
-      dirty: false,
+      dirty: initialDirty,
       previewTier: tier,
       livePreviewPreferred: this.previewPreference,
       livePreview: effective,
@@ -223,16 +228,18 @@ export class EditorSession {
     title: string,
     options: Omit<EditorSessionOptions, "untitledTitle"> = {},
   ): EditorSession {
+    const text = options.initialText ?? "";
     return new EditorSession(
       {
         docToken: UNTITLED_DOC_TOKEN,
         path: "",
-        text: "",
+        text,
         format: { encoding: "utf8", hasBom: false, eol: "lf" },
         mixedEol: false,
         hash: "",
-        size: 0,
-        textUnits: 0,
+        size: new TextEncoder().encode(text).length,
+        // UTF-16 code units, matching JavaScript `String.length`.
+        textUnits: text.length,
         mtimeMs: 0,
         readOnly: false,
         readOnlyReason: null,
