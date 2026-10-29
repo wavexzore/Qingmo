@@ -61,7 +61,7 @@ export const common = {
     conflict: "文件存在冲突",
     error: "保存未完成",
     description: "当前文档未能保存。仍要关闭青墨吗？未保存的修改会丢失。",
-    unsavedDescription: "确认后将保存当前文档并关闭。",
+    unsavedDescription: "确认后将丢弃未保存的内容并关闭。",
     confirm: "确认",
     allow: "仍要关闭",
     cancel: "取消",
