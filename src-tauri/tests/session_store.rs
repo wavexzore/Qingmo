@@ -355,6 +355,122 @@ fn corrupt_view_file_is_backed_up_and_reset() {
 }
 
 #[test]
+fn unknown_view_schema_is_backed_up_and_reset() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path().join("session");
+    fs::create_dir_all(root.join("drafts")).expect("session dirs");
+    fs::write(
+        root.join(VIEW_STATE_FILE),
+        serde_json::to_vec(&json!({
+            "schemaVersion": 99,
+            "entries": {"/docs/a.md": {"anchor": 1}}
+        }))
+        .expect("view json"),
+    )
+    .expect("seed view");
+
+    let store = SessionStore::open(root.clone()).expect("store");
+    assert!(store.view_get("/docs/a.md").is_none());
+    assert!(fs::read_dir(&root)
+        .expect("root")
+        .flatten()
+        .any(|entry| entry.file_name().to_string_lossy().contains(".corrupt-")));
+}
+
+#[test]
+fn unknown_draft_schema_is_dropped() {
+    let (dir, store) = store();
+    let drafts = dir.path().join("session").join("drafts");
+    let id = "00000000-0000-4000-8000-0000000000bb";
+    let mut record = record(id, "body", now_ms());
+    record.schema_version = 99;
+    seed_draft(&dir.path().join("session"), &record);
+
+    assert!(store.draft_list().expect("list").is_empty());
+    assert!(!drafts.join(format!("{id}.json")).exists());
+    assert_eq!(
+        store.draft_read(id).expect_err("read").code,
+        AppErrorCode::NotFound
+    );
+}
+
+#[test]
+fn concurrent_view_updates_keep_one_complete_value() {
+    let (_dir, store) = store();
+    let threads: Vec<_> = (0..4)
+        .map(|worker| {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                for index in 0..50 {
+                    store
+                        .view_set(
+                            "/docs/shared.md",
+                            EditorViewStateInput {
+                                anchor: worker * 1_000 + index,
+                                head: worker * 1_000 + index,
+                                top_pos: index,
+                                top_offset: 0.0,
+                                scroll_left: 0.0,
+                                live_preview_preferred: true,
+                            },
+                        )
+                        .expect("view write");
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().expect("writer");
+    }
+
+    let state = store.view_get("/docs/shared.md").expect("state");
+    // One of the 200 writes must win intact; a lost read-modify-write would
+    // surface as a missing entry or a torn value.
+    assert!(state.anchor <= 3_049);
+    assert_eq!(state.anchor, state.head);
+    assert!(state.updated_at_ms > 0);
+}
+
+#[test]
+fn cloned_store_instances_share_every_entry() {
+    let (_dir, store) = store();
+    let other_window = store.clone();
+
+    store
+        .view_set(
+            "/docs/a.md",
+            EditorViewStateInput {
+                anchor: 1,
+                head: 1,
+                top_pos: 0,
+                top_offset: 0.0,
+                scroll_left: 0.0,
+                live_preview_preferred: true,
+            },
+        )
+        .expect("first window");
+    other_window
+        .view_set(
+            "/docs/b.md",
+            EditorViewStateInput {
+                anchor: 2,
+                head: 2,
+                top_pos: 0,
+                top_offset: 0.0,
+                scroll_left: 0.0,
+                live_preview_preferred: true,
+            },
+        )
+        .expect("second window");
+
+    assert!(store.view_get("/docs/a.md").is_some(), "first entry kept");
+    assert_eq!(
+        store.view_get("/docs/b.md").map(|state| state.anchor),
+        Some(2)
+    );
+}
+
+#[test]
 fn corrupt_draft_is_dropped_without_failing_the_list() {
     let (dir, store) = store();
     let drafts = dir.path().join("session").join("drafts");

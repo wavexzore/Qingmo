@@ -14,6 +14,32 @@ export interface SeedFile {
   readOnlyReason?: ReadOnlyReason | null;
 }
 
+export interface SeedDraft {
+  schemaVersion: number;
+  id: string;
+  kind: "untitled" | "named";
+  path: string | null;
+  title: string;
+  text: string;
+  textUnits: number;
+  sizeBytes: number;
+  anchor: number;
+  head: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+  appVersion: string;
+}
+
+export interface SeedViewState {
+  anchor: number;
+  head: number;
+  topPos: number;
+  topOffset: number;
+  scrollLeft: number;
+  livePreviewPreferred: boolean;
+  updatedAtMs: number;
+}
+
 export interface E2eFileSnapshot {
   path: string;
   text: string;
@@ -69,6 +95,7 @@ export interface E2eBridge {
   emitUpdateProgress(downloaded: number, total?: number | null): void;
   getUpdateCalls(): E2eUpdateCalls;
   getUpdateSnapshot(): E2eUpdateSnapshot;
+  getViewState(path: string): Promise<SeedViewState | null>;
 }
 
 export type E2eAboutLink = "docs" | "github" | "changelog" | "license";
@@ -92,6 +119,8 @@ export interface E2eSettingsBridge {
 declare global {
   interface Window {
     __QINGMO_E2E_SEED__?: SeedFile[];
+    __QINGMO_E2E_SEED_DRAFTS__?: SeedDraft[];
+    __QINGMO_E2E_SEED_VIEW_STATE__?: Array<{ path: string; state: SeedViewState }>;
     __QINGMO_E2E_PENDING__?: string;
     __QINGMO_E2E__?: E2eBridge;
     __QINGMO_ABOUT_E2E__?: E2eAboutBridge;

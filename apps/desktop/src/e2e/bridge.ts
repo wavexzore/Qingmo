@@ -2,6 +2,8 @@ import type {
   AppErrorCode,
   ApplyLocaleRequest,
   CloseReason,
+  DraftRecord,
+  EditorViewState,
   ReadOnlyReason,
   TextFormat,
   UpdateSnapshot,
@@ -59,11 +61,17 @@ export interface E2eBridge {
   emitUpdateProgress(downloaded: number, total?: number | null): void;
   getUpdateCalls(): FakeUpdateCalls;
   getUpdateSnapshot(): UpdateSnapshot;
+  /** Reads the FakeIpc view-state map, including writes made by the recorder. */
+  getViewState(path: string): Promise<EditorViewState | null>;
 }
 
 declare global {
   interface Window {
     __QINGMO_E2E_SEED__?: E2eSeedFile[];
+    /** Drafts seeded before React mounts, so the recovery list sees them. */
+    __QINGMO_E2E_SEED_DRAFTS__?: DraftRecord[];
+    /** View states seeded before the document session is created. */
+    __QINGMO_E2E_SEED_VIEW_STATE__?: Array<{ path: string; state: EditorViewState }>;
     /** Path staged for a `/?window=document` boot. */
     __QINGMO_E2E_PENDING__?: string;
     __QINGMO_E2E__?: E2eBridge;
@@ -82,6 +90,12 @@ export function createE2eServices(): {
 } {
   const files = window.__QINGMO_E2E_SEED__ ?? [];
   const ipc = new FakeIpc({ files });
+  for (const draft of window.__QINGMO_E2E_SEED_DRAFTS__ ?? []) {
+    ipc.seedDraft(draft);
+  }
+  for (const seed of window.__QINGMO_E2E_SEED_VIEW_STATE__ ?? []) {
+    ipc.seedViewState(seed.path, seed.state);
+  }
   const pendingPath = window.__QINGMO_E2E_PENDING__;
   if (pendingPath) {
     ipc.stagePendingPath(pendingPath);
@@ -156,6 +170,7 @@ export function createE2eServices(): {
     },
     getUpdateCalls: () => ({ ...updates.calls }),
     getUpdateSnapshot: () => updates.currentSnapshot,
+    getViewState: (path) => ipc.sessionViewStateGet(path),
   };
 
   return { ipc, platform, updates, logs };
