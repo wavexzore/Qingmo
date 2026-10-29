@@ -53,7 +53,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 28);
+    assert_eq!(COMMANDS.len(), 29);
     assert_eq!(
         EVENTS,
         &[
@@ -384,6 +384,24 @@ fn invoke_handler_registers_every_contract_command() {
         denied,
         "app_about_open_link must be scoped to the About window: {error}"
     );
+
+    // External link opening validates the href before it ever reaches the OS
+    // opener, so unsafe schemes fail in the mock runtime as they would in the
+    // app. A successful open is covered by the validator unit tests.
+    for href in [
+        "javascript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "file:///etc/passwd",
+        "./OTHER.md",
+        "",
+    ] {
+        let error = invoke(&webview, "app_open_external", json!({ "href": href }))
+            .expect_err("unsafe links must be rejected");
+        assert_eq!(
+            error["code"], "INVALID_PATH",
+            "app_open_external must reject {href:?}: {error}"
+        );
+    }
 
     let about = tauri::WebviewWindowBuilder::new(&app, "about", Default::default())
         .build()

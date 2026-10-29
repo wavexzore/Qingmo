@@ -137,6 +137,7 @@ export class FakeIpc implements IpcPort {
   readonly viewStateWrites: Array<{ path: string; state: EditorViewState }> = [];
   readonly draftWrites: DraftWriteRequest[] = [];
   readonly localeCalls: ApplyLocaleRequest[] = [];
+  readonly openedLinks: string[] = [];
 
   constructor(options: FakeIpcOptions = {}) {
     for (const file of options.files ?? []) {
@@ -425,6 +426,12 @@ export class FakeIpc implements IpcPort {
     await this.wait(COMMANDS.appApplyLocale);
     this.maybeThrow(COMMANDS.appApplyLocale);
     this.localeCalls.push(request);
+  }
+
+  async appOpenExternal(href: string): Promise<void> {
+    await this.wait(COMMANDS.appOpenExternal);
+    this.maybeThrow(COMMANDS.appOpenExternal);
+    this.openedLinks.push(href);
   }
 
   private emitDiskModified(path: string): void {

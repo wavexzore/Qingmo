@@ -17,6 +17,7 @@ import { codeBlockPreview } from "./code-blocks";
 import { definitionListPreview } from "./definition-lists";
 import { detailsBlockPreview } from "./details";
 import { frontMatterPreview } from "./frontmatter";
+import { linkOpenMouseDown } from "./link-click";
 import { mathBlockPreview } from "./math-blocks";
 import { mediaBlockPreview } from "./media-blocks";
 import { mermaidBlockPreview } from "./mermaid-blocks";
@@ -230,6 +231,7 @@ export function livePreview(): Extension {
     codeFenceAutoClose,
     tableBlockPreview,
     tableSelectionGuard,
+    linkOpenMouseDown,
     mathBlockPreview,
     mermaidBlockPreview,
     livePreviewTheme,

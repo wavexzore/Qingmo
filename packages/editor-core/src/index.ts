@@ -49,6 +49,13 @@ export {
   type VisibleRange,
 } from "./live-preview/specs";
 export { tableBlockPreview } from "./live-preview/table-blocks";
+export {
+  editorOpenExternal,
+  isOpenableHref,
+  linkHrefAt,
+  openExternalLink,
+  type EditorOpenExternalPort,
+} from "./live-preview/link-click";
 export { codeBlockPreview, type CodeBlockRange } from "./live-preview/code-blocks";
 export { mathBlockPreview } from "./live-preview/math-blocks";
 export { mermaidBlockPreview } from "./live-preview/mermaid-blocks";

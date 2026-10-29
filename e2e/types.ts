@@ -87,6 +87,7 @@ export interface E2eBridge {
   getCloseConfirms(): Array<{ allow: boolean }>;
   getLivePreviewMenuCalls(): boolean[];
   getLocaleCalls(): E2eLocaleCall[];
+  getOpenedLinks(): string[];
   setLogFileCount(count: number): void;
   setUpdateAvailable(update: E2eUpdateInfo | null): void;
   setUpdateError(operation: "check" | "download" | "install", code: string | null): void;

@@ -51,6 +51,11 @@ export interface IpcPort {
   appSetLivePreview(request: LivePreviewRequest): Promise<void>;
   /** Projects the current language and native labels into the shell. */
   appApplyLocale(request: ApplyLocaleRequest): Promise<void>;
+  /**
+   * Opens an external link in the system browser. Rust owns the scheme
+   * whitelist; the webview only supplies the destination.
+   */
+  appOpenExternal(href: string): Promise<void>;
   /** Persisted view state for a named document; `null` when unknown. */
   sessionViewStateGet(path: string): Promise<EditorViewState | null>;
   sessionViewStateSet(path: string, state: EditorViewStateInput): Promise<void>;

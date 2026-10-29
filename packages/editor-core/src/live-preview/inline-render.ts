@@ -7,6 +7,11 @@ const WIKI_EMBED = /^!\[\[([^[\]\n]+)\]\]/;
 const WIKI_LINK = /^\[\[([^[\]\n]+)\]\]/;
 const LINK = /^\[([^\]\n]+)\]\(\s*([^\s)]+)(?:\s+(?:"([^"]*)"|'([^']*)'))?\s*\)/;
 const AUTOLINK = /^<((?:https?:\/\/|mailto:)[^>\s]+)>/i;
+/** GFM autolink literals: bare `http(s)://`, `www.`, `mailto:` and emails. */
+const BARE_LINK = /^(?:https?:\/\/|www\.|mailto:)[^\s<>"'`]+/i;
+const BARE_EMAIL = /^[A-Za-z0-9_][\w.+-]{0,99}@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}/;
+/** Punctuation GFM strips from the end of a bare autolink. */
+const TRAILING_LINK_PUNCTUATION = new Set(["?", "!", ".", ",", ":", "*", "_", "~", "'", '"', ";"]);
 const STRONG_EM = /^\*\*\*([^*\n]+)\*\*\*/;
 const STRONG_STAR = /^\*\*(?!\*)([^\n]+?)\*\*/;
 const STRONG_UNDER = /^__(?!_)([^\n]+?)__/;
@@ -81,6 +86,46 @@ function appendElement(
 
 function capture(match: RegExpExecArray, index: number): string {
   return match[index] ?? "";
+}
+
+/**
+ * GFM drops trailing punctuation from an autolink literal, including closing
+ * parentheses that do not balance an opening one inside the URL.
+ */
+function trimBareLink(raw: string): string {
+  let end = raw.length;
+  while (end > 0 && TRAILING_LINK_PUNCTUATION.has(raw[end - 1]!)) {
+    end -= 1;
+  }
+  while (end > 0 && raw[end - 1] === ")") {
+    const head = raw.slice(0, end);
+    const opens = (head.match(/\(/g) ?? []).length;
+    const closes = (head.match(/\)/g) ?? []).length;
+    if (closes <= opens) {
+      break;
+    }
+    end -= 1;
+  }
+  return raw.slice(0, end);
+}
+
+/** A bare link never starts inside a word (`xhttps://…` is not a link). */
+function atLinkBoundary(text: string, index: number): boolean {
+  return index === 0 || !/[A-Za-z0-9_@]/.test(text[index - 1]!);
+}
+
+function atEmailBoundary(text: string, index: number): boolean {
+  return index === 0 || !/[A-Za-z0-9_@.+-]/.test(text[index - 1]!);
+}
+
+function appendLink(parent: HTMLElement, href: string, label: string): HTMLElement {
+  const link = document.createElement("span");
+  link.className = "cm-md-link";
+  link.title = label;
+  link.dataset.href = href;
+  link.textContent = label;
+  parent.append(link);
+  return link;
 }
 
 function appendText(parent: HTMLElement, className: string, text: string): void {
@@ -187,6 +232,7 @@ function renderInlineTokens(parent: HTMLElement, text: string, copy: EditorUiCop
       const link = document.createElement("span");
       link.className = "cm-md-link";
       link.title = capture(match, 2);
+      link.dataset.href = capture(match, 2);
       renderInlineTokens(link, capture(match, 1), copy);
       parent.append(link);
       index += match[0].length;
@@ -265,13 +311,34 @@ function renderInlineTokens(parent: HTMLElement, text: string, copy: EditorUiCop
 
     if ((match = AUTOLINK.exec(rest))) {
       flush();
-      const link = document.createElement("span");
-      link.className = "cm-md-link";
-      link.title = capture(match, 1);
-      link.textContent = capture(match, 1);
-      parent.append(link);
+      appendLink(parent, capture(match, 1), capture(match, 1));
       index += match[0].length;
       continue;
+    }
+
+    if ((match = BARE_LINK.exec(rest))) {
+      const trimmed = trimBareLink(match[0]);
+      const plainWww = /^www\./i.test(trimmed);
+      const isMail = /^mailto:/i.test(trimmed);
+      if (
+        atLinkBoundary(text, index) &&
+        trimmed.length > 0 &&
+        (isMail || /^https?:\/\/\S/i.test(trimmed) || /^www\.\S/i.test(trimmed))
+      ) {
+        flush();
+        appendLink(parent, plainWww ? `https://${trimmed}` : trimmed, trimmed);
+        index += trimmed.length;
+        continue;
+      }
+    }
+
+    if ((match = BARE_EMAIL.exec(rest))) {
+      if (atEmailBoundary(text, index)) {
+        flush();
+        appendLink(parent, `mailto:${capture(match, 0)}`, capture(match, 0));
+        index += match[0].length;
+        continue;
+      }
     }
 
     pending += rest.charAt(0);

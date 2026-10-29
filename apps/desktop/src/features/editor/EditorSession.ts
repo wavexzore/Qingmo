@@ -2,6 +2,7 @@ import { StateEffect, type EditorState, type Extension } from "@codemirror/state
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import {
   createEditorState,
+  editorOpenExternal,
   livePreview,
   normalizeLineEndings,
   previewTierFor,
@@ -82,6 +83,12 @@ export interface EditorSessionOptions {
   uiCopy?: EditorUiCopy;
   /** User preference for Live Preview; defaults to true. */
   previewPreference?: boolean;
+  /**
+   * Opens an external link in the OS browser. The editor never navigates the
+   * webview itself; the desktop app supplies the `app_open_external` IPC call
+   * and tests record the destination.
+   */
+  openExternal?: (href: string) => void;
   /**
    * Persisted selection restored before the first view exists. Clamped by
    * `createEditorState` against the normalized document length.
@@ -179,7 +186,12 @@ export class EditorSession {
   private constructor(payload: FilePayload, options: EditorSessionOptions) {
     this.docTokenValue = payload.docToken;
     this.statusThrottleMs = options.statusThrottleMs ?? STATUS_THROTTLE_MS;
-    this.extraExtensions = options.extensions ?? [];
+    // The open-link gesture needs a host port even before the first view
+    // exists, so the facet travels with the state rather than the DOM.
+    this.extraExtensions = [
+      ...(options.extensions ?? []),
+      editorOpenExternal.of({ open: options.openExternal ?? (() => undefined) }),
+    ];
     this.placeholder = options.placeholder;
     this.uiCopy = options.uiCopy;
     this.untitled = options.untitledTitle !== undefined;

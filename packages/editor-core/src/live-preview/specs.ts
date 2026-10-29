@@ -1171,12 +1171,21 @@ export function collectDecorationSpecs(
               }
             }
             if (opening && closing) {
+              // `data-href` is the activation target; `title` stays the
+              // hover tooltip and may carry the title instead of the URL.
               const tooltip = title ?? href;
+              const attributes: Record<string, string> = {};
+              if (tooltip) {
+                attributes.title = tooltip;
+              }
+              if (href) {
+                attributes["data-href"] = href;
+              }
               addMark(
                 opening.to,
                 closing.from,
                 "cm-md-link",
-                tooltip ? { title: tooltip } : undefined,
+                Object.keys(attributes).length > 0 ? attributes : undefined,
               );
             }
             break;
@@ -1185,7 +1194,7 @@ export function collectDecorationSpecs(
             const url = firstChild(syntaxNode, "URL");
             if (url) {
               const href = doc.sliceString(url.from, url.to);
-              addMark(url.from, url.to, "cm-md-link", { title: href });
+              addMark(url.from, url.to, "cm-md-link", { title: href, "data-href": href });
             }
             break;
           }
@@ -1535,16 +1544,16 @@ export function collectDecorationSpecs(
               addReplace(node.from, node.to, parent);
             }
             break;
-          case "URL":
+          case "URL": {
             if (parentName === "Link") {
               addReplace(node.from, node.to, parent);
             } else if (parentName === "Paragraph") {
               // GFM bare autolink: keep the URL, style it like a link.
-              addMark(node.from, node.to, "cm-md-link", {
-                title: doc.sliceString(node.from, node.to),
-              });
+              const href = doc.sliceString(node.from, node.to);
+              addMark(node.from, node.to, "cm-md-link", { title: href, "data-href": href });
             }
             break;
+          }
           case "LinkTitle":
           case "LinkLabel":
             if (parentName === "Link") {

@@ -3,6 +3,7 @@ import type { EditorViewState, FilePayload } from "@qingmo/shared";
 
 import type { IpcPort } from "../../../lib/ipc/port";
 import { EditorSession } from "../EditorSession";
+import { createOpenExternal } from "./open-external";
 
 export interface CreatedDocumentSession {
   session: EditorSession;
@@ -21,7 +22,7 @@ export interface CreatedDocumentSession {
  * default cursor at the top and preview enabled.
  */
 export async function createDocumentSession(
-  ipc: Pick<IpcPort, "sessionViewStateGet">,
+  ipc: Pick<IpcPort, "sessionViewStateGet" | "appOpenExternal">,
   payload: FilePayload,
   uiCopy?: EditorUiCopy,
 ): Promise<CreatedDocumentSession> {
@@ -34,6 +35,7 @@ export async function createDocumentSession(
 
   const session = EditorSession.create(payload, {
     ...(uiCopy ? { uiCopy } : {}),
+    openExternal: createOpenExternal(ipc),
     ...(viewState
       ? {
           initialSelection: { anchor: viewState.anchor, head: viewState.head },

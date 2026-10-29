@@ -50,6 +50,7 @@ fn capability_contains_only_expected_permissions() {
             "allow-app-close-confirm",
             "allow-app-set-live-preview",
             "allow-app-apply-locale",
+            "allow-app-open-external",
             "allow-app-update-status",
             "allow-app-update-check",
             "allow-app-update-download",

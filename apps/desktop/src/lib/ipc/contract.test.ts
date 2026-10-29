@@ -12,7 +12,7 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the twenty-eight command names stable", () => {
+  it("keeps the twenty-nine command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
       "document_take_pending",
@@ -24,6 +24,7 @@ describe("IPC contract mirror", () => {
       "app_about_info",
       "app_about_close",
       "app_about_open_link",
+      "app_open_external",
       "app_settings_info",
       "app_settings_close",
       "app_update_status",
@@ -43,7 +44,7 @@ describe("IPC contract mirror", () => {
       "session_draft_read",
       "session_draft_discard",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(28);
+    expect(new Set(COMMAND_NAMES).size).toBe(29);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
