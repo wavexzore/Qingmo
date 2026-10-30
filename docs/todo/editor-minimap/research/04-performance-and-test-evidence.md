@@ -3,20 +3,21 @@
 > 功能：编辑器缩略图（Minimap）  
 > 代码基线：`main@43659b1`  
 > 目的：为阈值、降级策略、测试矩阵和性能预算提供可复现证据；区分“已测量”与“待实测”。  
-> **实施后修订：** 主路径已改为 Canvas 1:1 文本窗口（字符约 1px、行高约 3px）；绘制成本只与窗口行数相关，像素桶/块带仅在 Canvas 文本绘制异常时降级。
+> **实施后修订：** 主路径已改为模式感知 Canvas：Source 1:1 文本窗口（字符约 1px、行高约 3px）；Live Preview 扁平化行内标记并按真实 `lineDocY` 绘制标题带/代码卡/表格网格/媒体/公式。绘制成本只与窗口行数相关，像素桶/块带仅在 Canvas 绘制异常时降级。
 
 ---
 
 ## 0. 结论摘要
 
 1. `Text.iterLines()` 扫描 10 万行约 **2.46ms**（Node 26.12.1，本项目依赖版本），说明“每次文档变化扫描全文”在 100k 行内是可接受的，但必须 debounce，不能每键重绘。
-2. Canvas 1:1 文本绘制只覆盖视口窗口（约 200~250 行 × 最多 76 列），不绘制整篇文档；像素桶降级路径把绘制量限制在 rail 高度（约 600~800 个 `fillRect`）。
+2. 模式感知 Canvas 只覆盖视口窗口（约 200~250 行 × 最多 76 列），不绘制整篇文档；Live Preview 额外绘制少量语义块卡片，像素桶降级路径把绘制量限制在 rail 高度（约 600~800 个 `fillRect`）。
 3. 锚点采样（`view.lineBlockAt`）目标是 **1200 个**、硬上限 2000；T-007 实测 read 阶段 ≤2.0ms。
-4. **16ms 是工程目标**。T-007 的 C-011 实测 100k 行 CPU p50 **8.40ms** / p95 **11.20ms**，满足目标；wall p50 11.90ms / p95 17.80ms（含等待 CM6 measure 的帧调度）。
+4. **16ms 是工程目标**。T-007 的 C-011 实测 100k 行 CPU p50 **8.60ms** / p95 **10.80ms**，满足目标；wall p50 11.40ms / p95 18.40ms（含等待 CM6 measure 的帧调度）。
 5. 现有测试栈：Vitest + jsdom、Playwright Chromium、bench 只记录不设门禁；没有 axe-core、没有截图基线。
 6. jsdom 不能验证 canvas、布局、滚动高度、pointer 命中；这些必须放 Playwright。jsdom 的 `clientWidth/scrollHeight` 为 0，插件测试必须用 `MinimapOptions.geometry` 注入几何，否则会直接 Hidden。
 7. T-007 的普通文本快路径 + indent/density 单次遍历把 100k scan p50 从 ~17ms 降到 ~8.7ms；因此保留 100k 行上限与 1200 锚点。实现与证据见 `02` §3/§8.1。
 8. 1:1 文本渲染的行高/字符宽由 `defaultLineHeight/defaultCharacterWidth / 8` 估算并 clamp（行高 2~4px、字符宽 1~2px），窗口起点由 `viewportStartLine` 与文档相对滑块位置共同决定；滚动只重绘窗口。
+9. Live Preview 渲染模式复用同一窗口与 `lineDocY`，把窗口内真实块高归一化到 rail；块卡片数量由窗口内 `blocks` 决定，不随全文块数线性增长。
 
 ---
 
@@ -71,7 +72,7 @@ for (const n of [1000,10000,50000,100000]) {
 | 滚动停止锚点刷新 | scroll idle 250ms | 1200 锚点 + 100k 行插值 ≤ 12ms（工程目标） | 复用缓冲；实际待 C-011 | T-007 |
 | 内存 | 常驻 | **O(lines)**，100k 行需实测堆峰值 | 复用 `Uint8Array/Uint16Array` 行缓冲 + `Float64Array(lineDocY)` + blocks + anchors + buckets | T-003/T-007 |
 
-> 分项目标之和可能超过 16ms（12+8+4=24ms）。T-007 已实测完整 rebuild：CPU p50 8.40ms / p95 11.20ms，保留 100k 上限；若未来回归 >16ms，按顺序降级：增大 `ANCHOR_STRIDE` → 降低 `ANCHOR_MAX` → 降低 `MAX_LINES` → 隐藏。最终 PASS 必须记录实际上限与 p50/p95。
+> 分项目标之和可能超过 16ms（12+8+4=24ms）。T-007 已实测完整 rebuild：CPU p50 8.60ms / p95 10.80ms，保留 100k 上限；若未来回归 >16ms，按顺序降级：增大 `ANCHOR_STRIDE` → 降低 `ANCHOR_MAX` → 降低 `MAX_LINES` → 隐藏。最终 PASS 必须记录实际上限与 p50/p95。
 
 ---
 
@@ -83,7 +84,7 @@ for (const n of [1000,10000,50000,100000]) {
 - 排除：`e2e/**`、`src-tauri/**`。
 - `apps/desktop/src/test/setup.ts:9-22` 的 `ResizeObserverMock` 是零尺寸；CM6 在 jsdom 中无法测量真实布局。
 - 单测可验证：
-  - 纯函数（行分类、锚点映射、文本窗口、降级像素桶、滑块数学）；
+  - 纯函数（行分类、锚点映射、文本窗口、`renderedLineText`、降级像素桶、滑块数学）；
   - ViewPlugin 生命周期（DOM 创建/销毁、inline display/padding、`data-minimap-state`），但必须用 `MinimapOptions.geometry` 注入 `editorWidth/railWidth/railHeight/trackTop/trackHeight/contentHeight/documentPadding/clientHeight/scrollHeight`；
   - `EditorSession` 集成（一个 view 一个 rail、`replacePayload`、`view.destroy()`），放在 `apps/desktop/src/features/editor` 测试；
   - StrictMode（`editor-binding.test.tsx:141+` 已有 `<StrictMode>` 用例）；
@@ -238,6 +239,7 @@ E2E 必须断言：
 | UT-022 | scrollTop↔docY | `model.test.ts` | `pt=28` 时 `scrollTopToDocY(0)=0`、`docYToScrollTop(offset=0)(0)=0`、`docYToScrollTop(offset=0)(docHeight)=maxScroll` ±1px；点击 offset=clientHeight/2 |
 | UT-023 | 文本窗口 | `model.test.ts` | 整篇可容纳、顶部 padding、滑动窗口起点、底部 clamp 四种分支 |
 | UT-024 | `lineAtDocY` | `model.test.ts` | 首行/行中/下一行/文末坐标命中正确行 |
+| UT-025 | `renderedLineText` | `minimap.test.ts` | 标题/引用/列表/任务/链接/图片/行内代码扁平化；代码 fence/表格返回空串 |
 
 ### 5.2 E2E（Playwright）
 
@@ -245,7 +247,7 @@ E2E 必须断言：
 
 | ID | 场景 | 断言 |
 |---|---|---|
-| E2E-001 | 打开 `long.md` | `.qm-minimap` 可见（visibility:visible）；canvas backing store 宽高 ≈ CSS 尺寸 × DPR；`data-minimap-state="on"`；`data-minimap-render="text"`；`.cm-editor` paddingRight=88 |
+| E2E-001 | 打开 `long.md` | `.qm-minimap` 可见（visibility:visible）；canvas backing store 宽高 ≈ CSS 尺寸 × DPR；`data-minimap-state="on"`；默认 Live Preview 下 `data-minimap-render="rendered"`；`.cm-editor` paddingRight=88 |
 | E2E-002 | 打开 `note.md` | rail `getComputedStyle(display)==="none"`、`data-minimap-state="off"`；`.cm-editor` paddingRight 为空；content padding = 20 |
 | E2E-003 | 200 行唯一文本 seed 点击 track 25%/50%/75% | 期望行进入视口 ±2 行；`scrollTop` 单调、在 `[0,maxScroll]` |
 | E2E-004 | 拖拽滑块到顶/底 | `scrollTop` 单调；顶部 slider top=trackTop；底部 slider bottom=trackBottom（±1px） |
@@ -259,7 +261,8 @@ E2E 必须断言：
 | E2E-012 | 可访问性 | rail `aria-hidden=true`、无 tabindex；Tab 顺序不包含 rail；原生滚动键仍工作 |
 | E2E-013 | 结构颜色 | Canvas 非透明像素中至少 4 种不同 RGB；light/dark 调色板不同 |
 | E2E-014 | 已知标题点击（按标题行比例定位 rail） | 标题进入视口；标题中心与 scroller 中心偏差 ≤ 10px；`scrollTop` 在 `[0,maxScroll]` |
-| E2E-015 | 短行 + 长行 + 90 行正文 seed | `data-minimap-render="text"`；行高 ≥2px；长行最右 ink 比短行大 >20px，证明按真实字符数推进 |
+| E2E-015 | 短行 + 长行 + 90 行正文 seed，切到 Source | `data-minimap-render="text"`；行高 ≥2px；长行最右 ink 比短行大 >20px，证明按真实字符数推进 |
+| E2E-016 | 含标题/代码/表格/链接的 90+ 行 seed | 默认 `rendered`；切 Source 后 `text`；两次 Canvas 哈希不同 |
 
 ### 5.3 Canvas 像素断言
 
@@ -287,6 +290,8 @@ expect(pixels.height).toBeCloseTo(pixels.cssHeight * devicePixelRatio, 0);
 结构颜色：用 fixture 的 heading/fence/table/quote 行号估算 rail y，读取 1×1 像素，断言颜色不同；light/dark 各采一次，断言对应 token 变化。不能只统计“非透明像素 > 0”。
 
 1:1 文本：在窗口顶部取连续两个源行对应的 rail 横条，分别统计最右非透明像素的 x 坐标；长行必须显著大于短行（E2E-015 用 `> 20px` 容差），以证明绘制的是真实字符位置而不是固定密度条。
+
+渲染模式：对同一文档分别在 Live Preview 与 Source 下读取 Canvas 像素哈希，二者必须不同（E2E-016）；再对含代码块/表格的文档统计块颜色，确认存在 code/table 色带。
 
 ### 5.4 Bench
 
@@ -329,7 +334,7 @@ BENCH_FIXTURE=medium pnpm exec vitest run --config vitest.bench.config.ts bench/
 ## 7. 已实测与剩余待实测项
 
 1. `lineBlockAt` 真实浏览器批量成本（1200 次）：C-011 已记录 read 阶段 p95 ≤2.0ms。
-2. 100k 行完整 `rebuild` 的 p95 与堆峰值：C-011 已实测 CPU p50 8.40ms / p95 11.20ms；堆峰值未单独采样。
+2. 100k 行完整 `rebuild` 的 p95 与堆峰值：C-011 已实测 CPU p50 8.60ms / p95 10.80ms；堆峰值未单独采样。
 3. Live Preview 中 Mermaid/图片加载后的 `geometryChanged` 频率，以及 viewport 外锚点估算误差。
 4. 滑块在巨型 widget 上的视觉抖动，是否需要 Obsidian 式跨屏平均。
 5. `.cm-editor` padding-right 方案在 Tauri WebView/Windows 经典滚动条下的真实布局。

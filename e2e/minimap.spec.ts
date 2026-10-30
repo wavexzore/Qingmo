@@ -96,6 +96,23 @@ async function canvasColors(page: Page): Promise<string[]> {
   });
 }
 
+async function canvasHash(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>(".cm-editor > .qm-minimap canvas");
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) {
+      return 0;
+    }
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let hash = 2166136261;
+    for (let index = 0; index < data.length; index += 1) {
+      hash ^= data[index] ?? 0;
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  });
+}
+
 /** Rightmost inked column (CSS px) inside a horizontal slice of the rail canvas. */
 async function rightmostInk(page: Page, startY: number, height: number): Promise<number> {
   return page.evaluate(
@@ -155,7 +172,7 @@ test("E2E-001 long documents show a non-empty right rail", async ({ page }) => {
   expect(info.display).not.toBe("none");
   expect(info.visibility).toBe("visible");
   expect(info.paddingRight).toBe("88px");
-  expect(info.render).toBe("text");
+  expect(info.render).toBe("rendered");
   expect(Number(info.lineHeight)).toBeGreaterThanOrEqual(2);
   expect(Number(info.charWidth)).toBeGreaterThanOrEqual(1);
   expect(info.canvasWidth).toBeGreaterThan(1);
@@ -301,6 +318,7 @@ test("E2E-007 source and live preview both keep a working rail", async ({ page }
       .first()
       .evaluate((element) => element.style.paddingRight),
   ).toBe("88px");
+  expect(await rail(page).getAttribute("data-minimap-render")).toBe("text");
 
   const box = await rail(page).boundingBox();
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height * 0.5);
@@ -314,6 +332,7 @@ test("E2E-007 source and live preview both keep a working rail", async ({ page }
       .first()
       .evaluate((element) => element.style.paddingRight),
   ).toBe("88px");
+  expect(await rail(page).getAttribute("data-minimap-render")).toBe("rendered");
 });
 
 test("E2E-008 resize adds and removes the reserve without overflow", async ({ page }) => {
@@ -449,9 +468,11 @@ test("E2E-014 clicking the rail brings a known heading into view", async ({ page
   expect(inView).toBe(true);
 });
 
-test("E2E-015 the rail renders source text as a 1:1 miniature", async ({ page }) => {
+test("E2E-015 source mode preserves real line lengths in its miniature", async ({ page }) => {
   const longLine = "long ".repeat(30);
   await openFile(page, "scale.md", `short\n${longLine}\n${numberedDocument(90)}`);
+  await waitOn(page);
+  await emitMenuAction(page, "view.toggleLivePreview");
   await waitOn(page);
 
   expect(await rail(page).getAttribute("data-minimap-render")).toBe("text");
@@ -462,4 +483,33 @@ test("E2E-015 the rail renders source text as a 1:1 miniature", async ({ page })
   const longRight = await rightmostInk(page, 6 + lineHeight, lineHeight);
   expect(shortRight).toBeGreaterThan(0);
   expect(longRight).toBeGreaterThan(shortRight + 20);
+});
+
+test("E2E-016 live preview draws rendered blocks while source keeps raw text", async ({ page }) => {
+  const text = [
+    "# Rendered heading",
+    "",
+    "A paragraph with **bold** and [a link](https://example.com).",
+    "",
+    "```ts",
+    "const value = 1;",
+    "const next = value + 1;",
+    "```",
+    "",
+    "| A | B | C |",
+    "|---|---|---|",
+    "| 1 | 2 | 3 |",
+    "",
+    ...Array.from({ length: 90 }, (_, index) => `Paragraph ${index + 1}: the quick brown fox.`),
+  ].join("\n");
+  await openFile(page, "rendered.md", text);
+  await waitOn(page);
+  expect(await rail(page).getAttribute("data-minimap-render")).toBe("rendered");
+  const rendered = await canvasHash(page);
+
+  await emitMenuAction(page, "view.toggleLivePreview");
+  await waitOn(page);
+  expect(await rail(page).getAttribute("data-minimap-render")).toBe("text");
+  const source = await canvasHash(page);
+  expect(source).not.toBe(rendered);
 });

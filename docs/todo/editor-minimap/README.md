@@ -27,7 +27,7 @@ verification_status: "pass"  # not_run | pass | fail | partial | skipped
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "pnpm test:e2e -> 118 passed, 1 skipped; C-011 cpu p95=11.20ms"
+last_verification_command: "pnpm test:e2e -> 119 passed, 1 skipped; C-011 cpu p95=10.80ms"
 last_updated: "2026-10-30T22:30:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
@@ -69,7 +69,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 ## 1. 一句话结论
 
-`editor-minimap` 已 `done`：T-001~T-007、T-009 完成，T-008 因 Q-002=B 保持 `skipped`。实现采用“Canvas 1:1 文本缩略图（固定缩放 + 视口窗口）+ 文档纵轴滑块 + 内容区让位”，零新增持久化配置/DB/Rust。100k 行真实 Chromium 完整 rebuild CPU p95 `11.20ms`（≤16ms）；全量 Vitest `593 passed`，minimap E2E `15 passed`，全量 E2E `118 passed / 1 skipped`（skip 为 C-011 默认关闭）。
+`editor-minimap` 已 `done`：T-001~T-007、T-009 完成，T-008 因 Q-002=B 保持 `skipped`。实现采用“模式感知 Canvas 缩略图（源码模式 1:1 文本，实时预览按渲染块与真实文档高度绘制）+ 视口窗口 + 文档纵轴滑块 + 内容区让位”，零新增持久化配置/DB/Rust。100k 行真实 Chromium 完整 rebuild CPU p95 `10.80ms`（≤16ms）；全量 Vitest `594 passed`，minimap E2E `16 passed`，全量 E2E `119 passed / 1 skipped`（skip 为 C-011 默认关闭）。
 
 ---
 
@@ -79,10 +79,10 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 | R-ID | 目标 | 验收方式 | 状态 |
 |---|---|---|---|
-| R-001 | 长文档右侧显示全文 1:1 文本缩略图 | E2E-001：212 行 fixture 可见、Canvas 非空且为文本模式；E2E-002：6 行 fixture 不可见 | pass |
+| R-001 | 长文档右侧显示与当前模式一致的缩略图 | E2E-001：212 行 fixture 可见、Canvas 非空且为 `rendered`；E2E-002：6 行 fixture 不可见；E2E-016：模式切换后重绘 | pass |
 | R-002 | 点击/拖拽/滚轮导航，位置与内容对齐 | E2E-003/004/005：scrollTop 落点、单调拖拽、滚轮 | pass |
 | R-003 | 不破坏现有单一真源 | 代码审查 + UT-016 + 现有 view-state E2E；无新增 IPC/持久化 | pass |
-| R-004 | 大文档降级与性能预算 | BENCH-001~004；C-011 实测 100k CPU p95 11.20ms；保留 100k 上限 | pass |
+| R-004 | 大文档降级与性能预算 | BENCH-001~004；C-011 实测 100k CPU p95 10.80ms；保留 100k 上限 | pass |
 | R-005 | 主题/布局/可访问性与现有约定一致 | E2E-006/008/012；Canvas 像素采样；无横向溢出 | pass |
 | R-006 | 可测试、可回滚、零持久化配置 | 单测/E2E/bench 覆盖；回滚只需移除一行扩展注入 | pass |
 
@@ -93,7 +93,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | 图片缩略图/文件树缩略图/文档画廊 | 用户已明确是 VS Code 式全文 minimap | 无 |
 | 真实字体轮廓、语法高亮级 minimap | 76px 下不可读；字体/DPR/CJK 成本高 | `NEXT-001`（仅评估） |
 | DOM 克隆 Live Preview | 节点爆炸、虚拟化、主题同步复杂 | 无 |
-| 搜索命中/诊断/Git/协作标记 | 本期只做文本/结构导航 | `NEXT-002` |
+| 搜索命中/诊断/Git/协作标记 | 本期只做文本/渲染块导航 | `NEXT-002` |
 | 左右侧切换、宽度拖拽、透明度/缩放设置 | 需要新配置；Q-005=A 已确认固定 76px | `NEXT-003`（仅评估） |
 | 持久化开关/DB/Rust 字段 | Q-001=B / Q-002=B 已确认零配置、零持久化开关 | 无 |
 | 替代查找/大纲/键盘滚动 | minimap 是辅助，不是主路径 | 无 |
@@ -113,7 +113,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | DeepWiki/Exa 外部检索 | pass | [`research/01-official-docs-and-oss.md`](research/01-official-docs-and-oss.md) §1 | 补充仓库文档/网页证据；关键 API 以本地源码二次核对 |
 | subagent/GitNexus 调用链分析 | pass | [`research/02-call-chain-and-impact.md`](research/02-call-chain-and-impact.md) | `EditorSession` CRITICAL；唯一注入点 `extraExtensions` |
 | 当前代码实时校准 | pass | `02-实施状态与验证.md §8` | HEAD `43659b1`；GitNexus 索引 current；无旧 minimap 实现 |
-| 性能证据 | pass | [`research/04-performance-and-test-evidence.md`](research/04-performance-and-test-evidence.md) + `02` §3 | C-011 CPU p50 8.40ms / p95 11.20ms；bench scan p50 8.67ms；见 `02` |
+| 性能证据 | pass | [`research/04-performance-and-test-evidence.md`](research/04-performance-and-test-evidence.md) + `02` §3 | C-011 CPU p50 8.60ms / p95 10.80ms；bench scan p50 8.67ms；见 `02` |
 
 ### 3.2 目标调用链
 
@@ -128,7 +128,7 @@ EditorSession.create / createUntitled / restoreDraft
      -> scanMinimapDocument(doc)                    纯函数
      -> measureAnchors(lineBlockAt)                 块边界/标题/stride
      -> buildAnchorMap / computeMinimapWindow
-     -> Canvas 1:1 text draw（异常降级结构条带）
+     -> Canvas rendered/text frame（异常降级结构条带）
   -> scroll / pointer / wheel / theme / resize
      -> slider / redraw / scrollDOM.scrollTop
   -> ViewStateRecorder 照常持久化（不变）
@@ -140,19 +140,27 @@ EditorSession.create / createUntitled / restoreDraft
 2. 任何 Canvas/测量/observer 失败都只能降级为“无 minimap”，不能中断编辑/保存/关闭。
 3. 不新增第二套文档、滚动、主题、持久化、命令或配置来源。
 
+### 3.1 模式行为
+
+| 模式 | `data-minimap-render` | 绘制内容 |
+|---|---|---|
+| Source | `text` | 真实源文本；字符约 1px、行高约 3px，保留缩进/空格/行长度 |
+| Live Preview | `rendered` | 去掉 Markdown 行内/块级标记；标题带、正文、代码卡、表格网格、引用、列表、图片占位、公式块按真实 `lineDocY` 比例绘制 |
+| Canvas 文本绘制异常 | `blocks` | 原有结构条带降级 |
+
 ---
 
 ## 4. 当前实施状态总览
 
 | T-ID | 任务 | Status | DependsOn | Evidence | Next |
 |---|---|---|---|---|---|
-| T-001 | 失败用例与契约 | done | none | 24 tests + E2E 15 | — |
+| T-001 | 失败用例与契约 | done | none | 25 tests + E2E 16 | — |
 | T-002 | `css-color.ts` 抽取 | done | T-001 | C-002 43 tests | — |
 | T-003 | 纯函数模型与锚点映射 | done | T-002 | C-001 + bench | — |
 | T-004 | 主题、Canvas、ViewPlugin | done | T-003 | C-001/C-004 | — |
 | T-005 | `EditorSession` 集成 | done | T-004 | C-003 105 tests | — |
-| T-006 | E2E 交互/布局/主题/降级 | done | T-005 | C-006 15 + C-007 46 | — |
-| T-007 | 性能与可访问性校准 | done | T-006 | C-008 + C-011 p95 11.20ms | — |
+| T-006 | E2E 交互/布局/主题/降级/模式 | done | T-005 | C-006 16 + C-007 46 | — |
+| T-007 | 性能与可访问性校准 | done | T-006 | C-008 + C-011 p95 10.80ms | — |
 | T-008 | 会话内切换命令（Q-002=B，不实施） | skipped | —（Q-002=B 不启动） | none | Q-002=B 已确认，保持 `skipped`；仅未来产品重新评审 Q-002 并改 A 时恢复 |
 | T-009 | 全量验证与收尾 | done | T-007（T-008 skipped） | C-009/C-010；VERDICT PASS | — |
 
@@ -265,7 +273,7 @@ interface AnchorSample {
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
 | AC-001 | 长文档显示、短文档/超限隐藏 | T-004/T-006 | E2E-001/002/011 | pass |
-| AC-002 | Canvas 有 1:1 文本缩略图、主题变色 | T-004/T-006 | E2E-001/006/013/015 + 像素采样 | pass |
+| AC-002 | Source 为 1:1 文本、Live Preview 为渲染块，主题变色 | T-004/T-006 | E2E-001/006/013/015/016 + 像素采样 | pass |
 | AC-003 | 点击落点正确 | T-003/T-006 | E2E-003/014 | pass |
 | AC-004 | 拖拽/滚轮可用 | T-004/T-006 | E2E-004/005 | pass |
 | AC-005 | 主题/模式切换不重建 view、不丢 undo | T-004/T-006 | E2E-006/007 + palette-theme/large-file | pass |
@@ -316,14 +324,14 @@ pnpm test:e2e
 | C-003 | `pnpm vitest run apps/desktop/src/features/editor` | T-005 后 | PASS |
 | C-004 | `pnpm typecheck` | 每任务后 | PASS |
 | C-005 | `pnpm lint` | T-009 | PASS |
-| C-006 | `pnpm exec playwright test e2e/minimap.spec.ts` | T-006 | PASS（15 tests） |
+| C-006 | `pnpm exec playwright test e2e/minimap.spec.ts` | T-006 | PASS（16 tests） |
 | C-007 | `pnpm exec playwright test e2e/open-edit-save.spec.ts e2e/view-state.spec.ts e2e/markdown-syntax.spec.ts e2e/palette-theme.spec.ts` | T-006 | PASS |
 | C-008 | `pnpm typecheck:bench && pnpm exec vitest run --config vitest.bench.config.ts bench/minimap.bench.ts` | T-007 | 纯函数 p50/p95 |
 | C-009 | `pnpm ci:web` | T-009 | PASS |
 | C-010 | `pnpm test:e2e` | T-009 | PASS |
 | C-011 | `MINIMAP_PERF=1 pnpm exec playwright test e2e/minimap-perf.spec.ts` | T-007 | 真实 Chromium 100k rebuild CPU p50/p95；T-009 PASS 条件 |
 
-> 2026-10-30 全部命令已运行：C-001 24、C-002 43、C-003 105、C-006 15、C-007 46、C-011 1（CPU p95 11.20ms）；C-009/C-010 见 `02` §3。C-011 默认 skip，只有设置 `MINIMAP_PERF=1` 才执行。
+> 2026-10-30 全部命令已运行：C-001 25、C-002 43、C-003 105、C-006 16、C-007 46、C-011 1（CPU p95 10.80ms）；C-009/C-010 见 `02` §3。C-011 默认 skip，只有设置 `MINIMAP_PERF=1` 才执行。
 
 ---
 
@@ -346,7 +354,7 @@ pnpm test:e2e
 
 **首选回滚**：移除 `EditorSession.ts` 中 `minimapExtension()` 这一行，跑全量回归。无数据迁移、无配置清理。
 
-> 2026-10-30 实施后复核：RK-001~RK-012 均关闭；RK-004 以 C-011 CPU p95 11.20ms 关闭；回滚演练（移除注入 → C-007 45 passed → 恢复）通过。详见 `02` §3/§7。
+> 2026-10-30 实施后复核：RK-001~RK-012 均关闭；RK-004 以 C-011 CPU p95 10.80ms 关闭；回滚演练（移除注入 → C-007 45 passed → 恢复）通过。详见 `02` §3/§7。
 
 ---
 
