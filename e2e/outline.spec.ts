@@ -69,6 +69,70 @@ test("E2E-001/002/010: the outline is hidden by default and toggles from the men
   await expect(editorContent(page)).toBeFocused();
 });
 
+type WidthSample = number | null;
+
+async function startWidthSampler(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const samples: WidthSample[] = [];
+    (window as unknown as { __OUTLINE_WIDTH_SAMPLES__: WidthSample[] }).__OUTLINE_WIDTH_SAMPLES__ =
+      samples;
+    const tick = () => {
+      const element = document.querySelector<HTMLElement>('[data-testid="outline-panel"]');
+      samples.push(element ? element.getBoundingClientRect().width : null);
+      if (samples.length < 180) {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+async function readWidthSamples(page: Page): Promise<WidthSample[]> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __OUTLINE_WIDTH_SAMPLES__: WidthSample[] }).__OUTLINE_WIDTH_SAMPLES__,
+  );
+}
+
+function hasIntermediateWidth(samples: WidthSample[]): boolean {
+  return samples.some((width) => width !== null && width > 1 && width < 239);
+}
+
+test("E2E-018: the panel animates open and closed without remounting the editor", async ({
+  page,
+}) => {
+  await openOutlineFixture(page);
+  await page.evaluate(() => {
+    (window as unknown as { __OUTLINE_EDITOR__: Element | null }).__OUTLINE_EDITOR__ =
+      document.querySelector(".cm-editor");
+  });
+
+  await startWidthSampler(page);
+  await emitMenuAction(page, "view.toggleOutline");
+  await expect(panel(page)).toHaveAttribute("data-outline-visible", "true");
+  await page.waitForTimeout(300);
+
+  const openSamples = await readWidthSamples(page);
+  // Intermediate widths prove the panel grows instead of snapping to 240px.
+  expect(hasIntermediateWidth(openSamples)).toBe(true);
+  expect(openSamples.at(-1)).toBeCloseTo(240, 0);
+
+  await startWidthSampler(page);
+  await panel(page).getByRole("button", { name: "关闭大纲" }).click();
+  await expect(panel(page)).toHaveCount(0);
+
+  const closeSamples = await readWidthSamples(page);
+  expect(hasIntermediateWidth(closeSamples)).toBe(true);
+  expect(closeSamples.at(-1)).toBeNull();
+
+  const sameEditor = await page.evaluate(
+    () =>
+      (window as unknown as { __OUTLINE_EDITOR__: Element | null }).__OUTLINE_EDITOR__ ===
+      document.querySelector(".cm-editor"),
+  );
+  expect(sameEditor).toBe(true);
+});
+
 test("E2E-003: clicking an item moves the selection and puts the heading 10px from the top", async ({
   page,
 }) => {

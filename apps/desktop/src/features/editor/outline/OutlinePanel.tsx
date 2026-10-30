@@ -22,11 +22,14 @@ import {
   type Translate,
 } from "./active";
 import { useOutline } from "./useOutline";
+import { OUTLINE_PANEL_ANIMATION_MS } from "./usePanelPresence";
 
 interface OutlinePanelProps {
   session: EditorSession;
   cursorLine: number;
   onClose(): void;
+  /** False during the closing transition; the panel stays mounted until it ends. */
+  visible?: boolean;
 }
 
 function OutlineMessage({ outline }: { outline: HeadingOutlineState }) {
@@ -81,7 +84,7 @@ class OutlineListBoundary extends Component<
   }
 }
 
-function OutlinePanelView({ session, cursorLine, onClose }: OutlinePanelProps) {
+function OutlinePanelView({ session, cursorLine, onClose, visible = true }: OutlinePanelProps) {
   const { t } = useTranslation(["editor"]);
   const outline = useOutline(session);
   const entries = outline.entries;
@@ -101,6 +104,17 @@ function OutlinePanelView({ session, cursorLine, onClose }: OutlinePanelProps) {
     onClose();
     session.focusEditor();
   }, [onClose, session]);
+
+  // Closing keeps the panel mounted for the width transition. Whoever closed
+  // it (button, Escape, menu or command palette) must not leave focus on a
+  // panel that is inert and about to unmount.
+  const wasVisible = useRef(visible);
+  useEffect(() => {
+    if (wasVisible.current && !visible) {
+      session.focusEditor();
+    }
+    wasVisible.current = visible;
+  }, [session, visible]);
 
   const moveFocus = useCallback(
     (next: number) => {
@@ -145,13 +159,16 @@ function OutlinePanelView({ session, cursorLine, onClose }: OutlinePanelProps) {
   );
 
   useEffect(() => {
+    if (!visible) {
+      return;
+    }
     if (
       typeof window.matchMedia === "function" &&
       window.matchMedia("(min-width: 900px)").matches
     ) {
       navRef.current?.focus();
     }
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
     if (visibleEntries.length === 0) {
@@ -232,48 +249,56 @@ function OutlinePanelView({ session, cursorLine, onClose }: OutlinePanelProps) {
       ref={navRef}
       tabIndex={-1}
       aria-label={t("editor:outline.region")}
+      aria-hidden={visible ? undefined : true}
+      inert={!visible || undefined}
       data-testid="outline-panel"
+      data-outline-visible={visible ? "true" : "false"}
       data-outline-status={outline.status}
       data-outline-count={visibleEntries.length}
       data-outline-total={entries.length}
       data-outline-limit={outline.limitReason ?? "none"}
+      style={{ transitionDuration: `${OUTLINE_PANEL_ANIMATION_MS}ms` }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
           close();
         }
       }}
-      className="relative hidden h-full w-60 shrink-0 flex-col border-r border-line bg-surface/60 min-[900px]:flex"
+      className={`relative hidden h-full shrink-0 flex-col overflow-hidden border-line bg-surface/60 transition-[width,opacity] ease-out min-[900px]:flex ${
+        visible ? "w-60 border-r opacity-100" : "w-0 border-r-0 opacity-0"
+      }`}
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
-        <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">
-          {t("editor:outline.title")}
-        </h2>
-        <span className="shrink-0 text-[10px] tabular-nums text-ink-faint">
-          {t("editor:outline.count", { count: visibleEntries.length })}
-        </span>
-        <button
-          type="button"
-          aria-label={t("editor:outline.close")}
-          title={t("editor:outline.close")}
-          onClick={close}
-          className="shrink-0 rounded p-1 text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink"
-        >
-          ×
-        </button>
-      </header>
-      {visibleEntries.length === 0 ? (
-        <OutlineMessage outline={outline} />
-      ) : (
-        <OutlineListBoundary fallback={<OutlineMessage outline={outline} />}>
-          {list}
-        </OutlineListBoundary>
-      )}
-      {visibleEntries.length > 0 && statusHint ? (
-        <footer className="shrink-0 border-t border-line px-3 py-1.5 text-[11px] text-ink-faint">
-          {statusHint}
-        </footer>
-      ) : null}
+      <div className="flex h-full w-60 flex-col">
+        <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+          <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">
+            {t("editor:outline.title")}
+          </h2>
+          <span className="shrink-0 text-[10px] tabular-nums text-ink-faint">
+            {t("editor:outline.count", { count: visibleEntries.length })}
+          </span>
+          <button
+            type="button"
+            aria-label={t("editor:outline.close")}
+            title={t("editor:outline.close")}
+            onClick={close}
+            className="shrink-0 rounded p-1 text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink"
+          >
+            ×
+          </button>
+        </header>
+        {visibleEntries.length === 0 ? (
+          <OutlineMessage outline={outline} />
+        ) : (
+          <OutlineListBoundary fallback={<OutlineMessage outline={outline} />}>
+            {list}
+          </OutlineListBoundary>
+        )}
+        {visibleEntries.length > 0 && statusHint ? (
+          <footer className="shrink-0 border-t border-line px-3 py-1.5 text-[11px] text-ink-faint">
+            {statusHint}
+          </footer>
+        ) : null}
+      </div>
     </nav>
   );
 }
