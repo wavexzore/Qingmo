@@ -162,7 +162,9 @@ EditorSession.create / createUntitled / restoreDraft
   -> EditorSession.subscribeOutline / getOutlineSnapshot
   -> OutlinePanel（纯文本列表）
   -> 点击 -> EditorSession.revealPosition(lineFrom)
-     -> view.dispatch({ selection, effects: scrollIntoView(y:"start", yMargin:10) })
+     -> view.dispatch({ selection })                 ← 光标立即落点
+     -> scrollTop 120–280ms easeInOutCubic + coordsAtPos 收尾
+        （reduced motion / 距离 <1px 时退回 scrollIntoView(y:"start", yMargin:10)）
 ```
 
 关键约束：
@@ -304,7 +306,7 @@ export interface HeadingOutlineState {
 | `readHeadingOutline(state): HeadingOutlineState` | 新增导出 | 非破坏性 | 单测 |
 | `EditorSession.getOutlineSnapshot(): HeadingOutlineState` | 新增方法 | 非破坏性 | `editor-session.test.ts` |
 | `EditorSession.subscribeOutline(listener): () => void` | 新增方法 | 非破坏性 | 单测 |
-| `EditorSession.revealPosition(position: number): boolean` | 新增方法 | 非破坏性 | 单测/E2E |
+| `EditorSession.revealPosition(position: number): boolean` | 新增方法 | 非破坏性 | 单测/E2E；selection 立即落点，视口缓动，reduced motion 瞬时 |
 | `EditorSession.focusEditor(): boolean` | 新增方法 | 非破坏性 | 面板关闭回焦 |
 | `readDetailsRanges(state): readonly DetailsRange[]` | 内部函数（`editor-core` 内部/测试，不新增公共 API） | 非破坏性 | `details`/`outline` 单测 |
 | `view.toggleOutline` 命令 | 新增 | 非破坏性 | 命令/菜单测试 |
@@ -320,7 +322,7 @@ export interface HeadingOutlineState {
 | AC-001 | 默认无面板；命令面板与原生菜单均可打开/关闭 | T-005/T-006/T-007 | E2E-001/002/010 | pass |
 | AC-002 | 标题文本/层级/顺序与文档一致；ATX/Setext 都支持 | T-002/T-007 | UT-001/002；E2E-003 | pass |
 | AC-003 | frontmatter、details、围栏代码块内标题不出现 | T-002/T-007 | UT-003/004；E2E-009 | pass |
-| AC-004 | 点击条目后光标落在标题行首，标题进入视口且距顶约 10px | T-004/T-007 | E2E-003/004 | pass |
+| AC-004 | 点击条目后光标落在标题行首，视口平滑滚动到标题距顶约 10px；reduced motion 时瞬时到位 | T-004/T-007 | E2E-003/004 | pass |
 | AC-005 | 活动项跟随光标；光标在首个标题前时无活动项 | T-006/T-007 | E2E-005 | pass |
 | AC-006 | Source/Live Preview 两种模式都显示同一份大纲 | T-003/T-007 | E2E-006；现有模式测试 | pass |
 | AC-007 | 编辑、重载、切换文档后大纲更新且不残留旧标题 | T-004/T-007 | E2E-007/008；UT-015/018 | pass |

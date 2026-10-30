@@ -12,6 +12,8 @@ import {
   openSeededFile,
 } from "./helpers";
 
+test.use({ reducedMotion: "no-preference" });
+
 function panel(page: Page) {
   return page.getByTestId("outline-panel");
 }
@@ -73,25 +75,45 @@ test("E2E-003: clicking an item moves the selection and puts the heading 10px fr
   await openOutlineFixture(page);
   await openPanel(page);
 
+  await page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>(".cm-scroller");
+    const samples: number[] = [];
+    (window as unknown as { __OUTLINE_SCROLL_SAMPLES__: number[] }).__OUTLINE_SCROLL_SAMPLES__ =
+      samples;
+    scroller?.addEventListener("scroll", () => {
+      samples.push(scroller.scrollTop);
+    });
+  });
+
   await item(page, "Gamma section").click();
   await expect(page.getByTestId("status-bar")).toContainText("第 25 行");
   await expect(item(page, "Gamma section")).toHaveAttribute("aria-current", "location");
 
-  const offset = await page.evaluate(() => {
-    const scroller = document.querySelector<HTMLElement>(".cm-scroller");
-    const line = [...document.querySelectorAll<HTMLElement>(".cm-line")].find((element) =>
-      element.textContent?.includes("Gamma section"),
-    );
-    const heading = line?.firstElementChild;
-    if (!scroller || !heading) {
-      return null;
-    }
-    // The line box includes leading; the heading's own box starts at the
-    // scroll target (10px).
-    return heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-  });
-  expect(offset).not.toBeNull();
-  expect(Math.abs(offset! - 10)).toBeLessThanOrEqual(2);
+  const offset = () =>
+    page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>(".cm-scroller");
+      const line = [...document.querySelectorAll<HTMLElement>(".cm-line")].find((element) =>
+        element.textContent?.includes("Gamma section"),
+      );
+      const heading = line?.firstElementChild;
+      if (!scroller || !heading) {
+        return Number.POSITIVE_INFINITY;
+      }
+      // The line box includes leading; the heading's own box starts at the
+      // scroll target (10px).
+      return Math.abs(
+        heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 10,
+      );
+    });
+  await expect.poll(offset).toBeLessThanOrEqual(2);
+
+  const samples = await page.evaluate(
+    () =>
+      (window as unknown as { __OUTLINE_SCROLL_SAMPLES__: number[] }).__OUTLINE_SCROLL_SAMPLES__,
+  );
+  // Smooth navigation visits intermediate scroll positions instead of a single
+  // hard cut. Scroll events coalesce, so two distinct steps is enough evidence.
+  expect(new Set(samples).size).toBeGreaterThan(1);
 });
 
 test("E2E-004/012: one Tab stop, roving keys and Enter navigate the outline", async ({ page }) => {
