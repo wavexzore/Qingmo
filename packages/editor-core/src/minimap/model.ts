@@ -98,9 +98,7 @@ export interface MinimapGeometry {
   scrollHeight: number;
 }
 
-export const MINIMAP_LINE_HYSTERESIS = 8;
 export const MINIMAP_WIDTH_HYSTERESIS = 16;
-export const MINIMAP_MIN_LINES = 80;
 export const MINIMAP_MAX_LINES = 100_000;
 export const MINIMAP_MAX_UNITS = 2_000_000;
 export const MINIMAP_MIN_EDITOR_WIDTH = 640;
@@ -785,15 +783,14 @@ export function isEligible({ lines, units, editorWidth, wasVisible }: Eligibilit
   if (!Number.isFinite(units) || units > MINIMAP_MAX_UNITS) {
     return false;
   }
-  const minimumLines = wasVisible ? MINIMAP_MIN_LINES - MINIMAP_LINE_HYSTERESIS : MINIMAP_MIN_LINES;
   const minimumWidth = wasVisible
     ? MINIMAP_MIN_EDITOR_WIDTH - MINIMAP_WIDTH_HYSTERESIS
     : MINIMAP_MIN_EDITOR_WIDTH;
-  return lines >= minimumLines && editorWidth >= minimumWidth;
+  return editorWidth >= minimumWidth;
 }
 
 export interface VisibilityInput extends EligibilityInput {
-  docHeight: number;
+  scrollHeight: number;
   clientHeight: number;
 }
 
@@ -801,5 +798,5 @@ export function nextVisibility(input: VisibilityInput): "visible" | "hidden" {
   if (!isEligible(input)) {
     return "hidden";
   }
-  return input.docHeight > input.clientHeight + 1 ? "visible" : "hidden";
+  return input.scrollHeight > input.clientHeight + 1 ? "visible" : "hidden";
 }

@@ -592,3 +592,27 @@ test("E2E-017 the rail replaces the native vertical scrollbar", async ({ page })
   await waitOn(page);
   expect((await metrics()).attr).toBe("hidden");
 });
+
+test("E2E-018 short documents that scroll also get the rail", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await openFile(page, "short-scroll.md", numberedDocument(18));
+  await waitOn(page);
+
+  const metrics = await page
+    .locator(".cm-scroller")
+    .first()
+    .evaluate((element) => {
+      const rail = document.querySelector<HTMLElement>(".cm-editor > .qm-minimap")!;
+      return {
+        paddingRight: document.querySelector<HTMLElement>(".cm-editor")!.style.paddingRight,
+        state: rail.dataset.minimapState,
+        scrollbar: element.getAttribute("data-minimap-scrollbar"),
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      };
+    });
+  expect(metrics.paddingRight).toBe("88px");
+  expect(metrics.state).toBe("on");
+  expect(metrics.scrollbar).toBe("hidden");
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+});

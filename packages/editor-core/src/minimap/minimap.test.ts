@@ -70,7 +70,6 @@ describe("minimap ViewPlugin", () => {
       return context as unknown as CanvasRenderingContext2D;
     });
     const { view, parent } = mount(longText(), {
-      minLines: 1,
       minEditorWidth: 1,
       rebuildDebounceMs: 0,
     });
@@ -107,12 +106,15 @@ describe("minimap ViewPlugin", () => {
     parent.remove();
   });
 
-  it("keeps short documents untouched", async () => {
+  it("keeps documents that fit the viewport untouched", async () => {
     const context = contextStub();
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
       return context as unknown as CanvasRenderingContext2D;
     });
-    const { view, parent } = mount(longText(20), { rebuildDebounceMs: 0 });
+    const { view, parent } = mount(longText(20), {
+      geometry: () => ({ ...geometry, contentHeight: 200, scrollHeight: 200 }),
+      rebuildDebounceMs: 0,
+    });
     cleanup = () => {
       view.destroy();
       parent.remove();
@@ -129,10 +131,31 @@ describe("minimap ViewPlugin", () => {
     expect(context.fillRect).not.toHaveBeenCalled();
   });
 
+  it("shows the rail for short documents once they overflow the viewport", async () => {
+    const context = contextStub();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
+      return context as unknown as CanvasRenderingContext2D;
+    });
+    const { view, parent } = mount(longText(8), {
+      minEditorWidth: 1,
+      rebuildDebounceMs: 0,
+    });
+    cleanup = () => {
+      view.destroy();
+      parent.remove();
+    };
+
+    await settle();
+
+    const rail = parent.querySelector<HTMLDivElement>(".qm-minimap");
+    expect(rail?.getAttribute("data-minimap-state")).toBe("on");
+    expect(view.dom.style.paddingRight).toBe("88px");
+    expect(view.scrollDOM.dataset.minimapScrollbar).toBe("hidden");
+  });
+
   it("degrades to unsupported when a 2D context is unavailable", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const { view, parent } = mount(longText(), {
-      minLines: 1,
       minEditorWidth: 1,
       rebuildDebounceMs: 0,
     });
@@ -156,7 +179,6 @@ describe("minimap ViewPlugin", () => {
       return context as unknown as CanvasRenderingContext2D;
     });
     const { view, parent } = mount(longText(100_001), {
-      minLines: 1,
       minEditorWidth: 1,
       rebuildDebounceMs: 0,
     });

@@ -27,7 +27,7 @@ verification_status: "pass"  # not_run | pass | fail | partial | skipped
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "pnpm test:e2e -> 120 passed, 1 skipped; C-011 cpu p95=10.80ms"
+last_verification_command: "pnpm test:e2e -> 121 passed, 1 skipped; C-011 cpu p95=10.80ms"
 last_updated: "2026-10-30T22:30:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
@@ -69,7 +69,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 ## 1. 一句话结论
 
-`editor-minimap` 已 `done`：T-001~T-007、T-009 完成，T-008 因 Q-002=B 保持 `skipped`。实现采用“模式感知 Canvas 缩略图（源码模式 1:1 文本，实时预览按渲染块与真实文档高度绘制）+ 视口窗口 + 文档纵轴滑块（rail 可见时取代原生纵向滚动条）+ 内容区让位”，零新增持久化配置/DB/Rust。100k 行真实 Chromium 完整 rebuild CPU p95 `10.80ms`（≤16ms）；全量 Vitest `594 passed`，minimap E2E `17 passed`，全量 E2E `120 passed / 1 skipped`（skip 为 C-011 默认关闭）。
+`editor-minimap` 已 `done`：T-001~T-007、T-009 完成，T-008 因 Q-002=B 保持 `skipped`。实现采用“模式感知 Canvas 缩略图（源码模式 1:1 文本，实时预览按渲染块与真实文档高度绘制）+ 视口窗口 + 文档纵轴滑块（有纵向滚动即显示，rail 可见时取代原生纵向滚动条）+ 内容区让位”，零新增持久化配置/DB/Rust。100k 行真实 Chromium 完整 rebuild CPU p95 `10.80ms`（≤16ms）；全量 Vitest `595 passed`，minimap E2E `18 passed`，全量 E2E `121 passed / 1 skipped`（skip 为 C-011 默认关闭）。
 
 ---
 
@@ -79,7 +79,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 | R-ID | 目标 | 验收方式 | 状态 |
 |---|---|---|---|
-| R-001 | 长文档右侧显示与当前模式一致的缩略图 | E2E-001：212 行 fixture 可见、Canvas 非空且为 `rendered`；E2E-002：6 行 fixture 不可见；E2E-016：模式切换后重绘 | pass |
+| R-001 | 可滚动文档右侧显示与当前模式一致的缩略图 | E2E-001：212 行 fixture 可见、Canvas 非空且为 `rendered`；E2E-002：6 行 fixture 不足一屏不可见；E2E-018：18 行但可滚动的文档可见；E2E-016：模式切换后重绘 | pass |
 | R-002 | 点击/拖拽/滚轮导航，位置与内容对齐；rail 显示时原生纵向滚动条由滑块取代 | E2E-003/004/005/017：scrollTop 落点、单调拖拽、滚轮、滚动条隐藏 | pass |
 | R-003 | 不破坏现有单一真源 | 代码审查 + UT-016 + 现有 view-state E2E；无新增 IPC/持久化 | pass |
 | R-004 | 大文档降级与性能预算 | BENCH-001~004；C-011 实测 100k CPU p95 10.80ms；保留 100k 上限 | pass |
@@ -136,7 +136,7 @@ EditorSession.create / createUntitled / restoreDraft
 
 关键约束：
 
-1. 默认只在 ≥80 行、≤100k 行、≤2M units、编辑器宽度 ≥640px 时显示；短/空/超限文档零布局变化。
+1. 默认在内容超过视口（出现纵向滚动）、≤100k 行、≤2M units、编辑器宽度 ≥640px 时显示；不足一屏/空/超限文档零布局变化。
 2. 任何 Canvas/测量/observer 失败都只能降级为“无 minimap”，不能中断编辑/保存/关闭。
 3. 不新增第二套文档、滚动、主题、持久化、命令或配置来源。
 
@@ -148,7 +148,7 @@ EditorSession.create / createUntitled / restoreDraft
 | Live Preview | `rendered` | 去掉 Markdown 行内/块级标记；标题带、正文、代码卡、表格网格、引用、列表、图片占位、公式块按真实 `lineDocY` 比例绘制 |
 | Canvas 文本绘制异常 | `blocks` | 原有结构条带降级 |
 
-当 rail 进入 `pending`/`on`/`degraded` 时，插件在 `view.scrollDOM` 上写 `data-minimap-scrollbar="hidden"`，主题用 `scrollbar-width: none` + `::-webkit-scrollbar { width: 0; height: 0 }` 隐藏原生纵向滚动条；`overflow: auto` 保持不变，滚轮、键盘、拖拽和 `ViewStateRecorder` 仍使用同一个 `scrollDOM`。短文档、超限文档和 `unsupported` 状态不写该属性，保留系统原生滚动条。
+当 rail 进入 `pending`/`on`/`degraded` 时，插件在 `view.scrollDOM` 上写 `data-minimap-scrollbar="hidden"`，主题用 `scrollbar-width: none` + `::-webkit-scrollbar { width: 0; height: 0 }` 隐藏原生纵向滚动条；`overflow: auto` 保持不变，滚轮、键盘、拖拽和 `ViewStateRecorder` 仍使用同一个 `scrollDOM`。不足一屏的短文档、超限文档和 `unsupported` 状态不写该属性，保留系统原生滚动条。
 
 ---
 
@@ -156,12 +156,12 @@ EditorSession.create / createUntitled / restoreDraft
 
 | T-ID | 任务 | Status | DependsOn | Evidence | Next |
 |---|---|---|---|---|---|
-| T-001 | 失败用例与契约 | done | none | 25 tests + E2E 16 | — |
+| T-001 | 失败用例与契约 | done | none | 26 tests + E2E 18 | — |
 | T-002 | `css-color.ts` 抽取 | done | T-001 | C-002 43 tests | — |
 | T-003 | 纯函数模型与锚点映射 | done | T-002 | C-001 + bench | — |
 | T-004 | 主题、Canvas、ViewPlugin | done | T-003 | C-001/C-004 | — |
 | T-005 | `EditorSession` 集成 | done | T-004 | C-003 105 tests | — |
-| T-006 | E2E 交互/布局/主题/降级/模式/滚动条 | done | T-005 | C-006 17 + C-007 46 | — |
+| T-006 | E2E 交互/布局/主题/降级/模式/滚动条 | done | T-005 | C-006 18 + C-007 46 | — |
 | T-007 | 性能与可访问性校准 | done | T-006 | C-008 + C-011 p95 10.80ms | — |
 | T-008 | 会话内切换命令（Q-002=B，不实施） | skipped | —（Q-002=B 不启动） | none | Q-002=B 已确认，保持 `skipped`；仅未来产品重新评审 Q-002 并改 A 时恢复 |
 | T-009 | 全量验证与收尾 | done | T-007（T-008 skipped） | C-009/C-010；VERDICT PASS | — |
@@ -239,7 +239,6 @@ interface AnchorSample {
 | `RAIL_WIDTH` | 76px | 固定 rail 宽度 |
 | `RAIL_GAP` | 12px | 与滚动条间距 |
 | `MIN_EDITOR_WIDTH` | 640px | 低于此宽度隐藏 |
-| `MIN_LINES` | 80 | 低于此长度隐藏 |
 | `MAX_LINES` | 100,000 | 高于此长度隐藏 |
 | `MAX_UNITS` | 2,000,000 | 复用 `PREVIEW_PARTIAL_MAX_UNITS` |
 | `ANCHOR_STRIDE` | 40 | 固定间隔锚点下限；实际 stride = max(40, ceil(lines/1200)) |
@@ -256,7 +255,6 @@ interface AnchorSample {
 | `MINIMAP_LINE_HEIGHT` | 3px | 1:1 文本缩略图行高；由编辑器行高 /8 估算 |
 | `MINIMAP_CHAR_WIDTH` | 1px | 1:1 文本缩略图字符宽；由编辑器字符宽 /8 估算 |
 | `MINIMAP_SCALE_DIVISOR` | 8 | 文本缩略图缩放分母 |
-| `LINE_HYSTERESIS` | 8 行 | 显示/隐藏滞回 |
 | `WIDTH_HYSTERESIS` | 16px | 宽度滞回 |
 
 ### 6.3 API / 对外接口
@@ -274,7 +272,7 @@ interface AnchorSample {
 
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
-| AC-001 | 长文档显示、短文档/超限隐藏 | T-004/T-006 | E2E-001/002/011 | pass |
+| AC-001 | 可滚动文档显示、不足一屏/超限隐藏 | T-004/T-006 | E2E-001/002/011/018 | pass |
 | AC-002 | Source 为 1:1 文本、Live Preview 为渲染块，主题变色 | T-004/T-006 | E2E-001/006/013/015/016 + 像素采样 | pass |
 | AC-003 | 点击落点正确 | T-003/T-006 | E2E-003/014 | pass |
 | AC-004 | 拖拽/滚轮可用 | T-004/T-006 | E2E-004/005 | pass |
@@ -327,14 +325,14 @@ pnpm test:e2e
 | C-003 | `pnpm vitest run apps/desktop/src/features/editor` | T-005 后 | PASS |
 | C-004 | `pnpm typecheck` | 每任务后 | PASS |
 | C-005 | `pnpm lint` | T-009 | PASS |
-| C-006 | `pnpm exec playwright test e2e/minimap.spec.ts` | T-006 | PASS（17 tests） |
+| C-006 | `pnpm exec playwright test e2e/minimap.spec.ts` | T-006 | PASS（18 tests） |
 | C-007 | `pnpm exec playwright test e2e/open-edit-save.spec.ts e2e/view-state.spec.ts e2e/markdown-syntax.spec.ts e2e/palette-theme.spec.ts` | T-006 | PASS |
 | C-008 | `pnpm typecheck:bench && pnpm exec vitest run --config vitest.bench.config.ts bench/minimap.bench.ts` | T-007 | 纯函数 p50/p95 |
 | C-009 | `pnpm ci:web` | T-009 | PASS |
 | C-010 | `pnpm test:e2e` | T-009 | PASS |
 | C-011 | `MINIMAP_PERF=1 pnpm exec playwright test e2e/minimap-perf.spec.ts` | T-007 | 真实 Chromium 100k rebuild CPU p50/p95；T-009 PASS 条件 |
 
-> 2026-10-30 全部命令已运行：C-001 25、C-002 43、C-003 105、C-006 17、C-007 46、C-011 1（CPU p95 10.80ms）；C-009/C-010 见 `02` §3。C-011 默认 skip，只有设置 `MINIMAP_PERF=1` 才执行。
+> 2026-10-30 全部命令已运行：C-001 26、C-002 43、C-003 105、C-006 18、C-007 46、C-011 1（CPU p95 10.80ms）；C-009/C-010 见 `02` §3。C-011 默认 skip，只有设置 `MINIMAP_PERF=1` 才执行。
 
 ---
 
@@ -353,7 +351,7 @@ pnpm test:e2e
 | RK-009 | Canvas 不可用 | 低 | Unsupported 降级 | 隐藏 |
 | RK-010 | 命令/i18n 范围蔓延 | 低 | Q-002=B 已确认，T-008 关闭；不新增命令 | 移除 |
 | RK-011 | 滚动条遮挡/横向溢出 | 中 | rail right:0 + scroller 缩窄 88px | 调整 reserve |
-| RK-012 | 产品干扰 | 中 | Q-001=B 已确认仅长文档显示；无关闭命令（Q-002=B） | 提高阈值/移除 |
+| RK-012 | 产品干扰 | 中 | 仅出现纵向滚动时显示；无关闭命令（Q-002=B） | 移除注入 |
 
 **首选回滚**：移除 `EditorSession.ts` 中 `minimapExtension()` 这一行，跑全量回归。无数据迁移、无配置清理。
 
@@ -393,20 +391,20 @@ pnpm test:e2e
 
 | ID | 问题 | 选项 | 推荐 | 决策（2026-10-30） | 影响 |
 |---|---|---|---|---|---|
-| Q-001 | 默认显示策略 | A. 所有文档常显（含短文档，空白 rail）<br>B. ≥80 行自动显示，短/空/超限隐藏<br>C. 默认关闭，需命令开启 | **B** | **已采纳 B** | 影响 T-004/T-006；B 不改现有短文档布局 |
+| Q-001 | 默认显示策略 | A. 所有文档常显（含短文档，空白 rail）<br>B. ≥80 行自动显示，短/空/超限隐藏<br>C. 默认关闭，需命令开启 | **B** | **已采纳 B；2026-10-30 修订为“有纵向滚动即显示”（F-054）** | 影响 T-004/T-006；不足一屏/空/超限文档仍零布局变化 |
 | Q-002 | 是否新增会话内 `view.toggleMinimap` 命令（不持久化、无默认快捷键） | A. 新增<br>B. 不新增 | **B** | **已采纳 B** | T-008 保持 `skipped`；不新增命令/i18n；均不新增配置/DB |
 | Q-003 | 大文档上限 | A. 100k 行 / 2M units，超限隐藏<br>B. 50k 行 / 1M units<br>C. 不设上限 | **A** | **已采纳 A** | 影响性能与降级；C 不推荐 |
 | Q-004 | 可访问性深度 | A. 装饰层 `aria-hidden`，原生滚动条/键盘仍是主路径<br>B. `role="scrollbar"` + tabindex + 方向键/Home/End | **A** | **已采纳 A** | v1 不做 minimap 键盘焦点；B 留作 `NEXT-007` |
 | Q-005 | 宽度策略 | A. 固定 76px，<640px 隐藏<br>B. 允许用户拖拽/设置宽度（新增配置） | **A** | **已采纳 A** | 固定 76px，不新增宽度配置；可调宽度留 `NEXT-003` |
-| Q-006 | 显示模式 | A. Source 与 Live Preview 都显示<br>B. 仅 Live Preview<br>C. 仅 Source | **A** | **已采纳 A** | 两种模式共用同一 ViewPlugin；不做模式判断 |
+| Q-006 | 显示模式 | A. Source 与 Live Preview 都显示<br>B. 仅 Live Preview<br>C. 仅 Source | **A** | **已采纳 A** | 两种模式共用同一 ViewPlugin；按 `data-live-preview` 切换源码/渲染块绘制 |
 | Q-007 | 是否做悬停标题/大纲提示 | A. 本期不做<br>B. hover 显示标题文本（需定位/i18n/可访问性） | **A** | **已采纳 A** | 本期无 hover tooltip；留待大纲功能评估 |
 
-**最终生效组合（已冻结）：Q-001 B + Q-002 B + Q-003 A + Q-004 A + Q-005 A + Q-006 A + Q-007 A。**
+**最终生效组合：Q-001（按 F-054 修订为“有纵向滚动即显示”）+ Q-002 B + Q-003 A + Q-004 A + Q-005 A + Q-006 A + Q-007 A。**
 
 约束复核：
 
 - 不新增持久化配置、DB 表/迁移、Rust/IPC 字段；不新增命令与 i18n 文案。
 - 固定 76px rail，`<640px` 隐藏；不提供拖拽/设置宽度。
-- 仅 ≥80 行、≤100k 行、≤2M units、`docHeight > clientHeight` 时显示；8 行/16px 滞回。
+- 内容超过视口、≤100k 行、≤2M units、编辑器宽度 ≥640px 时显示；仅宽度保留 16px 滞回。
 - 可访问性为装饰层 `aria-hidden="true"`，原生滚动条与键盘滚动是主路径。
 - 若未来要改上述任一决策，必须新增评审记录并同步更新 README/01/02/03/04，不得在实现中静默偏离。
