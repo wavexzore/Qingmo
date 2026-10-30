@@ -151,11 +151,13 @@ describe("EditorHost", () => {
       expect(container.querySelectorAll(".cm-editor")).toHaveLength(1);
     });
     expect(container.querySelector(".cm-content")).toHaveTextContent("hello world");
+    expect(container.querySelectorAll(".qm-minimap")).toHaveLength(1);
     expect(session.attachedView).not.toBeNull();
 
     unmount();
     expect(session.attachedView).toBeNull();
     expect(container.querySelectorAll(".cm-editor")).toHaveLength(0);
+    expect(container.querySelectorAll(".qm-minimap")).toHaveLength(0);
   });
 
   it("does not rebuild the view when theme compartments are reconfigured", async () => {

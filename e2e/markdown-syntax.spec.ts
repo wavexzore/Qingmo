@@ -777,9 +777,11 @@ test("renders inline, reference and bare links with titles", async ({ page }) =>
 
   await expect(page.locator('.cm-md-link[title="悬停提示"]')).toHaveText("带标题");
   await expect(page.locator('.cm-md-link[title="OpenAI"]')).toHaveText("参考");
-  await expect(page.locator('.cm-md-link[title="https://bare.example"]')).toHaveText(
-    "https://bare.example",
-  );
+  // A bare URL is linkified for activation, but its URL must not become a
+  // native hover tooltip (only an explicit Markdown title does that).
+  const bare = page.locator('.cm-md-link[data-href="https://bare.example"]');
+  await expect(bare).toHaveText("https://bare.example");
+  await expect(bare).not.toHaveAttribute("title");
   await expect(editorLines(page).first()).not.toContainText("[ref]");
 });
 
