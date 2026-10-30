@@ -336,6 +336,31 @@ describe("EditorSession", () => {
     }
   });
 
+  it("keeps exactly one minimap rail across reload and removes it on destroy", () => {
+    const longText = Array.from({ length: 120 }, (_, index) => `line ${index + 1}`).join("\n");
+    const session = EditorSession.create(payload({ text: longText }));
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      expect(parent.querySelectorAll(".qm-minimap")).toHaveLength(1);
+
+      session.replacePayload(
+        payload({ text: `${longText}\nmore`, hash: "hash-2", size: 1000, textUnits: 1000 }),
+      );
+      expect(parent.querySelectorAll(".qm-minimap")).toHaveLength(1);
+      expect(session.attachedView).toBe(view);
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+
+    expect(parent.querySelectorAll(".qm-minimap")).toHaveLength(0);
+  });
+
   it("accepts extra extensions for the T-009 composition hook", () => {
     const session = EditorSession.create(payload(), {
       extensions: [EditorState.tabSize.of(4)],

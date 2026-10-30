@@ -4,6 +4,7 @@ import {
   createEditorState,
   editorOpenExternal,
   livePreview,
+  minimapExtension,
   normalizeLineEndings,
   previewTierFor,
   setEditorUiCopyEffect,
@@ -191,6 +192,7 @@ export class EditorSession {
     this.extraExtensions = [
       ...(options.extensions ?? []),
       editorOpenExternal.of({ open: options.openExternal ?? (() => undefined) }),
+      minimapExtension(),
     ];
     this.placeholder = options.placeholder;
     this.uiCopy = options.uiCopy;

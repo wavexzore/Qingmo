@@ -94,6 +94,8 @@ export {
 } from "./live-preview/mermaid-theme";
 export { sanitizeMermaidSvg } from "./live-preview/mermaid-sanitize";
 export { livePreviewTheme } from "./live-preview/theme";
+export { minimapExtension } from "./minimap/minimap";
+export type { MinimapOptions, MinimapState } from "./minimap/minimap";
 
 /**
  * Editor presentation modes. The CodeMirror mode compartment reconfigures

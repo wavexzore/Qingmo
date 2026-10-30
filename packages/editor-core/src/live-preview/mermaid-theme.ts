@@ -1,5 +1,9 @@
+import { createTokenReader, normalizeCssColor } from "../css-color";
 import { DEFAULT_EDITOR_UI_COPY, type EditorUiCopy } from "../i18n";
 import { MERMAID_DIAGRAM_KINDS, type MermaidDiagramKind } from "./mermaid-kinds";
+
+/** Backwards-compatible alias; the implementation lives in `css-color.ts`. */
+export { normalizeCssColor as normalizeMermaidColor };
 
 export type { MermaidDiagramKind } from "./mermaid-kinds";
 
@@ -308,83 +312,10 @@ function fallbackPalette(theme: MermaidTheme): MermaidPalette {
   return theme === "dark" ? DARK_FALLBACK : LIGHT_FALLBACK;
 }
 
-function hexChannel(value: string): string {
-  const channel = Math.max(0, Math.min(255, Math.round(Number(value))));
-  return channel.toString(16).padStart(2, "0");
-}
-
-/**
- * `getComputedStyle` returns `rgb(...)`/`rgba(...)`. Mermaid's comma-separated
- * options (for example `xyChart.plotColorPalette`) cannot contain commas
- * inside a colour, so opaque colours are normalised to hex.
- */
-export function normalizeMermaidColor(value: string): string {
-  const match = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)$/i.exec(
-    value,
-  );
-  if (!match) {
-    return value;
-  }
-  const [, red, green, blue, alpha] = match;
-  if (!red || !green || !blue) {
-    return value;
-  }
-  if (alpha !== undefined && Number(alpha) < 1) {
-    return `rgba(${Math.round(Number(red))}, ${Math.round(Number(green))}, ${Math.round(Number(blue))}, ${alpha})`;
-  }
-  return `#${hexChannel(red)}${hexChannel(green)}${hexChannel(blue)}`;
-}
-
-interface TokenReader {
-  color(token: string, fallback: string): string;
-  raw(token: string, fallback: string): string;
-  dispose(): void;
-}
-
-function tokenReader(root?: HTMLElement): TokenReader | null {
-  const doc = root?.ownerDocument ?? (typeof document === "undefined" ? null : document);
-  const view = doc?.defaultView;
-  const tokenRoot = root ?? doc?.documentElement;
-  const parent = root ?? doc?.body ?? doc?.documentElement;
-  if (!doc || !view || !tokenRoot || !parent) {
-    return null;
-  }
-
-  const host = doc.createElement("div");
-  host.setAttribute("aria-hidden", "true");
-  host.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none;";
-  const probe = doc.createElement("span");
-  host.append(probe);
-  parent.append(host);
-
-  return {
-    color(token, fallback) {
-      // Plain token values are usable as-is (and are the only thing jsdom
-      // can resolve). `light-dark()` and other functions need a probe, which
-      // lets the browser compute the value for the current color-scheme.
-      const raw = view.getComputedStyle(tokenRoot).getPropertyValue(token).trim();
-      if (raw && !/^(?:light-dark|var|color-mix)\(/i.test(raw)) {
-        return normalizeMermaidColor(raw);
-      }
-      probe.style.color = `var(${token}, ${fallback})`;
-      const value = view.getComputedStyle(probe).color.trim();
-      return normalizeMermaidColor(value && !value.startsWith("var(") ? value : fallback);
-    },
-    raw(token, fallback) {
-      const value = view.getComputedStyle(tokenRoot).getPropertyValue(token).trim();
-      return value || fallback;
-    },
-    dispose() {
-      host.remove();
-    },
-  };
-}
-
 /** Resolves the current theme's semantic tokens to a concrete palette. */
 export function resolveMermaidPalette(theme: MermaidTheme, root?: HTMLElement): MermaidPalette {
   const fallback = fallbackPalette(theme);
-  const reader = tokenReader(root);
+  const reader = createTokenReader(root);
   if (!reader) {
     return fallback;
   }
