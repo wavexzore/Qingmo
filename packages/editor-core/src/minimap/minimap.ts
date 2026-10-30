@@ -12,7 +12,6 @@ import {
   MINIMAP_MAX_LINES,
   MINIMAP_MAX_UNITS,
   MINIMAP_MIN_EDITOR_WIDTH,
-  MINIMAP_MIN_LINES,
   MINIMAP_SLIDER_MIN_PX,
   buildBlockBands,
   buildMinimapBuckets,
@@ -38,7 +37,6 @@ export type { MinimapGeometry } from "./model";
 export interface MinimapOptions {
   railWidth?: number;
   railGap?: number;
-  minLines?: number;
   maxLines?: number;
   maxUnits?: number;
   minEditorWidth?: number;
@@ -134,7 +132,6 @@ const minimapTheme = EditorView.theme({
 interface ResolvedOptions {
   railWidth: number;
   railGap: number;
-  minLines: number;
   maxLines: number;
   maxUnits: number;
   minEditorWidth: number;
@@ -160,9 +157,6 @@ function resolveOptions(options: MinimapOptions): ResolvedOptions {
   return {
     railWidth: Number.isFinite(options.railWidth) ? Math.max(1, options.railWidth!) : RAIL_WIDTH,
     railGap: Number.isFinite(options.railGap) ? Math.max(0, options.railGap!) : RAIL_GAP,
-    minLines: Number.isFinite(options.minLines)
-      ? Math.max(1, options.minLines!)
-      : MINIMAP_MIN_LINES,
     maxLines: Number.isFinite(options.maxLines)
       ? Math.max(1, options.maxLines!)
       : MINIMAP_MAX_LINES,
@@ -624,13 +618,10 @@ class MinimapController {
       return false;
     }
     const wasVisible = this.hasFrame || isVisibleState(this.state);
-    const minimumLines = wasVisible
-      ? Math.max(1, this.options.minLines - 8)
-      : this.options.minLines;
     const minimumWidth = wasVisible
       ? Math.max(1, this.options.minEditorWidth - 16)
       : this.options.minEditorWidth;
-    return doc.lines >= minimumLines && editorWidth >= minimumWidth;
+    return editorWidth >= minimumWidth;
   }
 
   private scheduleRebuild(delay: number): void {
@@ -907,7 +898,7 @@ class MinimapController {
     );
     const visible =
       this.eligible(measurement.geometry.editorWidth) &&
-      docHeight > measurement.geometry.clientHeight + 1;
+      measurement.geometry.scrollHeight > measurement.geometry.clientHeight + 1;
     if (!visible || measurement.unsupported) {
       this.hide();
       return;

@@ -309,12 +309,12 @@ describe("buckets, bands and slider", () => {
 });
 
 describe("visibility policy", () => {
-  it("applies line and width hysteresis without reading geometry", () => {
-    expect(isEligible({ lines: 79, units: 100, editorWidth: 640, wasVisible: false })).toBe(false);
-    expect(isEligible({ lines: 80, units: 100, editorWidth: 640, wasVisible: false })).toBe(true);
-    expect(isEligible({ lines: 72, units: 100, editorWidth: 624, wasVisible: true })).toBe(true);
-    expect(isEligible({ lines: 71, units: 100, editorWidth: 624, wasVisible: true })).toBe(false);
-    expect(isEligible({ lines: 80, units: 100, editorWidth: 623, wasVisible: true })).toBe(false);
+  it("applies width hysteresis without reading geometry or line count", () => {
+    expect(isEligible({ lines: 1, units: 100, editorWidth: 640, wasVisible: false })).toBe(true);
+    expect(isEligible({ lines: 1, units: 100, editorWidth: 639, wasVisible: false })).toBe(false);
+    expect(isEligible({ lines: 5, units: 100, editorWidth: 624, wasVisible: true })).toBe(true);
+    expect(isEligible({ lines: 5, units: 100, editorWidth: 623, wasVisible: true })).toBe(false);
+    expect(isEligible({ lines: 80, units: 100, editorWidth: 623, wasVisible: false })).toBe(false);
   });
 
   it("hides oversized documents immediately and requires real scroll", () => {
@@ -340,17 +340,17 @@ describe("visibility policy", () => {
         units: 1000,
         editorWidth: 1000,
         wasVisible: false,
-        docHeight: 100,
+        scrollHeight: 100,
         clientHeight: 100,
       }),
     ).toBe("hidden");
     expect(
       nextVisibility({
-        lines: 100,
+        lines: 1,
         units: 1000,
         editorWidth: 1000,
         wasVisible: false,
-        docHeight: 102,
+        scrollHeight: 102,
         clientHeight: 100,
       }),
     ).toBe("visible");

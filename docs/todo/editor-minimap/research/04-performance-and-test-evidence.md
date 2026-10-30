@@ -228,14 +228,14 @@ E2E 必须断言：
 | UT-012 | 文档上限/恢复 | 同上 | 100,001 行或 >2M units disabled；99,999 行 enabled |
 | UT-013 | ViewPlugin 创建/销毁/Pending | `minimap/minimap.test.ts` | mock `getContext` 最小 2D stub；rail 存在、aria-hidden、destroy 后移除；Pending 时 display:block/visibility:hidden/padding 已写，on 后 visible；构造/measure 前 destroy 也清理（`geometry` 注入） |
 | UT-014 | 无 2D context 降级 | 同上 | 不抛错，`data-minimap-state="unsupported"` |
-| UT-015 | 空文档/短文档隐藏 | 同上 | `getComputedStyle(rail).display === "none"`、`data-minimap-state="off"`、editor paddingRight 为空；80/72 行滞回不闪烁 |
+| UT-015 | 空文档/不足一屏短文档隐藏 | 同上 | `getComputedStyle(rail).display === "none"`、`data-minimap-state="off"`、editor paddingRight 为空；无行数阈值，仅按实际滚动隐藏 |
 | UT-016 | `EditorSession` 集成 | `apps/desktop/src/features/editor/editor-session.test.ts` | view 创建后 1 个 rail；`replacePayload` 后 1 个；`view.destroy()` 后 0 个 |
 | UT-016b | StrictMode | `editor-binding.test.tsx` | 1 个 view、1 个 rail（几何 mock） |
 | UT-017 | 主题 palette | `minimap/theme.test.ts` | scoped root 下 light/dark token 解析正确；probe 被 dispose |
 | UT-018 | css-color 抽取回归 | `css-color.test.ts` | 与 Mermaid 原行为一致、probe 被移除 |
 | UT-019 | 1200 锚点插值 | `model.test.ts` | 合成 100k 行/1200 锚点，样本点与注入值一致、`lineDocY` 非递减、耗时可接受 |
 | UT-020 | 大 widget 重复 docY | `model.test.ts` | 同一 widget 内采样被合并，块内按行插值单调，跨块不跳变；文末 fence/table 到底 |
-| UT-021 | 可见性/滞回 | `model.test.ts` | `isEligible` 在 80/72 行、640/624px 边界正确且不读几何；`nextVisibility` 在 `docHeight<=clientHeight` 时 hidden；超限立即 hidden |
+| UT-021 | 可见性/滞回 | `model.test.ts` | `isEligible` 在 640/624px 宽度边界正确且不读几何/行数；`nextVisibility` 在 `scrollHeight<=clientHeight` 时 hidden，短但可滚动时 visible；超限立即 hidden |
 | UT-022 | scrollTop↔docY | `model.test.ts` | `pt=28` 时 `scrollTopToDocY(0)=0`、`docYToScrollTop(offset=0)(0)=0`、`docYToScrollTop(offset=0)(docHeight)=maxScroll` ±1px；点击 offset=clientHeight/2 |
 | UT-023 | 文本窗口 | `model.test.ts` | 整篇可容纳、顶部 padding、滑动窗口起点、底部 clamp 四种分支 |
 | UT-024 | `lineAtDocY` | `model.test.ts` | 首行/行中/下一行/文末坐标命中正确行 |
@@ -264,6 +264,7 @@ E2E 必须断言：
 | E2E-015 | 短行 + 长行 + 90 行正文 seed，切到 Source | `data-minimap-render="text"`；行高 ≥2px；长行最右 ink 比短行大 >20px，证明按真实字符数推进 |
 | E2E-016 | 含标题/代码/表格/链接的 90+ 行 seed | 默认 `rendered`；切 Source 后 `text`；两次 Canvas 哈希不同 |
 | E2E-017 | 260 行 seed | `data-minimap-scrollbar="hidden"`；`scrollbar-width=none`；`::-webkit-scrollbar` 宽/高 0px；`overflow-y:auto` 与 `scrollHeight>clientHeight` 不变；滚轮移动 scrollTop 且 slider transform 变化；切 Live Preview 仍隐藏 |
+| E2E-018 | 18 行 seed，视口 1280×420 | 行数远低于旧 80 行阈值但内容溢出：`data-minimap-state="on"`、paddingRight=88、原生滚动条隐藏、`scrollHeight>clientHeight` |
 
 ### 5.3 Canvas 像素断言
 
