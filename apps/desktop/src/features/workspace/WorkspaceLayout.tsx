@@ -19,6 +19,7 @@ import { commandRegistry } from "../commands/CommandRegistry";
 import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
+import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
 import { createDocumentSession } from "../editor/session/createDocumentSession";
 import { useEditorLocale } from "../editor/useEditorLocale";
 import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
@@ -179,6 +180,9 @@ export function WorkspaceLayout() {
         case MENU_ACTIONS.toggleLivePreview:
           void runMenuCommand("view.toggleLivePreview");
           break;
+        case MENU_ACTIONS.toggleOutline:
+          void runMenuCommand("view.toggleOutline");
+          break;
         case MENU_ACTIONS.toggleTheme:
           void runMenuCommand("view.toggleTheme");
           break;
@@ -261,6 +265,24 @@ export function WorkspaceLayout() {
       when: () => (sessionRef.current?.getSnapshot().previewTier ?? "source") !== "source",
       run: () => {
         sessionRef.current?.toggleLivePreview();
+      },
+    });
+    return () => disposable.dispose();
+  }, [hasSession]);
+
+  useEffect(() => {
+    if (!hasSession) {
+      return;
+    }
+    const disposable = commandRegistry.register({
+      id: "view.toggleOutline",
+      titleKey: "commands:view.toggleOutline",
+      category: "commands:category.view",
+      run: () => {
+        const open = outlineVisibilityStore.toggle();
+        if (!open) {
+          sessionRef.current?.focusEditor();
+        }
       },
     });
     return () => disposable.dispose();

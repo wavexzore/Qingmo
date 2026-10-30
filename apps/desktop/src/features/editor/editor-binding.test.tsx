@@ -181,6 +181,31 @@ describe("EditorHost", () => {
     expect(session.attachedView).toBe(view);
     expect(container.querySelectorAll(".cm-editor")).toHaveLength(1);
   });
+
+  it("keeps a single outline notification after StrictMode attach/detach/attach", async () => {
+    const session = EditorSession.create(payload({ text: "# Alpha\n" }));
+    const listener = vi.fn();
+    session.subscribeOutline(listener);
+
+    render(
+      <StrictMode>
+        <EditorHost session={session} />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(session.attachedView).not.toBeNull());
+    act(() => {
+      session.attachedView?.dispatch({
+        changes: { from: session.attachedView.state.doc.length, insert: "# Beta\n" },
+      });
+    });
+    session.flushOutlineNotify();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(session.getOutlineSnapshot().entries.map((entry) => entry.text)).toEqual([
+      "Alpha",
+      "Beta",
+    ]);
+  });
 });
 
 function StatusProbe({ session, onRender }: { session: EditorSession; onRender: () => void }) {

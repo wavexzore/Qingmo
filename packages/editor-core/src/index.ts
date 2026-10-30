@@ -34,9 +34,31 @@ export {
   PREVIEW_PARTIAL_MAX_UNITS,
   MAX_LINE_UNITS,
   SYNTAX_TREE_BUDGET_MS,
+  OUTLINE_SCAN_MAX_UNITS,
+  OUTLINE_SAFETY_MAX_ENTRIES,
+  OUTLINE_PANEL_MAX_ENTRIES,
+  OUTLINE_PARSE_CHUNK_UNITS,
+  OUTLINE_PARSE_MAX_ATTEMPTS_PER_CHUNK,
+  OUTLINE_PARSE_CHROMIUM_SLICE_MS,
+  OUTLINE_PARSE_WEBKIT_DELAY_MS,
+  OUTLINE_PARSE_WEBKIT_SLICE_MS,
+  OUTLINE_SCROLL_MARGIN,
   previewTierFor,
   type PreviewTier,
 } from "./limits";
+export {
+  buildHeadingOutline,
+  headingOutline,
+  outlineParseDriver,
+  readHeadingOutline,
+  sameHeadingOutline,
+  type HeadingOutlineEntry,
+  type HeadingOutlineLimitReason,
+  type HeadingOutlineState,
+  type HeadingOutlineStatus,
+} from "./live-preview/outline";
+export { readDetailsRanges, scanDetailsTags } from "./live-preview/details-range";
+export type { DetailsRange, DetailsTag } from "./live-preview/details-range";
 export { buildLivePreviewDecorations, livePreview, livePreviewPlugin } from "./live-preview/plugin";
 export {
   collectDecorationSpecs,

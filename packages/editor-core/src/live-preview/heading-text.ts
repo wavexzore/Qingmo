@@ -2,6 +2,28 @@ import type { EditorState } from "@codemirror/state";
 
 import type { MarkdownNode } from "./markdown-node";
 
+/** Characters that can start any inline Markdown construct we strip. */
+const INLINE_MARKDOWN = /[\\`*_{}[\]()#+\-.!|>~^=<]/;
+
+/**
+ * Strips the inline Markdown marks that do not contribute to a heading anchor.
+ * The result feeds the GitHub-compatible slugger and the outline's plain text.
+ * Plain headings take the fast path: the common case allocates no replacements.
+ */
+export function plainInlineText(markdown: string): string {
+  if (!INLINE_MARKDOWN.test(markdown)) {
+    return markdown.trim();
+  }
+  return markdown
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/<[^>]*>/g, "")
+    .replace(/\\([\\`*_{}[\]()#+\-.!|>~^=])/g, "$1")
+    .replace(/[*_~=]{1,3}/g, "")
+    .trim();
+}
+
 export function isHeading(name: string): boolean {
   return /^(?:ATX|Setext)Heading[1-6]$/.test(name);
 }

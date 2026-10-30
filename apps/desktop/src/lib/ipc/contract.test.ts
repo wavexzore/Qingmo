@@ -80,6 +80,7 @@ describe("IPC contract mirror", () => {
       "file.save",
       "palette.open",
       "view.toggleLivePreview",
+      "view.toggleOutline",
       "view.toggleTheme",
       "theme.light",
       "theme.dark",

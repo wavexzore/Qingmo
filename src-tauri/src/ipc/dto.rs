@@ -294,6 +294,7 @@ pub struct NativeShellLabels {
     pub select_all: String,
     pub view: String,
     pub live_preview: String,
+    pub outline: String,
     pub command_palette: String,
     pub toggle_theme: String,
     pub logs: String,
@@ -369,7 +370,7 @@ fn validate_untitled_file_name(name: &str) -> Result<(), AppError> {
 
 impl NativeShellLabels {
     /// Menu/title labels only; `untitledFileName` is validated separately.
-    pub fn fields(&self) -> [(&'static str, &str); 38] {
+    pub fn fields(&self) -> [(&'static str, &str); 39] {
         [
             ("appName", &self.app_name),
             ("about", &self.about),
@@ -392,6 +393,7 @@ impl NativeShellLabels {
             ("selectAll", &self.select_all),
             ("view", &self.view),
             ("livePreview", &self.live_preview),
+            ("outline", &self.outline),
             ("commandPalette", &self.command_palette),
             ("toggleTheme", &self.toggle_theme),
             ("logs", &self.logs),
@@ -468,6 +470,7 @@ pub fn test_native_labels(app_name: &str) -> NativeShellLabels {
         select_all: "Select All".to_string(),
         view: "View".to_string(),
         live_preview: "Live Preview".to_string(),
+        outline: "Outline".to_string(),
         command_palette: "Command Palette".to_string(),
         toggle_theme: "Toggle Theme".to_string(),
         logs: "Logs…".to_string(),

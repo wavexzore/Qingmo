@@ -7,6 +7,7 @@ import { codeBlockSelectAll } from "./extensions/select-all";
 import { qingmoEditorTheme } from "./extensions/theme";
 import { DEFAULT_EDITOR_UI_COPY, editorUiCopy, type EditorUiCopy } from "./i18n";
 import { previewTierFor } from "./limits";
+import { headingOutline, outlineParseDriver } from "./live-preview/outline";
 import { livePreview } from "./live-preview/plugin";
 
 /**
@@ -113,6 +114,8 @@ export function createEditorState({
     extensions: [
       ...basicExtensions,
       ...markdownExtensions,
+      headingOutline,
+      outlineParseDriver,
       codeBlockSelectAll,
       themeCompartment.of(qingmoEditorTheme),
       readOnlyCompartment.of(readOnlyExtensions(readOnly)),

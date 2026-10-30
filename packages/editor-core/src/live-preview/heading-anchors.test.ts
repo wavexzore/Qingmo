@@ -1,7 +1,7 @@
 import { ensureSyntaxTree } from "@codemirror/language";
 import { describe, expect, it } from "vitest";
 
-import { createEditorState } from "../index";
+import { OUTLINE_SCAN_MAX_UNITS, createEditorState } from "../index";
 import {
   plainInlineText,
   readAnchorOnlyBlock,
@@ -54,5 +54,37 @@ describe("heading anchors", () => {
     expect(anchors.get("inline")?.lineFrom).toBe(doc.indexOf("## <a"));
     expect(readAnchorOnlyBlock('<a id="x"></a>')).toEqual(["x"]);
     expect(readAnchorOnlyBlock('<a id="x"></a> text')).toBeNull();
+  });
+
+  it("uses the shared outline field and excludes closed details directly", () => {
+    const doc = "# Before\n\n<details>\n\n# Hidden\n\n</details>\n\n# After\n";
+    const anchors = readHeadingAnchors(stateFor(doc));
+    expect([...anchors.keys()]).toEqual(["before", "after"]);
+  });
+
+  it("keeps anchors for entries beyond the panel's 500-row limit", () => {
+    const doc = Array.from({ length: 1_200 }, (_, index) => `# H${index}`).join("\n\n");
+    const anchors = readHeadingAnchors(stateFor(doc));
+    expect(anchors.size).toBe(1_200);
+    expect(anchors.has("h1199")).toBe(true);
+  });
+
+  it("skips headings whose plain text is empty", () => {
+    const anchors = readHeadingAnchors(stateFor("# <span></span>\n\n# Visible\n"));
+    expect([...anchors.keys()]).toEqual(["visible"]);
+  });
+
+  it("does not create anchors beyond 200k units or the 5000-entry safety cap", () => {
+    const prefix = "# Prefix\n\n";
+    const far = `${"x\n".repeat(OUTLINE_SCAN_MAX_UNITS / 2)}# Far\n`;
+    const anchors = readHeadingAnchors(stateFor(`${prefix}${far}`));
+    expect(anchors.has("prefix")).toBe(true);
+    expect(anchors.has("far")).toBe(false);
+
+    const many = Array.from({ length: 5_001 }, (_, index) => `# H${index}`).join("\n\n");
+    const capped = readHeadingAnchors(stateFor(many));
+    expect(capped.size).toBe(5_000);
+    expect(capped.has("h4999")).toBe(true);
+    expect(capped.has("h5000")).toBe(false);
   });
 });

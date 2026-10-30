@@ -36,3 +36,18 @@ export function previewTierFor(units: number): PreviewTier {
 
 export const SYNTAX_TREE_BUDGET_MS = 8;
 export const MAX_LINE_UNITS = 10_000;
+
+/**
+ * Outline affordability and work-budget constants. These intentionally do not
+ * alias `PREVIEW_FULL_MAX_UNITS`: the TOC still owns its 200k empty state and
+ * preview may change independently.
+ */
+export const OUTLINE_SCAN_MAX_UNITS = 200_000;
+export const OUTLINE_SAFETY_MAX_ENTRIES = 5_000;
+export const OUTLINE_PANEL_MAX_ENTRIES = 500;
+export const OUTLINE_PARSE_CHUNK_UNITS = 50_000;
+export const OUTLINE_PARSE_MAX_ATTEMPTS_PER_CHUNK = 16;
+export const OUTLINE_PARSE_CHROMIUM_SLICE_MS = 8;
+export const OUTLINE_PARSE_WEBKIT_DELAY_MS = 64;
+export const OUTLINE_PARSE_WEBKIT_SLICE_MS = 4;
+export const OUTLINE_SCROLL_MARGIN = 10;

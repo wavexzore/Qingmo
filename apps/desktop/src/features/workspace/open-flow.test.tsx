@@ -17,6 +17,7 @@ import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider, useDocumentSession } from "../editor/DocumentSessionContext";
 import type { EditorSession } from "../editor/EditorSession";
+import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
 import { UpdateProvider } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
 
@@ -69,10 +70,12 @@ afterEach(() => {
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");
+  commandRegistry.unregister("view.toggleOutline");
   commandRegistry.unregister("view.toggleTheme");
   uiStore.setTheme("system");
   localStorage.removeItem(THEME_STORAGE_KEY);
   document.documentElement.removeAttribute("data-theme");
+  outlineVisibilityStore.resetForTests();
 });
 
 describe("openFile", () => {
@@ -249,6 +252,30 @@ describe("blank editor -> editor open flow", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the same EditorView when the outline is toggled", async () => {
+    const ipc = fileIpc("# Outline\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    await screen.findByTestId("document-session");
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    expect(view).not.toBeNull();
+
+    expect((await commandRegistry.execute("view.toggleOutline")).ok).toBe(true);
+    expect(await screen.findByTestId("outline-panel")).toBeInTheDocument();
+    expect(captured.current?.attachedView).toBe(view);
+
+    expect((await commandRegistry.execute("view.toggleOutline")).ok).toBe(true);
+    await waitFor(() => expect(screen.queryByTestId("outline-panel")).not.toBeInTheDocument());
+    expect(captured.current?.attachedView).toBe(view);
+  });
+
   it("opens the registry-backed palette with Mod+K and runs a command from the keyboard", async () => {
     const ipc = fileIpc("# Palette\n");
     const { platform } = renderApp(ipc);
@@ -260,11 +287,12 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(6);
+    expect(options).toHaveLength(7);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("打开文件"),
         expect.stringContaining("保存文件"),
+        expect.stringContaining("切换大纲"),
         expect.stringContaining("切换实时预览"),
         expect.stringContaining("切换主题"),
         expect.stringContaining("检查更新"),

@@ -88,6 +88,7 @@ mod tests {
             "selectAll": "select all",
             "view": "view",
             "livePreview": "live preview",
+            "outline": "outline",
             "commandPalette": "palette",
             "toggleTheme": "theme",
             "logs": "logs",

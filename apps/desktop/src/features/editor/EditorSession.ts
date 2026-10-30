@@ -3,10 +3,13 @@ import { EditorView, type ViewUpdate } from "@codemirror/view";
 import {
   createEditorState,
   editorOpenExternal,
+  headingOutline,
+  OUTLINE_SCROLL_MARGIN,
   livePreview,
   minimapExtension,
   normalizeLineEndings,
   previewTierFor,
+  readHeadingOutline,
   setEditorUiCopyEffect,
   setModeEffect,
   setPlaceholderEffect,
@@ -14,6 +17,7 @@ import {
   setThemeEffect,
   themeExtension,
   type EditorUiCopy,
+  type HeadingOutlineState,
   type PreviewTier,
 } from "@qingmo/editor-core";
 import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
@@ -163,6 +167,7 @@ export class EditorSession {
   private readonly listeners = new Set<() => void>();
   private readonly statusListeners = new Set<() => void>();
   private readonly docChangedListeners = new Set<() => void>();
+  private readonly outlineListeners = new Set<() => void>();
   private readonly extraExtensions: readonly Extension[];
   private readonly statusThrottleMs: number;
   private placeholder: string | undefined;
@@ -182,6 +187,8 @@ export class EditorSession {
   private view: EditorView | null = null;
   private compositionCleanup: (() => void) | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
+  private outlineTimer: ReturnType<typeof setTimeout> | null = null;
+  private attachmentId = 0;
   private disposed = false;
 
   private constructor(payload: FilePayload, options: EditorSessionOptions) {
@@ -419,6 +426,7 @@ export class EditorSession {
       listener();
     }
     this.flushStatus();
+    this.flushOutlineNotify();
   }
 
   /**
@@ -442,6 +450,7 @@ export class EditorSession {
     if (view && this.view !== view) {
       return;
     }
+    this.attachmentId += 1;
     this.compositionCleanup?.();
     this.view = null;
   }
@@ -595,6 +604,65 @@ export class EditorSession {
     };
   };
 
+  getOutlineSnapshot = (): HeadingOutlineState => readHeadingOutline(this.currentState);
+
+  /** Independent subscription so heading text never enters the metadata snapshot. */
+  subscribeOutline = (listener: () => void): (() => void) => {
+    if (this.disposed) {
+      return () => undefined;
+    }
+    this.outlineListeners.add(listener);
+    return () => {
+      this.outlineListeners.delete(listener);
+    };
+  };
+
+  /**
+   * Moves the editor selection without changing the document. It is the only
+   * navigation path used by the outline panel and TOC widgets.
+   */
+  revealPosition(position: number): boolean {
+    if (this.disposed || !Number.isFinite(position)) {
+      return false;
+    }
+    const pos = Math.min(this.currentState.doc.length, Math.max(0, Math.trunc(position)));
+    if (this.view) {
+      this.view.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, {
+          y: "start",
+          yMargin: OUTLINE_SCROLL_MARGIN,
+        }),
+      });
+      this.view.focus();
+    } else {
+      this.state = this.state.update({ selection: { anchor: pos } }).state;
+      this.publish({
+        selection: selectionOf(this.state),
+        cursor: cursorAt(this.state, pos),
+      });
+    }
+    return true;
+  }
+
+  focusEditor(): boolean {
+    if (this.disposed) {
+      return false;
+    }
+    this.view?.focus();
+    return this.view !== null;
+  }
+
+  flushOutlineNotify(): void {
+    if (this.outlineTimer !== null) {
+      clearTimeout(this.outlineTimer);
+      this.outlineTimer = null;
+    }
+    for (const listener of [...this.outlineListeners]) {
+      listener();
+    }
+  }
+
   flushStatus(): void {
     if (this.statusTimer !== null) {
       clearTimeout(this.statusTimer);
@@ -609,9 +677,14 @@ export class EditorSession {
 
   dispose(): void {
     this.disposed = true;
+    this.attachmentId += 1;
     if (this.statusTimer !== null) {
       clearTimeout(this.statusTimer);
       this.statusTimer = null;
+    }
+    if (this.outlineTimer !== null) {
+      clearTimeout(this.outlineTimer);
+      this.outlineTimer = null;
     }
     this.compositionCleanup?.();
     this.pendingPlaceholder = null;
@@ -621,6 +694,7 @@ export class EditorSession {
     this.listeners.clear();
     this.statusListeners.clear();
     this.docChangedListeners.clear();
+    this.outlineListeners.clear();
     this.view = null;
   }
 
@@ -724,7 +798,13 @@ export class EditorSession {
   private attachUpdateListener(view: EditorView): void {
     this.view = view;
     this.state = view.state;
-    const listener = EditorView.updateListener.of((update) => this.handleUpdate(update));
+    const id = ++this.attachmentId;
+    const listener = EditorView.updateListener.of((update) => {
+      if (this.disposed || this.attachmentId !== id || this.view !== view) {
+        return;
+      }
+      this.handleUpdate(update);
+    });
     view.dispatch({ effects: StateEffect.appendConfig.of(listener) });
     this.state = view.state;
   }
@@ -737,7 +817,12 @@ export class EditorSession {
     if (this.disposed) {
       return;
     }
+    const previousOutline = update.startState.field(headingOutline, false);
     this.state = update.state;
+    const nextOutline = update.state.field(headingOutline, false);
+    if (previousOutline !== nextOutline) {
+      this.scheduleOutlineNotify();
+    }
     if (!update.docChanged && !update.selectionSet) {
       return;
     }
@@ -846,6 +931,16 @@ export class EditorSession {
     this.statusTimer = setTimeout(() => {
       this.statusTimer = null;
       this.flushStatus();
+    }, this.statusThrottleMs);
+  }
+
+  private scheduleOutlineNotify(): void {
+    if (this.disposed || this.outlineTimer !== null || this.outlineListeners.size === 0) {
+      return;
+    }
+    this.outlineTimer = setTimeout(() => {
+      this.outlineTimer = null;
+      this.flushOutlineNotify();
     }, this.statusThrottleMs);
   }
 }
