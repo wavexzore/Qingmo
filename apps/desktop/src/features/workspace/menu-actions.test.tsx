@@ -13,6 +13,7 @@ import { FakeUpdatePort } from "../../lib/update/fake";
 import { LANGUAGE_STORAGE_KEY, THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider } from "../editor/DocumentSessionContext";
+import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
 import { UpdateProvider } from "../update/UpdateProvider";
 
 function renderApp() {
@@ -41,9 +42,11 @@ afterEach(() => {
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");
+  commandRegistry.unregister("view.toggleOutline");
   commandRegistry.unregister("view.toggleTheme");
   uiStore.setTheme("system");
   uiStore.setLanguage("zh-CN");
+  outlineVisibilityStore.resetForTests();
 });
 
 describe("native menu actions", () => {
@@ -79,6 +82,21 @@ describe("native menu actions", () => {
     platform.emitMenuAction("language.zh-CN");
     await waitFor(() => expect(uiStore.getSnapshot().language).toBe("zh-CN"));
     expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("zh-CN");
+  });
+
+  it("opens and closes the outline from the native menu", async () => {
+    const { platform } = renderApp();
+
+    platform.emitMenuAction("file.open");
+    await screen.findByTestId("document-session");
+    expect(screen.queryByTestId("outline-panel")).not.toBeInTheDocument();
+
+    platform.emitMenuAction("view.toggleOutline");
+    expect(await screen.findByTestId("outline-panel")).toBeInTheDocument();
+
+    platform.emitMenuAction("view.toggleOutline");
+    await waitFor(() => expect(screen.queryByTestId("outline-panel")).not.toBeInTheDocument());
+    expect(document.activeElement?.closest(".cm-editor")).not.toBeNull();
   });
 
   it("opens a document and saves it through the menu", async () => {

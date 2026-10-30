@@ -5,6 +5,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemir
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readFrontMatter } from "./frontmatter";
+import { scanDetailsTags } from "./details-range";
 import { headingLevel, headingText, isHeading } from "./heading-text";
 import { renderInlineMarkdown } from "./inline-render";
 import { readTable } from "./specs";
@@ -85,8 +86,6 @@ function hasOpenAttribute(attributes: string): boolean {
   return /(?:^|\s)open(?:\s|=|$)/i.test(attributes);
 }
 
-const DETAILS_TAG = /<(\/?)\s*details\b([^>]*)>/gi;
-
 /**
  * Pairs `<details>` tags by scanning HTML blocks. One HTML block can contain the
  * opening tag, summary, body and closing tag when the author omits blank lines,
@@ -113,14 +112,11 @@ export function readDetailsBlocks(state: EditorState): readonly DetailsBlock[] {
     }
 
     const html = doc.sliceString(child.from, child.to);
-    DETAILS_TAG.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = DETAILS_TAG.exec(html))) {
-      const closing = match[1] === "/";
-      const tagStart = child.from + match.index;
-      const tagEnd = tagStart + match[0].length;
+    for (const tag of scanDetailsTags(html)) {
+      const tagStart = child.from + tag.from;
+      const tagEnd = child.from + tag.to;
 
-      if (closing) {
+      if (tag.closing) {
         const block = stack.pop();
         if (!block) {
           continue;
@@ -134,18 +130,18 @@ export function readDetailsBlocks(state: EditorState): readonly DetailsBlock[] {
       }
 
       // `<details />` has no body and is left as source.
-      if (/\/\s*>$/.test(match[0])) {
+      if (tag.selfClosing) {
         continue;
       }
 
-      const { summary, bodyStart } = readSummary(html, match.index + match[0].length, copy);
+      const { summary, bodyStart } = readSummary(html, tag.to, copy);
       const block: MutableDetailsBlock = {
         from: tagStart,
         to: null,
         bodyFrom: child.from + bodyStart,
         bodyTo: null,
         summary,
-        open: hasOpenAttribute(match[2] ?? ""),
+        open: hasOpenAttribute(tag.attributes),
         children: [],
       };
       const parent = stack[stack.length - 1];

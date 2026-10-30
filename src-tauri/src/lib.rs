@@ -25,7 +25,7 @@ use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
     EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_OPEN, MENU_FILE_SAVE, MENU_LANGUAGE_EN,
     MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
-    MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_THEME,
+    MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE, MENU_VIEW_TOGGLE_THEME,
 };
 use ipc::dto::{AppLanguage, MenuActionPayload, NativeShellLabels};
 
@@ -269,6 +269,7 @@ fn menu_layout<'a>(
                 label: &labels.live_preview,
                 checked: live_preview,
             },
+            action(MENU_VIEW_TOGGLE_OUTLINE, &labels.outline, None),
             action(
                 MENU_PALETTE_OPEN,
                 &labels.command_palette,
@@ -969,6 +970,7 @@ mod menu_tests {
             select_all: format!("{prefix}-select-all"),
             view: format!("{prefix}-view"),
             live_preview: format!("{prefix}-live-preview"),
+            outline: format!("{prefix}-outline"),
             command_palette: format!("{prefix}-palette"),
             toggle_theme: format!("{prefix}-toggle-theme"),
             logs: format!("{prefix}-logs"),
@@ -1126,6 +1128,10 @@ mod menu_tests {
             label: "zh-live-preview",
             checked: true,
         }));
+        assert_eq!(
+            action_label(action(view_menu, MENU_VIEW_TOGGLE_OUTLINE)),
+            "zh-outline"
+        );
 
         let language_menu = submenu(view_menu, "zh-language");
         assert_eq!(

@@ -34,6 +34,7 @@ export function buildNativeShellLabels(language: SupportedLanguage): NativeShell
     selectAll: menu("selectAll"),
     view: menu("view"),
     livePreview: menu("livePreview"),
+    outline: menu("outline"),
     commandPalette: menu("commandPalette"),
     toggleTheme: menu("toggleTheme"),
     logs: menu("logs"),

@@ -72,7 +72,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 11);
+    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 12);
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.zh-CN"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.en"));
 }
@@ -593,6 +593,7 @@ fn valid_labels() -> NativeShellLabels {
         select_all: "Select All".to_string(),
         view: "View".to_string(),
         live_preview: "Live Preview".to_string(),
+        outline: "Outline".to_string(),
         command_palette: "Command Palette".to_string(),
         toggle_theme: "Toggle Theme".to_string(),
         logs: "Logs…".to_string(),

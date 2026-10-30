@@ -58,6 +58,7 @@ pub const EVENTS: &[&str] = &[
 pub const MENU_FILE_OPEN: &str = "file.open";
 pub const MENU_FILE_SAVE: &str = "file.save";
 pub const MENU_PALETTE_OPEN: &str = "palette.open";
+pub const MENU_VIEW_TOGGLE_OUTLINE: &str = "view.toggleOutline";
 pub const MENU_VIEW_TOGGLE_LIVE_PREVIEW: &str = "view.toggleLivePreview";
 pub const MENU_VIEW_TOGGLE_THEME: &str = "view.toggleTheme";
 pub const MENU_LOGS: &str = "app.openLogs";
@@ -72,6 +73,7 @@ pub const MENU_ACTIONS: &[&str] = &[
     MENU_FILE_SAVE,
     MENU_PALETTE_OPEN,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW,
+    MENU_VIEW_TOGGLE_OUTLINE,
     MENU_VIEW_TOGGLE_THEME,
     MENU_LOGS,
     MENU_THEME_LIGHT,

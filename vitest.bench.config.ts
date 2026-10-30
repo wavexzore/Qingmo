@@ -22,5 +22,10 @@ export default defineConfig({
     restoreMocks: true,
     testTimeout: 600_000,
     hookTimeout: 600_000,
+    // Benchmarks run serially and should measure compute, not a scavenge
+    // triggered by the measurement loop itself. A larger young generation
+    // keeps the outline matrix's short-lived entry arrays out of GC p95;
+    // browser GC pauses are covered by `e2e/outline-perf.spec.ts`.
+    execArgv: ["--max-semi-space-size=256", "--max-old-space-size=4096"],
   },
 });

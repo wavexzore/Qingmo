@@ -4,11 +4,11 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemir
 
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { PREVIEW_FULL_MAX_UNITS } from "../limits";
-import { readDetailsBlocks } from "./details";
+import { readDetailsRanges } from "./details-range";
 import { readFrontMatter } from "./frontmatter";
-import { headingLevel, headingText, isHeading } from "./heading-text";
 import { renderInlineMarkdown } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
+import { readHeadingOutline } from "./outline";
 
 /** Generating a table of contents means walking every heading in the document. */
 const MAX_TOC_ENTRIES = 200;
@@ -62,57 +62,36 @@ function isPlaceholder(doc: EditorState["doc"], node: MarkdownNode): boolean {
   return PLACEHOLDERS.has(text) || /^<!--\s*toc\s*-->$/.test(text);
 }
 
-interface BuildResult {
-  headings: TocHeading[];
-  ranges: TocRange[];
-}
-
-function scanDocument(state: EditorState): BuildResult {
+/**
+ * Finds TOC placeholders only at the Document top level. A `[TOC]` inside a
+ * blockquote or list stays ordinary source, matching Typora's behavior.
+ */
+function scanPlaceholders(state: EditorState): readonly TocRange[] {
   const doc = state.doc;
-  const headings: TocHeading[] = [];
-  const ranges: TocRange[] = [];
+  const root = syntaxTree(state).topNode as unknown as MarkdownNode;
   const frontMatter = readFrontMatter(doc);
-  const details = readDetailsBlocks(state);
+  const details = readDetailsRanges(state);
+  const ranges: TocRange[] = [];
 
-  syntaxTree(state).iterate({
-    enter(node) {
-      if (node.name === "Document") {
-        return true;
-      }
-      if (
-        (frontMatter && node.from >= frontMatter.from && node.to <= frontMatter.to) ||
-        details.some((block) => node.from >= block.from && node.to <= block.to)
-      ) {
-        return false;
-      }
-      if (node.name === "FencedCode" || node.name === "CodeBlock") {
-        return false;
-      }
-      const syntaxNode = node.node as unknown as MarkdownNode;
-      if (syntaxNode.parent?.name !== "Document") {
-        return false;
-      }
-      if (isHeading(node.name)) {
-        const text = headingText(doc, syntaxNode);
-        if (text) {
-          headings.push({
-            level: headingLevel(node.name),
-            text,
-            lineFrom: doc.lineAt(node.from).from,
-          });
-        }
-        return false;
-      }
-      if (node.name === "Paragraph" || node.name === "CommentBlock") {
-        if (isPlaceholder(doc, syntaxNode)) {
-          ranges.push({ from: node.from, to: node.to });
-        }
-      }
-      return false;
-    },
-  });
+  for (let child = root.firstChild; child; child = child.nextSibling) {
+    if (
+      (frontMatter && child.from >= frontMatter.from && child.to <= frontMatter.to) ||
+      details.some((range) => child.from >= range.from && child.to <= range.to)
+    ) {
+      continue;
+    }
+    if (child.name === "FencedCode" || child.name === "CodeBlock") {
+      continue;
+    }
+    if (
+      (child.name === "Paragraph" || child.name === "CommentBlock") &&
+      isPlaceholder(doc, child)
+    ) {
+      ranges.push({ from: child.from, to: child.to });
+    }
+  }
 
-  return { headings, ranges };
+  return ranges;
 }
 
 function buildToc(state: EditorState): TocState {
@@ -120,10 +99,18 @@ function buildToc(state: EditorState): TocState {
     return emptyState();
   }
 
-  const { headings, ranges } = scanDocument(state);
+  const ranges = scanPlaceholders(state);
   if (ranges.length === 0) {
     return emptyState();
   }
+
+  const headings = readHeadingOutline(state)
+    .entries.slice(0, MAX_TOC_ENTRIES)
+    .map((entry) => ({
+      level: entry.level,
+      text: entry.text,
+      lineFrom: entry.lineFrom,
+    }));
 
   const decorations: ReturnType<Decoration["range"]>[] = [];
   for (const range of ranges) {
@@ -131,12 +118,7 @@ function buildToc(state: EditorState): TocState {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new TocWidget(
-            state.facet(editorUiCopy),
-            headings.slice(0, MAX_TOC_ENTRIES),
-            range.from,
-            range.to,
-          ),
+          widget: new TocWidget(state.facet(editorUiCopy), headings, range.from, range.to),
         }).range(range.from, range.to),
       );
     }

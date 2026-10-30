@@ -1,8 +1,11 @@
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 
-import { headingText, isHeading } from "./heading-text";
+import { isHeading } from "./heading-text";
+import { readHeadingOutline } from "./outline";
 import type { MarkdownNode } from "./markdown-node";
+
+export { plainInlineText } from "./heading-text";
 
 export interface HeadingAnchor {
   slug: string;
@@ -14,21 +17,6 @@ export interface HeadingAnchor {
 export interface AnchorRange {
   from: number;
   to: number;
-}
-
-/**
- * Strips the inline Markdown marks that do not contribute to a heading anchor.
- * The result feeds the GitHub-compatible slugger below.
- */
-export function plainInlineText(markdown: string): string {
-  return markdown
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\\([\\`*_{}[\]()#+\-.!|>~^=])/g, "$1")
-    .replace(/[*_~=]{1,3}/g, "")
-    .trim();
 }
 
 /**
@@ -165,20 +153,14 @@ export function readHeadingAnchors(
   state: EditorState,
   blocked: readonly AnchorRange[] = [],
 ): Map<string, HeadingAnchor> {
-  const doc = state.doc;
-  const root = syntaxTree(state).topNode as unknown as MarkdownNode;
   const anchors = new Map<string, HeadingAnchor>();
   const occurrences = new Map<string, number>();
 
-  for (let child = root.firstChild; child; child = child.nextSibling) {
-    if (!isHeading(child.name)) {
+  for (const entry of readHeadingOutline(state).entries) {
+    if (blocked.some((range) => entry.from >= range.from && entry.to <= range.to)) {
       continue;
     }
-    const node = child;
-    if (blocked.some((range) => node.from >= range.from && node.to <= range.to)) {
-      continue;
-    }
-    const text = plainInlineText(headingText(doc, node));
+    const text = entry.plainText;
     const base = slugifyHeading(text);
     if (!base) {
       continue;
@@ -190,8 +172,8 @@ export function readHeadingAnchors(
       anchors.set(slug, {
         slug,
         text,
-        level: Number(child.name.slice(-1)),
-        lineFrom: doc.lineAt(child.from).from,
+        level: entry.level,
+        lineFrom: entry.lineFrom,
       });
     }
   }

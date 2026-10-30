@@ -376,4 +376,124 @@ describe("EditorSession", () => {
     session.setSaveState("dirty");
     expect(listener).not.toHaveBeenCalled();
   });
+
+  it("exposes an independent outline snapshot without body text", () => {
+    const session = EditorSession.create(payload({ text: "# Alpha\n\n## Beta\n" }));
+    const outline = session.getOutlineSnapshot();
+
+    expect(outline.entries.map((entry) => entry.text)).toEqual(["Alpha", "Beta"]);
+    expect(session.getOutlineSnapshot()).toBe(outline);
+    expect(JSON.stringify(session.getSnapshot())).not.toContain("Alpha");
+    expect(JSON.stringify(session.getSnapshot())).not.toContain("Beta");
+  });
+
+  it("notifies outline subscribers at most once per throttle window", () => {
+    vi.useFakeTimers();
+    const session = EditorSession.create(payload({ text: "# Alpha\n" }));
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+    const listener = vi.fn();
+    const unsubscribe = session.subscribeOutline(listener);
+
+    try {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\n# Beta\n" } });
+      expect(listener).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(99);
+      expect(listener).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(session.getOutlineSnapshot().entries.map((entry) => entry.text)).toEqual([
+        "Alpha",
+        "Beta",
+      ]);
+
+      unsubscribe();
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\n# Gamma\n" } });
+      vi.advanceTimersByTime(100);
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps one active outline listener after attaching a new view", () => {
+    const session = EditorSession.create(payload({ text: "# Alpha\n" }));
+    const listener = vi.fn();
+    session.subscribeOutline(listener);
+    const views: Array<{ view: EditorView; parent: HTMLDivElement }> = [];
+
+    const attach = () => {
+      const parent = document.createElement("div");
+      document.body.append(parent);
+      const view = new EditorView({ state: session.editorState, parent });
+      session.attach(view);
+      views.push({ view, parent });
+      return view;
+    };
+
+    const first = attach();
+    session.detach(first);
+    first.destroy();
+
+    const second = attach();
+    try {
+      second.dispatch({ changes: { from: second.state.doc.length, insert: "# Beta\n" } });
+      session.flushOutlineNotify();
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      session.detach(second);
+      second.destroy();
+      for (const { view, parent } of views) {
+        if (view !== second && view !== first) {
+          view.destroy();
+        }
+        parent.remove();
+      }
+    }
+  });
+
+  it("flushes the new outline immediately after replacePayload", () => {
+    const session = EditorSession.create(payload({ text: "# Old\n" }));
+    const listener = vi.fn();
+    session.subscribeOutline(listener);
+
+    session.replacePayload(payload({ text: "# New\n", hash: "hash-2", size: 6, textUnits: 6 }));
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(session.getOutlineSnapshot().entries.map((entry) => entry.text)).toEqual(["New"]);
+  });
+
+  it("reveals positions without editing and clamps invalid values", () => {
+    const session = EditorSession.create(payload({ text: "# Alpha\n\nbody\n" }));
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      expect(session.revealPosition(2)).toBe(true);
+      expect(view.state.selection.main.head).toBe(2);
+      expect(session.readText()).toBe("# Alpha\n\nbody\n");
+
+      expect(session.revealPosition(999)).toBe(true);
+      expect(view.state.selection.main.head).toBe(view.state.doc.length);
+      expect(session.revealPosition(Number.NaN)).toBe(false);
+      expect(session.revealPosition(Number.POSITIVE_INFINITY)).toBe(false);
+      expect(session.focusEditor()).toBe(true);
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+
+    const detached = EditorSession.create(payload({ text: "# Alpha\n" }));
+    expect(detached.focusEditor()).toBe(false);
+    expect(detached.revealPosition(2)).toBe(true);
+    expect(detached.getSnapshot().selection).toEqual({ anchor: 2, head: 2 });
+  });
 });

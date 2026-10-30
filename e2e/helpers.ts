@@ -9,6 +9,8 @@ export const NOTE_PATH = "/docs/note.md";
 export const CONFLICT_PATH = "/docs/conflict.md";
 export const READONLY_PATH = "/docs/readonly.mdx";
 export const SAVE_AS_PATH = "/docs/untitled.md";
+export const OUTLINE_PATH = "/docs/outline.md";
+export const OUTLINE_SWITCHED_PATH = "/docs/outline-switched.md";
 
 function fixture(name: string): string {
   return readFileSync(path.join(__dirname, "fixtures", name), "utf8");
@@ -17,6 +19,8 @@ function fixture(name: string): string {
 export const NOTE_TEXT = fixture("note.md");
 export const CONFLICT_TEXT = fixture("conflict.md");
 export const READONLY_TEXT = fixture("readonly.mdx");
+export const OUTLINE_TEXT = fixture("outline.md");
+export const OUTLINE_SWITCHED_TEXT = fixture("outline-switched.md");
 
 export const BASE_FILES: SeedFile[] = [
   {
@@ -93,6 +97,7 @@ export async function emitMenuAction(
     | "file.save"
     | "palette.open"
     | "view.toggleLivePreview"
+    | "view.toggleOutline"
     | "view.toggleTheme"
     | "theme.light"
     | "theme.dark"
