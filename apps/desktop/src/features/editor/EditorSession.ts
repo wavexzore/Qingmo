@@ -154,6 +154,24 @@ function sameCursor(left: EditorCursorSnapshot, right: EditorCursorSnapshot): bo
   return left.line === right.line && left.column === right.column;
 }
 
+const OUTLINE_SCROLL_MIN_MS = 120;
+const OUTLINE_SCROLL_MAX_MS = 280;
+const OUTLINE_SCROLL_MS_PER_PX = 0.08;
+const OUTLINE_SCROLL_SETTLE_MS = 120;
+
+/** Respect the OS setting and keep outline jumps instant for reduced motion. */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+function easeInOutCubic(progress: number): number {
+  return progress < 0.5 ? 4 * progress * progress * progress : 1 - (-2 * progress + 2) ** 3 / 2;
+}
+
 /**
  * Owns the single CM6 EditorState for one open document.
  *
@@ -188,6 +206,9 @@ export class EditorSession {
   private compositionCleanup: (() => void) | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
   private outlineTimer: ReturnType<typeof setTimeout> | null = null;
+  private scrollFrame: number | null = null;
+  private scrollCleanup: (() => void) | null = null;
+  private scrollGeneration = 0;
   private attachmentId = 0;
   private disposed = false;
 
@@ -451,6 +472,7 @@ export class EditorSession {
       return;
     }
     this.attachmentId += 1;
+    this.cancelScrollAnimation();
     this.compositionCleanup?.();
     this.view = null;
   }
@@ -618,8 +640,9 @@ export class EditorSession {
   };
 
   /**
-   * Moves the editor selection without changing the document. It is the only
-   * navigation path used by the outline panel and TOC widgets.
+   * Moves the editor selection without changing the document. The selection
+   * lands immediately; the viewport then eases toward the heading so a long
+   * jump reads as navigation instead of a hard cut.
    */
   revealPosition(position: number): boolean {
     if (this.disposed || !Number.isFinite(position)) {
@@ -627,14 +650,9 @@ export class EditorSession {
     }
     const pos = Math.min(this.currentState.doc.length, Math.max(0, Math.trunc(position)));
     if (this.view) {
-      this.view.dispatch({
-        selection: { anchor: pos },
-        effects: EditorView.scrollIntoView(pos, {
-          y: "start",
-          yMargin: OUTLINE_SCROLL_MARGIN,
-        }),
-      });
+      this.view.dispatch({ selection: { anchor: pos } });
       this.view.focus();
+      this.scrollToPosition(this.view, pos);
     } else {
       this.state = this.state.update({ selection: { anchor: pos } }).state;
       this.publish({
@@ -643,6 +661,155 @@ export class EditorSession {
       });
     }
     return true;
+  }
+
+  private scrollToPosition(view: EditorView, position: number): void {
+    this.cancelScrollAnimation();
+    const generation = this.scrollGeneration;
+    const scroller = view.scrollDOM;
+    const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    if (maxScroll <= 0) {
+      return;
+    }
+
+    // `lineBlockAt` coordinates start below the content padding, while
+    // `scrollTop` includes it. Add the padding so the estimate lands on the
+    // heading instead of ~28px above it.
+    const target = Math.min(
+      maxScroll,
+      Math.max(
+        0,
+        view.lineBlockAt(position).top + view.documentPadding.top - OUTLINE_SCROLL_MARGIN,
+      ),
+    );
+    const start = scroller.scrollTop;
+    const delta = target - start;
+    if (
+      Math.abs(delta) < 1 ||
+      prefersReducedMotion() ||
+      typeof requestAnimationFrame !== "function"
+    ) {
+      view.dispatch({
+        effects: EditorView.scrollIntoView(position, {
+          y: "start",
+          yMargin: OUTLINE_SCROLL_MARGIN,
+        }),
+      });
+      return;
+    }
+
+    const duration = Math.min(
+      OUTLINE_SCROLL_MAX_MS,
+      OUTLINE_SCROLL_MIN_MS + Math.abs(delta) * OUTLINE_SCROLL_MS_PER_PX,
+    );
+    this.attachScrollCancelListeners(scroller);
+    this.animateScroll(view, start, target, duration, generation, () => {
+      // Wait one frame so CM6 has processed the final scroll event and
+      // rendered the target line before reading its exact text rectangle.
+      this.scrollFrame = requestAnimationFrame(() => {
+        this.scrollFrame = null;
+        this.settleScroll(view, position, generation);
+      });
+    });
+  }
+
+  private settleScroll(view: EditorView, position: number, generation: number): void {
+    if (generation !== this.scrollGeneration || this.disposed || this.view !== view) {
+      return;
+    }
+    view.requestMeasure({
+      key: "outline-scroll",
+      read: (current) => {
+        if (generation !== this.scrollGeneration || this.disposed || this.view !== current) {
+          return null;
+        }
+        return current.coordsAtPos(position);
+      },
+      write: (rect, current) => {
+        if (generation !== this.scrollGeneration || this.disposed || this.view !== current) {
+          return;
+        }
+        if (!rect) {
+          this.scrollCleanup?.();
+          current.dispatch({
+            effects: EditorView.scrollIntoView(position, {
+              y: "start",
+              yMargin: OUTLINE_SCROLL_MARGIN,
+            }),
+          });
+          return;
+        }
+
+        const targetTop = current.scrollDOM.getBoundingClientRect().top + OUTLINE_SCROLL_MARGIN;
+        const correction = rect.top - targetTop;
+        const from = current.scrollDOM.scrollTop;
+        if (Math.abs(correction) <= 0.5) {
+          this.scrollCleanup?.();
+          return;
+        }
+
+        const limit = Math.max(0, current.scrollDOM.scrollHeight - current.scrollDOM.clientHeight);
+        const to = Math.min(limit, Math.max(0, from + correction));
+        this.animateScroll(current, from, to, OUTLINE_SCROLL_SETTLE_MS, generation, () => {
+          this.scrollCleanup?.();
+        });
+      },
+    });
+  }
+
+  private animateScroll(
+    view: EditorView,
+    from: number,
+    to: number,
+    duration: number,
+    generation: number,
+    done: () => void,
+  ): void {
+    const scroller = view.scrollDOM;
+    const startedAt = performance.now();
+    const delta = to - from;
+    const step = (now: number) => {
+      if (generation !== this.scrollGeneration) {
+        return;
+      }
+      if (this.disposed || this.view !== view) {
+        this.cancelScrollAnimation();
+        return;
+      }
+      const progress = Math.min(1, (now - startedAt) / duration);
+      scroller.scrollTop = from + delta * easeInOutCubic(progress);
+      if (progress < 1) {
+        this.scrollFrame = requestAnimationFrame(step);
+        return;
+      }
+      this.scrollFrame = null;
+      done();
+    };
+    this.scrollFrame = requestAnimationFrame(step);
+  }
+
+  private attachScrollCancelListeners(scroller: HTMLElement): void {
+    const cancelOnInput = () => this.cancelScrollAnimation();
+    scroller.addEventListener("wheel", cancelOnInput, { passive: true });
+    scroller.addEventListener("touchstart", cancelOnInput, { passive: true });
+    scroller.addEventListener("pointerdown", cancelOnInput);
+    this.scrollCleanup = () => {
+      scroller.removeEventListener("wheel", cancelOnInput);
+      scroller.removeEventListener("touchstart", cancelOnInput);
+      scroller.removeEventListener("pointerdown", cancelOnInput);
+      this.scrollCleanup = null;
+    };
+  }
+
+  private cancelScrollAnimation(): void {
+    if (this.scrollFrame !== null) {
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(this.scrollFrame);
+      }
+      this.scrollFrame = null;
+    }
+    this.scrollCleanup?.();
+    this.scrollGeneration += 1;
   }
 
   focusEditor(): boolean {
@@ -678,6 +845,7 @@ export class EditorSession {
   dispose(): void {
     this.disposed = true;
     this.attachmentId += 1;
+    this.cancelScrollAnimation();
     if (this.statusTimer !== null) {
       clearTimeout(this.statusTimer);
       this.statusTimer = null;
@@ -816,6 +984,11 @@ export class EditorSession {
   private handleUpdate(update: ViewUpdate): void {
     if (this.disposed) {
       return;
+    }
+    if (update.docChanged) {
+      // The target offset moved; continuing the old animation would land on a
+      // stale line. A new outline click starts a fresh animation.
+      this.cancelScrollAnimation();
     }
     const previousOutline = update.startState.field(headingOutline, false);
     this.state = update.state;

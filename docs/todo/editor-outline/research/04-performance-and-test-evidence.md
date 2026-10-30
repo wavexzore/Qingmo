@@ -203,7 +203,7 @@ const end = await page.evaluate(() => performance.now());
 |---|---|---|
 | E2E-001 | 默认 | 无 `outline-panel`；现有布局 |
 | E2E-002 | 菜单开关 | 出现/消失 |
-| E2E-003 | 点击 | selection=lineFrom；标题距顶 10±2px |
+| E2E-003 | 点击 | selection=lineFrom；平滑滚动后标题距顶 10±2px；scroll 采样多个中间值 |
 | E2E-004 | 键盘 | Tab/Enter 跳转 |
 | E2E-005 | 活动项 | `aria-current` 跟随光标 |
 | E2E-006 | Source/LP | 条目一致 |
