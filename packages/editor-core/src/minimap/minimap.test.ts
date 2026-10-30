@@ -2,7 +2,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { minimapExtension, type MinimapGeometry } from "./minimap";
+import { minimapExtension, renderedLineText, type MinimapGeometry } from "./minimap";
+import { KIND } from "./model";
 
 const geometry: MinimapGeometry = {
   editorWidth: 900,
@@ -165,5 +166,16 @@ describe("minimap ViewPlugin", () => {
     const rail = parent.querySelector<HTMLDivElement>(".qm-minimap");
     expect(rail?.getAttribute("data-minimap-state")).toBe("off");
     expect(context.fillRect).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderedLineText", () => {
+  it("flattens Markdown markers for Live Preview", () => {
+    expect(renderedLineText("# Title **bold**", KIND.heading)).toBe("Title bold");
+    expect(renderedLineText("> [quote](https://example.com)", KIND.quote)).toBe("quote");
+    expect(renderedLineText("- [x] task `code`", KIND.list)).toBe("task code");
+    expect(renderedLineText("![alt](image.png)", KIND.text)).toBe("alt");
+    expect(renderedLineText("```ts", KIND.code)).toBe("");
+    expect(renderedLineText("| a | b |", KIND.table)).toBe("");
   });
 });

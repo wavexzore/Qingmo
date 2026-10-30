@@ -158,7 +158,7 @@ EditorState.doc (Text)
   -> view.lineBlockAt(line.from).top            采样 docY
   -> AnchorMap（每行 docY；docY ↔ railY 单一线性映射）
   -> 视口窗口（computeMinimapWindow，整篇可容纳时全画）
-  -> Canvas 1:1 文本（每字符一列、每行 3px；异常时降级像素桶/块带）
+  -> Canvas 模式感知绘制（Source 1:1 文本；Live Preview 渲染块 + 真实 lineDocY；异常时降级像素桶/块带）
 ```
 
 **不复制文档到 React state，不产生第二份文档内容。** 行模型是短生命周期缓存，文档变化后 120ms 重建。

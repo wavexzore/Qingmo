@@ -1,6 +1,7 @@
 import { Facet, type Extension, type Text } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 
+import { plainInlineText } from "../live-preview/heading-anchors";
 import { resolveMinimapPalette, type MinimapPalette } from "./theme";
 import {
   KIND,
@@ -316,6 +317,66 @@ function isFullWidthChar(code: number): boolean {
   );
 }
 
+/** Live Preview renders Markdown; source mode keeps the raw text. */
+function isRenderedMode(view: EditorView): boolean {
+  return view.dom.dataset.livePreview === "true";
+}
+
+const FENCE_LINE_RE = /^\s*(?:`{3,}|~{3,})/;
+const LIST_PREFIX_RE = /^\s{0,3}(?:[-+*]|\d+[.)])\s+/;
+const TASK_PREFIX_RE = /^\[[ xX]\]\s*/;
+const QUOTE_PREFIX_RE = /^\s{0,3}(?:>\s?)+/;
+const HEADING_PREFIX_RE = /^\s{0,3}#{1,6}(?:\s+|$)/;
+const HEADING_SUFFIX_RE = /\s+#+\s*$/;
+
+/**
+ * Builds the text a rendered Markdown line exposes to the minimap. Block
+ * markers are removed, inline markers are flattened, and widget-only rows
+ * return an empty string because the widget itself is drawn as a block.
+ */
+export function renderedLineText(raw: string, kind: number): string {
+  if (kind === KIND.heading) {
+    return plainInlineText(
+      raw.replace(HEADING_PREFIX_RE, "").replace(HEADING_SUFFIX_RE, "").trim(),
+    );
+  }
+  if (kind === KIND.quote) {
+    return plainInlineText(raw.replace(QUOTE_PREFIX_RE, ""));
+  }
+  if (kind === KIND.list) {
+    return plainInlineText(raw.replace(LIST_PREFIX_RE, "").replace(TASK_PREFIX_RE, ""));
+  }
+  if (kind === KIND.code || kind === KIND.diagram) {
+    const trimmed = raw.trim();
+    if (FENCE_LINE_RE.test(trimmed) || trimmed === "$$") {
+      return "";
+    }
+    return kind === KIND.diagram ? "" : raw;
+  }
+  if (kind === KIND.table || kind === KIND.rule || kind === KIND.frontmatter) {
+    return "";
+  }
+  if (kind === KIND.html) {
+    return plainInlineText(raw.replace(/<[^>]*>/g, ""));
+  }
+  return plainInlineText(raw);
+}
+
+/** Source indentation in columns, used for rendered list bullets and quotes. */
+function leadingColumns(raw: string, tabSize: number): number {
+  let column = 0;
+  for (const char of raw) {
+    if (char === " ") {
+      column += 1;
+    } else if (char === "\t") {
+      column += Math.max(1, tabSize - (column % tabSize));
+    } else {
+      break;
+    }
+  }
+  return column;
+}
+
 /**
  * Owns one rail per top-level EditorView. All state is derived from the
  * current EditorState; the minimap never writes the document or persistence.
@@ -351,6 +412,9 @@ class MinimapController {
   private anchorMap: MinimapAnchorMap | null = null;
   private geometry: MeasuredGeometry | null = null;
   private window: MinimapWindow | null = null;
+  private windowTopDoc = 0;
+  private windowBottomDoc = 1;
+  private renderedMode = false;
   private minimapLineHeight = MINIMAP_LINE_HEIGHT;
   private minimapCharWidth = MINIMAP_CHAR_WIDTH;
   private glyphFont = "";
@@ -369,6 +433,7 @@ class MinimapController {
 
   constructor(view: EditorView) {
     this.view = view;
+    this.renderedMode = isRenderedMode(view);
     this.options = resolveOptions(view.state.facet(minimapOptions));
     const doc = view.dom.ownerDocument;
 
@@ -445,6 +510,11 @@ class MinimapController {
     }
 
     let needsRebuild = false;
+    const renderedMode = isRenderedMode(this.view);
+    if (renderedMode !== this.renderedMode) {
+      this.renderedMode = renderedMode;
+      needsRebuild = true;
+    }
     if (update.docChanged) {
       needsRebuild = true;
     }
@@ -919,6 +989,7 @@ class MinimapController {
     const lines = this.lineTable;
     const map = this.anchorMap;
     const palette = this.palette;
+    this.renderedMode = isRenderedMode(this.view);
     if (!geometry || !lines || !map || !palette) {
       return false;
     }
@@ -952,8 +1023,13 @@ class MinimapController {
         if (!this.window) {
           throw new Error("minimap window is not ready");
         }
-        this.drawTextFrame(bufferContext, width);
-        this.rail.dataset.minimapRender = "text";
+        if (this.renderedMode) {
+          this.drawRenderedFrame(bufferContext, width);
+          this.rail.dataset.minimapRender = "rendered";
+        } else {
+          this.drawTextFrame(bufferContext, width);
+          this.rail.dataset.minimapRender = "text";
+        }
       } catch {
         bufferContext.setTransform(dpr, 0, 0, dpr, 0, 0);
         bufferContext.clearRect(0, 0, width, height);
@@ -1077,6 +1153,422 @@ class MinimapController {
         x += columns * charWidth;
         column += columns;
       }
+    }
+    context.globalAlpha = 1;
+  }
+
+  private documentHeight(): number {
+    const geometry = this.geometry;
+    if (!geometry) {
+      return 1;
+    }
+    return Math.max(
+      1,
+      geometry.contentHeight - geometry.documentPadding.top - geometry.documentPadding.bottom,
+    );
+  }
+
+  /** Maps a document Y to the local window currently painted in the rail. */
+  private docYToLocal(docY: number): number {
+    const geometry = this.geometry;
+    const window = this.window;
+    if (!geometry || !window) {
+      return 0;
+    }
+    const padding = window.paddingLines * this.minimapLineHeight;
+    const contentTop = geometry.trackTop + padding;
+    const contentHeight = Math.max(1, geometry.trackHeight - padding);
+    const span = Math.max(1, this.windowBottomDoc - this.windowTopDoc);
+    return contentTop + clamp((docY - this.windowTopDoc) / span, 0, 1) * contentHeight;
+  }
+
+  private lineRailY(line: number): number | null {
+    const geometry = this.geometry;
+    const map = this.anchorMap;
+    const window = this.window;
+    if (!geometry || !map || !window) {
+      return null;
+    }
+    if (line < window.startLine || line >= window.startLine + window.lineCount) {
+      return null;
+    }
+    if (!this.renderedMode) {
+      return (
+        geometry.trackTop + (line - window.startLine + window.paddingLines) * this.minimapLineHeight
+      );
+    }
+    return this.docYToLocal(map.lineDocY[line] ?? this.windowTopDoc);
+  }
+
+  /**
+   * Renders a Live Preview window: text is flattened, block widgets become
+   * miniature cards, and vertical positions follow the real editor geometry
+   * instead of a uniform source-line grid.
+   */
+  private drawRenderedFrame(context: CanvasRenderingContext2D, width: number): void {
+    const geometry = this.geometry;
+    const lines = this.lineTable;
+    const map = this.anchorMap;
+    const palette = this.palette;
+    const window = this.window;
+    if (!geometry || !lines || !map || !palette || !window) {
+      throw new Error("minimap rendered frame is not ready");
+    }
+
+    this.ensureGlyphs();
+    const doc = this.view.state.doc;
+    const tabSize = Math.max(1, Math.trunc(this.view.state.tabSize) || 4);
+    const charWidth = this.minimapCharWidth;
+    const trackTop = geometry.trackTop;
+    const trackBottom = geometry.trackTop + geometry.trackHeight;
+    const docHeight = this.documentHeight();
+
+    // Headings have a surface band in Live Preview; keep that cue.
+    for (let offset = 0; offset < window.lineCount; offset += 1) {
+      const line = window.startLine + offset;
+      if (line < 0 || line >= doc.lines) {
+        break;
+      }
+      if (lines.kind[line] !== KIND.heading) {
+        continue;
+      }
+      const top = this.docYToLocal(map.lineDocY[line] ?? 0);
+      const nextDocY = line + 1 >= doc.lines ? docHeight : (map.lineDocY[line + 1] ?? docHeight);
+      const bottom = this.docYToLocal(nextDocY);
+      const clippedTop = Math.max(trackTop, top);
+      const clippedBottom = Math.min(trackBottom, bottom);
+      if (clippedBottom <= clippedTop) {
+        continue;
+      }
+      context.globalAlpha = 0.08;
+      context.fillStyle = palette.heading;
+      context.fillRect(0, clippedTop, width, clippedBottom - clippedTop);
+    }
+    context.globalAlpha = 1;
+
+    let backgroundIndex = 0;
+    while (
+      backgroundIndex < this.blocks.length &&
+      this.blocks[backgroundIndex]!.toLine < window.startLine
+    ) {
+      backgroundIndex += 1;
+    }
+    const windowEndLine = window.startLine + window.lineCount;
+    for (let index = backgroundIndex; index < this.blocks.length; index += 1) {
+      const block = this.blocks[index]!;
+      if (block.fromLine >= windowEndLine) {
+        break;
+      }
+      const from = Math.max(block.fromLine, window.startLine);
+      const to = Math.min(block.toLine + 1, windowEndLine);
+      if (to <= from) {
+        continue;
+      }
+      const top = this.docYToLocal(map.lineDocY[from] ?? 0);
+      const nextDocY = to >= doc.lines ? docHeight : (map.lineDocY[to] ?? docHeight);
+      const bottom = this.docYToLocal(nextDocY);
+      const clippedTop = Math.max(trackTop, top);
+      const clippedBottom = Math.min(trackBottom, bottom);
+      if (clippedBottom <= clippedTop) {
+        continue;
+      }
+      this.drawRenderedBlock(context, block, clippedTop, clippedBottom, width, palette);
+    }
+
+    let blockIndex = 0;
+    while (blockIndex < this.blocks.length && this.blocks[blockIndex]!.toLine < window.startLine) {
+      blockIndex += 1;
+    }
+
+    for (let offset = 0; offset < window.lineCount; offset += 1) {
+      const line = window.startLine + offset;
+      if (line < 0 || line >= doc.lines) {
+        break;
+      }
+      const kind = lines.kind[line] ?? KIND.text;
+      if (kind === KIND.blank) {
+        continue;
+      }
+      const top = this.docYToLocal(map.lineDocY[line] ?? 0);
+      const nextDocY = line + 1 >= doc.lines ? docHeight : (map.lineDocY[line + 1] ?? docHeight);
+      const bottom = this.docYToLocal(nextDocY);
+      const height = Math.max(1, bottom - top);
+      if (top >= trackBottom) {
+        break;
+      }
+      if (bottom <= trackTop) {
+        continue;
+      }
+      const color = lineColor(kind, palette) ?? palette.text;
+      const raw = doc.line(line + 1).text;
+
+      while (blockIndex < this.blocks.length && this.blocks[blockIndex]!.toLine < line) {
+        blockIndex += 1;
+      }
+      const block = this.blocks[blockIndex];
+      const inside = block && block.fromLine <= line && line <= block.toLine ? block : null;
+
+      if (kind === KIND.rule) {
+        context.globalAlpha = 0.55;
+        context.fillStyle = color;
+        context.fillRect(0, top, width, 1);
+        context.globalAlpha = 1;
+        continue;
+      }
+      if (kind === KIND.table || kind === KIND.diagram) {
+        continue;
+      }
+      if (
+        inside &&
+        (inside.kind === "media" ||
+          inside.kind === "math" ||
+          inside.kind === "frontmatter" ||
+          inside.kind === "html")
+      ) {
+        continue;
+      }
+      if (inside?.kind === "fence" && /^mermaid\b/i.test(inside.info)) {
+        continue;
+      }
+
+      const text = renderedLineText(raw, kind);
+      if (!text) {
+        continue;
+      }
+
+      let x = 2;
+      if (kind === KIND.quote) {
+        context.globalAlpha = 0.5;
+        context.fillStyle = color;
+        context.fillRect(2, top, 1, Math.max(1, height));
+        context.globalAlpha = 1;
+        x = 5;
+      } else if (kind === KIND.list) {
+        const indent = Math.min(width - 6, leadingColumns(raw, tabSize));
+        context.globalAlpha = 0.85;
+        context.fillStyle = color;
+        context.fillRect(2 + indent, top + Math.max(0, Math.floor(height / 2)), 1, 1);
+        context.globalAlpha = 1;
+        x = 5 + indent;
+      } else if (kind === KIND.code) {
+        x = 3;
+      }
+
+      if (x >= width) {
+        continue;
+      }
+      const glyphHeight = Math.max(1, Math.min(2, height - 1));
+      const topRow = top + Math.max(0, Math.floor((height - glyphHeight) / 2));
+      this.paintTextRun(
+        context,
+        text,
+        x,
+        topRow,
+        width - x,
+        charWidth,
+        glyphHeight,
+        color,
+        tabSize,
+      );
+    }
+    context.globalAlpha = 1;
+  }
+
+  private drawRenderedBlock(
+    context: CanvasRenderingContext2D,
+    block: MinimapBlock,
+    top: number,
+    bottom: number,
+    width: number,
+    palette: MinimapPalette,
+  ): void {
+    const height = Math.max(1, bottom - top);
+    const color = blockColor(block.kind, palette);
+    const innerLeft = 3;
+    const innerRight = Math.max(innerLeft + 1, width - 3);
+    const innerWidth = Math.max(1, innerRight - innerLeft);
+
+    context.save();
+    context.globalAlpha = 0.1;
+    context.fillStyle = color;
+    context.fillRect(0, top, width, height);
+    context.globalAlpha = 0.28;
+    context.strokeStyle = color;
+    context.lineWidth = 1;
+    context.strokeRect(0.5, top + 0.5, Math.max(1, width - 1), Math.max(1, height - 1));
+    context.globalAlpha = 1;
+
+    if (block.kind === "fence") {
+      if (/^mermaid\b/i.test(block.info)) {
+        const nodeWidth = Math.max(4, Math.min(14, Math.floor(innerWidth / 3)));
+        const nodeHeight = Math.max(2, Math.min(5, Math.floor(height / 4)));
+        const topRow = top + Math.max(2, Math.floor(height * 0.22));
+        const bottomRow = top + Math.max(2, Math.floor(height * 0.62));
+        context.globalAlpha = 0.55;
+        context.fillStyle = color;
+        context.fillRect(innerLeft, topRow, nodeWidth, nodeHeight);
+        context.fillRect(innerRight - nodeWidth, topRow, nodeWidth, nodeHeight);
+        context.fillRect(
+          innerLeft + Math.floor(innerWidth / 2) - Math.floor(nodeWidth / 2),
+          bottomRow,
+          nodeWidth,
+          nodeHeight,
+        );
+        context.globalAlpha = 0.35;
+        context.strokeStyle = color;
+        context.beginPath();
+        context.moveTo(innerLeft + nodeWidth, topRow + nodeHeight / 2);
+        context.lineTo(innerRight - nodeWidth, topRow + nodeHeight / 2);
+        context.stroke();
+        context.beginPath();
+        context.moveTo(innerLeft + nodeWidth / 2, topRow + nodeHeight);
+        context.lineTo(innerLeft + innerWidth / 2, bottomRow);
+        context.stroke();
+      } else {
+        if (height >= 10) {
+          context.globalAlpha = 0.35;
+          context.fillStyle = color;
+          for (let index = 0; index < 3; index += 1) {
+            context.fillRect(innerLeft + index * 3, top + 2, 1, 1);
+          }
+        }
+        context.globalAlpha = 0.25;
+        context.fillStyle = color;
+        context.fillRect(
+          1,
+          top + Math.max(4, Math.floor(height * 0.18)),
+          1,
+          Math.max(1, height - 6),
+        );
+      }
+    } else if (block.kind === "table") {
+      const rows = Math.max(1, Math.min(6, block.toLine - block.fromLine));
+      context.globalAlpha = 0.35;
+      context.strokeStyle = color;
+      for (let row = 1; row <= rows; row += 1) {
+        const y = top + (height * row) / (rows + 1);
+        context.beginPath();
+        context.moveTo(innerLeft, y);
+        context.lineTo(innerRight, y);
+        context.stroke();
+      }
+      for (let column = 1; column <= 2; column += 1) {
+        const x = innerLeft + (innerWidth * column) / 3;
+        context.beginPath();
+        context.moveTo(x, top + 2);
+        context.lineTo(x, bottom - 2);
+        context.stroke();
+      }
+    } else if (block.kind === "media") {
+      context.globalAlpha = 0.35;
+      context.strokeStyle = color;
+      context.strokeRect(innerLeft, top + 2, innerWidth, Math.max(1, height - 4));
+      const baseline = top + height * 0.65;
+      context.beginPath();
+      context.moveTo(innerLeft + 2, baseline);
+      context.lineTo(innerLeft + innerWidth * 0.35, top + height * 0.35);
+      context.lineTo(innerLeft + innerWidth * 0.6, baseline);
+      context.lineTo(innerLeft + innerWidth * 0.8, top + height * 0.5);
+      context.lineTo(innerRight - 2, baseline);
+      context.stroke();
+      context.beginPath();
+      context.arc(innerRight - 5, top + Math.max(3, height * 0.25), 1.5, 0, Math.PI * 2);
+      context.stroke();
+    } else if (block.kind === "math") {
+      const middle = top + height / 2;
+      context.globalAlpha = 0.5;
+      context.fillStyle = color;
+      context.fillRect(width * 0.3, middle - 2, width * 0.4, 1);
+      context.fillRect(width * 0.36, middle, width * 0.28, 1);
+      context.fillRect(width * 0.42, middle + 2, width * 0.16, 1);
+    } else if (block.kind === "frontmatter") {
+      const rows = Math.min(3, Math.max(1, Math.floor(height / 4)));
+      context.globalAlpha = 0.35;
+      context.fillStyle = color;
+      for (let row = 0; row < rows; row += 1) {
+        context.fillRect(innerLeft, top + 3 + row * 3, innerWidth * (0.8 - row * 0.12), 1);
+      }
+    } else if (block.kind === "html") {
+      context.globalAlpha = 0.35;
+      context.strokeStyle = color;
+      context.beginPath();
+      context.moveTo(innerLeft, top + 3);
+      context.lineTo(innerLeft + 3, top + 5);
+      context.lineTo(innerLeft, top + 7);
+      context.stroke();
+      context.globalAlpha = 0.25;
+      context.fillStyle = color;
+      context.fillRect(innerLeft + 5, top + 5, Math.max(1, innerWidth - 5), 1);
+    }
+    context.restore();
+  }
+
+  private paintTextRun(
+    context: CanvasRenderingContext2D,
+    text: string,
+    startX: number,
+    y: number,
+    maxWidth: number,
+    charWidth: number,
+    glyphHeight: number,
+    color: string,
+    tabSize: number,
+  ): void {
+    context.fillStyle = color;
+    let x = startX;
+    let column = 0;
+    const limit = startX + maxWidth;
+
+    for (const char of text) {
+      const code = char.codePointAt(0) ?? 0;
+      if (char === "\t") {
+        const next = (Math.floor(column / tabSize) + 1) * tabSize;
+        x += (next - column) * charWidth;
+        column = next;
+        continue;
+      }
+      if (char === " " || char === "\u00a0") {
+        x += charWidth;
+        column += 1;
+        continue;
+      }
+
+      const wide = isFullWidthChar(code);
+      const columns = wide ? 2 : 1;
+      if (x + columns * charWidth > limit) {
+        break;
+      }
+
+      if (wide) {
+        context.globalAlpha = 0.85;
+        context.fillRect(x, y, columns * charWidth, glyphHeight);
+      } else if (this.glyphs) {
+        const mask = this.glyphs.masks[code - 32];
+        const top = Math.min(0.95, (mask?.top ?? 0.25) * 2.4);
+        const bottom = Math.min(0.95, (mask?.bottom ?? 0.25) * 2.4);
+        if (glyphHeight <= 1) {
+          context.globalAlpha = Math.max(0.7, Math.max(top, bottom));
+          context.fillRect(x, y, charWidth, 1);
+        } else if (top <= 0.04 && bottom <= 0.04) {
+          context.globalAlpha = 0.7;
+          context.fillRect(x, y, charWidth, glyphHeight);
+        } else {
+          if (top > 0.04) {
+            context.globalAlpha = top;
+            context.fillRect(x, y, charWidth, 1);
+          }
+          if (bottom > 0.04) {
+            context.globalAlpha = bottom;
+            context.fillRect(x, y + glyphHeight - 1, charWidth, 1);
+          }
+        }
+      } else {
+        context.globalAlpha = 0.85;
+        context.fillRect(x, y, charWidth, glyphHeight);
+      }
+
+      x += columns * charWidth;
+      column += columns;
     }
     context.globalAlpha = 1;
   }
@@ -1233,6 +1725,18 @@ class MinimapController {
       this.window.paddingLines !== nextWindow.paddingLines ||
       this.window.lineCount !== nextWindow.lineCount;
     this.window = nextWindow;
+
+    const windowTopDoc = map.lineDocY[nextWindow.startLine] ?? 0;
+    const windowEndLine = Math.min(
+      nextWindow.startLine + nextWindow.lineCount,
+      this.view.state.doc.lines,
+    );
+    const windowBottomDoc =
+      windowEndLine >= this.view.state.doc.lines
+        ? docHeight
+        : (map.lineDocY[windowEndLine] ?? docHeight);
+    this.windowTopDoc = windowTopDoc;
+    this.windowBottomDoc = Math.max(windowTopDoc + 1, windowBottomDoc);
     return changed;
   }
 
@@ -1249,12 +1753,11 @@ class MinimapController {
       return;
     }
     const headLine = this.view.state.doc.lineAt(this.view.state.selection.main.head).number - 1;
-    const relativeLine = headLine - window.startLine + window.paddingLines;
-    if (relativeLine < 0 || relativeLine >= window.paddingLines + window.lineCount) {
+    const y = this.lineRailY(headLine);
+    if (y === null) {
       this.caret.style.display = "none";
       return;
     }
-    const y = geometry.trackTop + relativeLine * this.minimapLineHeight;
     this.caret.style.display = "block";
     this.caret.style.transform = `translateY(${y}px)`;
   }
