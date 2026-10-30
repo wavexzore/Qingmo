@@ -75,6 +75,10 @@ function renderPanel(state = outline(), cursorLine = 1, onClose = vi.fn()) {
   return { ...fake, ...result, onClose };
 }
 
+function panelProps(session: EditorSession, visible: boolean) {
+  return { session, cursorLine: 1, onClose: vi.fn(), visible };
+}
+
 describe("OutlinePanel", () => {
   it("renders entries, count and indentation", () => {
     const state = outline({
@@ -142,6 +146,26 @@ describe("OutlinePanel", () => {
     fireEvent.keyDown(screen.getByTestId("outline-panel"), { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(focusEditor).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks the closing panel inert and returns focus to the editor", () => {
+    const fake = createSession(outline());
+    const { rerender } = render(<OutlinePanel {...panelProps(fake.session, true)} />);
+    const panel = screen.getByTestId("outline-panel");
+    expect(panel).toHaveAttribute("data-outline-visible", "true");
+    expect(panel).not.toHaveAttribute("inert");
+
+    rerender(<OutlinePanel {...panelProps(fake.session, false)} />);
+    expect(panel).toHaveAttribute("data-outline-visible", "false");
+    expect(panel).toHaveAttribute("inert");
+    expect(panel).toHaveAttribute("aria-hidden", "true");
+    expect(fake.focusEditor).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not steal focus when it mounts collapsed for the opening transition", () => {
+    const fake = createSession(outline());
+    render(<OutlinePanel {...panelProps(fake.session, false)} />);
+    expect(fake.focusEditor).not.toHaveBeenCalled();
   });
 
   it("renders the complete empty state", () => {

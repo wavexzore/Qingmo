@@ -160,6 +160,10 @@ EditorSession.create / createUntitled / restoreDraft
      -> headingOutline 在 treeChanged 时重建
   -> [TOC] 占位符 / 标题锚点 / 侧栏都读取同一个 headingOutline
   -> EditorSession.subscribeOutline / getOutlineSnapshot
+  -> useOutlineOpen / outlineVisibilityStore
+     -> usePanelPresence(open)                      ← 挂载/可见分离
+        -> 打开：挂载 w-0，下一帧 w-60（200ms width/opacity）
+        -> 关闭：visible=false + inert，200ms 后卸载
   -> OutlinePanel（纯文本列表）
   -> 点击 -> EditorSession.revealPosition(lineFrom)
      -> view.dispatch({ selection })                 ← 光标立即落点
@@ -209,11 +213,12 @@ EditorSession.create / createUntitled / restoreDraft
 | Code | `packages/editor-core/src/createEditor.ts` | 基座注入字段与解析驱动 | done | 02 §3 |
 | Code | `packages/editor-core/src/index.ts` | 导出字段、读取函数和类型 | done | 02 §3 |
 | Code | `apps/desktop/src/features/editor/EditorSession.ts` | outline 订阅、快照、`revealPosition`/`focusEditor`、监听代际修复 | done | 02 §3 |
-| Code | `apps/desktop/src/features/editor/outline/OutlinePanel.tsx` | 新增侧栏组件 | done | 02 §3 |
+| Code | `apps/desktop/src/features/editor/outline/OutlinePanel.tsx` | 新增侧栏组件；`visible` 驱动 width/opacity 过渡、关闭期 `inert` | done | 02 §3/§14 |
+| Code | `apps/desktop/src/features/editor/outline/usePanelPresence.ts` | 新增挂载/可见分离 hook；200ms 关闭延迟与 reduced motion 分支 | done | 02 §14 |
 | Code | `apps/desktop/src/features/editor/outline/outlineVisibility.ts` | 新增会话内开关 store | done | 02 §3 |
 | Code | `apps/desktop/src/features/editor/outline/useOutline.ts` | 新增 `useSyncExternalStore` 绑定 | done | 02 §3 |
 | Code | `apps/desktop/src/features/editor/outline/active.ts` | 新增活动项二分、状态文案、面板内滚动 helper | done | 02 §3 |
-| Code | `apps/desktop/src/features/editor/EditorPage.tsx` | 左侧面板 + 编辑器 flex 布局 | done | 02 §3 |
+| Code | `apps/desktop/src/features/editor/EditorPage.tsx` | 左侧面板 + 编辑器 flex 布局；接入 `usePanelPresence` | done | 02 §3/§14 |
 | Code | `apps/desktop/src/features/workspace/WorkspaceLayout.tsx` | 注册 `view.toggleOutline`、处理菜单动作 | done | 02 §3 |
 | Code | `apps/desktop/src/lib/ipc/commands.ts` | 新增菜单动作镜像 | done | 02 §3 |
 | Code | `apps/desktop/src/i18n/native.ts`、`locales/*` | 新增 outline 文案与菜单标签 | done | 02 §3 |
@@ -223,7 +228,7 @@ EditorSession.create / createUntitled / restoreDraft
 | Test | `packages/editor-core/src/live-preview/heading-anchors.test.ts` | 补共享字段回归 | done | 02 §3 |
 | Test | `packages/editor-core/src/live-preview/corpus.test.ts` | 仅在 UT-012 需要时补 TOC/字段一致性断言 | done | 02 §3 |
 | Test | `apps/desktop/src/features/editor/editor-session.test.ts` | 补 outline/StrictMode/重载测试 | done | 02 §3 |
-| Test | `apps/desktop/src/features/editor/outline/*.test.tsx` | 新增面板/开关/活动项测试 | done | 02 §3 |
+| Test | `apps/desktop/src/features/editor/outline/*.test.tsx` | 新增面板/开关/活动项/关闭动画测试 | done | 02 §3/§14 |
 | Test | `apps/desktop/src/features/workspace/menu-actions.test.tsx` | 补菜单动作开关 | done | 02 §3 |
 | Test | `apps/desktop/src/features/workspace/open-flow.test.tsx` | 命令面板 6 项改为 7 项 | done | 02 §3 |
 | Test | `apps/desktop/src/lib/ipc/contract.test.ts` | `MENU_ACTION_NAMES` 精确数组加入 `view.toggleOutline` | done | 02 §3 |
@@ -308,6 +313,8 @@ export interface HeadingOutlineState {
 | `EditorSession.subscribeOutline(listener): () => void` | 新增方法 | 非破坏性 | 单测 |
 | `EditorSession.revealPosition(position: number): boolean` | 新增方法 | 非破坏性 | 单测/E2E；selection 立即落点，视口缓动，reduced motion 瞬时 |
 | `EditorSession.focusEditor(): boolean` | 新增方法 | 非破坏性 | 面板关闭回焦 |
+| `OutlinePanel` 的 `visible?: boolean` prop | 新增可选 prop（默认 `true`） | 非破坏性 | 关闭动画期间置 `false`，面板保持挂载但 `inert`/`aria-hidden` |
+| `usePanelPresence(open): { mounted, visible }` | 新增内部 hook | 非破坏性 | hook UT；E2E-018 |
 | `readDetailsRanges(state): readonly DetailsRange[]` | 内部函数（`editor-core` 内部/测试，不新增公共 API） | 非破坏性 | `details`/`outline` 单测 |
 | `view.toggleOutline` 命令 | 新增 | 非破坏性 | 命令/菜单测试 |
 | `view.toggleOutline` 菜单动作 | 新增 | 非破坏性 | Rust/TS 契约测试 |
@@ -333,6 +340,7 @@ export interface HeadingOutlineState {
 | AC-012 | zh-CN/en 文案完整；菜单多处契约一致；生成绑定最新；主题/语言切换正确 | T-005 | C-004/C-010；`native.test.ts`；E2E-014 | pass |
 | AC-013 | 零持久化配置/DB/新 IPC 命令 | T-009 | `git diff --stat` + 审查 | pass |
 | AC-014 | 回滚可执行：关闭面板/移除命令后编辑器回归 | T-009 | 回滚演练 C-007 | pass |
+| AC-015 | 打开/关闭有 200ms width/opacity 过渡；关闭期间 `inert` 且焦点回编辑器；reduced motion 瞬时；`EditorHost` 不重挂载 | T-006/T-007 | E2E-018；hook/面板 UT | pass |
 
 ---
 
@@ -440,6 +448,8 @@ pnpm test:e2e
 | 2026-10-30T23:59:00+08:00 | R6 独立复审；修复 forceParsing 空事务、面板接线、footer/空态、details 200k、验收映射 | OpenCode / DeepSeek V4.1 | `05-多轮评审记录.md §8` |
 | 2026-10-30T16:40:00+08:00 | 用户确认 Q-001~Q-007 全部采纳 A；方案冻结，可启动 T-001 | 用户 / OpenCode | 本文档 §12；`01 §12`；`04 §22` |
 | 2026-10-30T18:00:00+08:00 | 完成 T-001~T-009；647 UT + 135 E2E；性能/回滚通过 | OpenCode / DeepSeek V4.1 | `02 §3~§9` |
+| 2026-10-30T21:00:00+08:00 | 交付后增强：`172e783` 大纲跳转缓动 + `coordsAtPos` 收尾 | OpenCode / DeepSeek V4.1 | `02 §13`；`05 §11` |
+| 2026-10-30T22:00:00+08:00 | 交付后增强：面板打开/关闭 200ms 过渡 + `usePanelPresence` + E2E-018 | OpenCode / DeepSeek V4.1 | `02 §14`；`05 §12` |
 
 ---
 

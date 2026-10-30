@@ -196,6 +196,8 @@ const end = await page.evaluate(() => performance.now());
 | UT-032 | 1200 条 | 面板 500；字段/锚点 1200 |
 | UT-033 | toggle 稳定性 | `session.attachedView` 引用不变；EditorHost 不重挂 |
 | UT-034 | 锚点前缀边界 | >200k 的 205k 标题、>5000 的第 5001 条不生成锚点 |
+| UT-035 | presence | 打开先 `mounted/visible=false`、下一帧 true；关闭 200ms 后卸载；reopen 取消 timer；reduced motion 立即 |
+| UT-036 | 关闭期面板 | `visible=false` → `inert`/`aria-hidden`；`focusEditor`；初始折叠不抢焦点 |
 
 ### 4.3 E2E
 
@@ -218,6 +220,7 @@ const end = await page.evaluate(() => performance.now());
 | E2E-015 | 打开延迟 | p95 ≤300ms（perf） |
 | E2E-016 | 输入长任务 | 0 个 >50ms（perf） |
 | E2E-017 | 1200 条输入 / 500 条面板 | ≤2500 节点；第 501 条锚点可用 |
+| E2E-018 | 打开/关闭动画 | 中间宽度 >1 且 <239；关闭后 `null`；`.cm-editor` 不重挂 |
 
 ---
 
