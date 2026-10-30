@@ -1,6 +1,6 @@
 {
   "name": "qingmo",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Qingmo — local-first Markdown editor",
   "license": "Apache-2.0",

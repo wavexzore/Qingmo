@@ -2,6 +2,32 @@
   "releaseNotesUrl": "https://github.com/wavexzore/Qingmo/releases/tag/v",
   "versions": [
     {
+      "version": "0.1.3",
+      "date": "2026-10-30",
+      "notes": {
+        "zh-CN": [
+          "新增编辑器左侧大纲面板：按标题层级导航，支持点击与键盘跳转，当前标题跟随光标。",
+          "大纲跳转加入平滑滚动，面板打开/关闭带 200ms 过渡，并尊重系统「减少动态效果」设置。",
+          "新增 VS Code 风格 1:1 文本缩略图（minimap）：滚动时显示、可快速定位长文档，并取代原生纵向滚动条。",
+          "重设计查找替换面板：输入、选项与结果操作更清晰，长文档内定位更顺手。",
+          "表格编辑增强：单元格内 Shift+Enter 换行、长 URL 自动换行，聚焦单元格中的链接可直接点击。",
+          "链接悬停增加可点击反馈。",
+          "修复块级组件间距区域的点击落点、块级组件后方正文行号偏移、输入围栏吞并下方代码块等问题。",
+          "本版本提供 macOS universal DMG 与 Windows NSIS 安装包；Windows 安装器仍未做 Authenticode 签名，SmartScreen 可能提示。"
+        ],
+        "en-US": [
+          "Added the editor outline panel: navigate headings by level, jump with the mouse or keyboard, and keep the active heading in sync with the cursor.",
+          "Outline jumps now scroll smoothly, and the panel opens/closes with a 200ms transition that respects the system reduced-motion setting.",
+          "Added a VS Code-style 1:1 text minimap: it appears while scrolling, helps locate content in long documents, and replaces the native vertical scrollbar.",
+          "Redesigned the find/replace panel with clearer inputs, options and result actions for navigating long documents.",
+          "Improved table editing: Shift+Enter inserts a line break inside a cell, long URLs wrap, and links in the focused cell are directly clickable.",
+          "Added clickable hover feedback for links.",
+          "Fixed click targets around block widgets, cursor line offsets after block widgets, and a fenced-code input bug that swallowed the following block.",
+          "This release ships a macOS universal DMG and a Windows NSIS installer; the Windows installer is still not Authenticode-signed, so SmartScreen may warn."
+        ]
+      }
+    },
+    {
       "version": "0.1.2",
       "date": "2026-10-28",
       "notes": {
