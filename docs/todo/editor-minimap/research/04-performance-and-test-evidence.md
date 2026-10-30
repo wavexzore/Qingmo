@@ -247,22 +247,23 @@ E2E 必须断言：
 
 | ID | 场景 | 断言 |
 |---|---|---|
-| E2E-001 | 打开 `long.md` | `.qm-minimap` 可见（visibility:visible）；canvas backing store 宽高 ≈ CSS 尺寸 × DPR；`data-minimap-state="on"`；默认 Live Preview 下 `data-minimap-render="rendered"`；`.cm-editor` paddingRight=88 |
-| E2E-002 | 打开 `note.md` | rail `getComputedStyle(display)==="none"`、`data-minimap-state="off"`；`.cm-editor` paddingRight 为空；content padding = 20 |
+| E2E-001 | 打开 `long.md` | `.qm-minimap` 可见（visibility:visible）；canvas backing store 宽高 ≈ CSS 尺寸 × DPR；`data-minimap-state="on"`；默认 Live Preview 下 `data-minimap-render="rendered"`；`.cm-editor` paddingRight=88；`.cm-scroller[data-minimap-scrollbar="hidden"]` |
+| E2E-002 | 打开 `note.md` | rail `getComputedStyle(display)==="none"`、`data-minimap-state="off"`；`.cm-editor` paddingRight 为空；content padding = 20；无 `data-minimap-scrollbar`，原生 `scrollbar-width` 不变 |
 | E2E-003 | 200 行唯一文本 seed 点击 track 25%/50%/75% | 期望行进入视口 ±2 行；`scrollTop` 单调、在 `[0,maxScroll]` |
 | E2E-004 | 拖拽滑块到顶/底 | `scrollTop` 单调；顶部 slider top=trackTop；底部 slider bottom=trackBottom（±1px） |
 | E2E-005 | 滚轮悬停 rail | `scrollTop` 变化；页面不滚动 |
 | E2E-006 | 切换主题 | Canvas 至少 4 种颜色；light/dark 调色板不同；`.cm-editor` 仍是同一个 DOM 节点 |
-| E2E-007 | Source ↔ Live Preview | rail 保留；点击仍可跳转；paddingRight 仍为 88；无 console error |
-| E2E-008 | 窗口 resize 1200→800→600→1200 | 长文档：`.cm-editor` border-box 宽=viewport、paddingRight=88、content 左右 20、rail.left ≥ scroller.right、页面无横向溢出；600 时隐藏；focus/theme/mode/reload 后重复 |
+| E2E-007 | Source ↔ Live Preview | rail 保留；点击仍可跳转；paddingRight 仍为 88；滚动条替换属性保留；无 console error |
+| E2E-008 | 窗口 resize 1200→800→600→1200 | 长文档：`.cm-editor` border-box 宽=viewport、paddingRight=88、content 左右 20、rail.left ≥ scroller.right、页面无横向溢出、滚动条隐藏；600 时隐藏且恢复原生滚动条；focus/theme/mode/reload 后重复 |
 | E2E-009 | 大 widget 文档（table/Mermaid/fence/image） | 点击前/中/后：`scrollTop` 单调且不越界；中点点后 widget 卡片可见；不冻结/跳回顶部 |
 | E2E-010 | `replacePayload`/外部重载 | rail 仍为 1；`state=on`；滑块不越界 |
 | E2E-011 | 100,001 行短行 seed | rail `display:none`、padding 为空（单独 timeout/project） |
-| E2E-012 | 可访问性 | rail `aria-hidden=true`、无 tabindex；Tab 顺序不包含 rail；原生滚动键仍工作 |
+| E2E-012 | 可访问性 | rail `aria-hidden=true`、无 tabindex；Tab 顺序不包含 rail；原生滚动键仍工作，且运行时滚动条已隐藏 |
 | E2E-013 | 结构颜色 | Canvas 非透明像素中至少 4 种不同 RGB；light/dark 调色板不同 |
 | E2E-014 | 已知标题点击（按标题行比例定位 rail） | 标题进入视口；标题中心与 scroller 中心偏差 ≤ 10px；`scrollTop` 在 `[0,maxScroll]` |
 | E2E-015 | 短行 + 长行 + 90 行正文 seed，切到 Source | `data-minimap-render="text"`；行高 ≥2px；长行最右 ink 比短行大 >20px，证明按真实字符数推进 |
 | E2E-016 | 含标题/代码/表格/链接的 90+ 行 seed | 默认 `rendered`；切 Source 后 `text`；两次 Canvas 哈希不同 |
+| E2E-017 | 260 行 seed | `data-minimap-scrollbar="hidden"`；`scrollbar-width=none`；`::-webkit-scrollbar` 宽/高 0px；`overflow-y:auto` 与 `scrollHeight>clientHeight` 不变；滚轮移动 scrollTop 且 slider transform 变化；切 Live Preview 仍隐藏 |
 
 ### 5.3 Canvas 像素断言
 

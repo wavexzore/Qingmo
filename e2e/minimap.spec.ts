@@ -201,12 +201,18 @@ test("E2E-002 short documents keep the existing layout untouched", async ({ page
       contentInset: Number.parseFloat(
         getComputedStyle(document.querySelector(".cm-content")!).paddingLeft,
       ),
+      scrollbarReplaced: document
+        .querySelector(".cm-scroller")!
+        .hasAttribute("data-minimap-scrollbar"),
+      scrollbarWidth: getComputedStyle(document.querySelector(".cm-scroller")!).scrollbarWidth,
     };
   });
   expect(result.state).toBe("off");
   expect(result.display).toBe("none");
   expect(result.paddingRight).toBe("");
   expect(result.contentInset).toBe(20);
+  expect(result.scrollbarReplaced).toBe(false);
+  expect(result.scrollbarWidth).not.toBe("none");
 });
 
 test("E2E-003 clicking the track navigates monotonically", async ({ page }) => {
@@ -319,6 +325,9 @@ test("E2E-007 source and live preview both keep a working rail", async ({ page }
       .evaluate((element) => element.style.paddingRight),
   ).toBe("88px");
   expect(await rail(page).getAttribute("data-minimap-render")).toBe("text");
+  expect(await page.locator(".cm-scroller").first().getAttribute("data-minimap-scrollbar")).toBe(
+    "hidden",
+  );
 
   const box = await rail(page).boundingBox();
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height * 0.5);
@@ -333,6 +342,9 @@ test("E2E-007 source and live preview both keep a working rail", async ({ page }
       .evaluate((element) => element.style.paddingRight),
   ).toBe("88px");
   expect(await rail(page).getAttribute("data-minimap-render")).toBe("rendered");
+  expect(await page.locator(".cm-scroller").first().getAttribute("data-minimap-scrollbar")).toBe(
+    "hidden",
+  );
 });
 
 test("E2E-008 resize adds and removes the reserve without overflow", async ({ page }) => {
@@ -350,6 +362,10 @@ test("E2E-008 resize adds and removes the reserve without overflow", async ({ pa
         scrollerRight: document.querySelector(".cm-scroller")!.getBoundingClientRect().right,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         state: rail.dataset.minimapState,
+        scrollbarReplaced: document
+          .querySelector(".cm-scroller")!
+          .hasAttribute("data-minimap-scrollbar"),
+        scrollbarWidth: getComputedStyle(document.querySelector(".cm-scroller")!).scrollbarWidth,
       };
     });
 
@@ -360,18 +376,24 @@ test("E2E-008 resize adds and removes the reserve without overflow", async ({ pa
   expect(wide.paddingRight).toBe("88px");
   expect(wide.railLeft).toBeGreaterThanOrEqual(wide.scrollerRight - 1);
   expect(wide.overflow).toBeLessThanOrEqual(1);
+  expect(wide.scrollbarReplaced).toBe(true);
+  expect(wide.scrollbarWidth).toBe("none");
 
   await page.setViewportSize({ width: 600, height: 720 });
   await expect(rail(page)).toHaveAttribute("data-minimap-state", "off");
   const narrow = await measure();
   expect(narrow.paddingRight).toBe("");
   expect(narrow.overflow).toBeLessThanOrEqual(1);
+  expect(narrow.scrollbarReplaced).toBe(false);
+  expect(narrow.scrollbarWidth).not.toBe("none");
 
   await page.setViewportSize({ width: 1200, height: 720 });
   await waitOn(page);
   const restored = await measure();
   expect(restored.paddingRight).toBe("88px");
   expect(restored.overflow).toBeLessThanOrEqual(1);
+  expect(restored.scrollbarReplaced).toBe(true);
+  expect(restored.scrollbarWidth).toBe("none");
 });
 
 test("E2E-009 navigation stays stable across a large table widget", async ({ page }) => {
@@ -437,6 +459,9 @@ test("E2E-012 the rail is decorative and native keyboard scrolling still works",
   expect(attributes.ariaHidden).toBe("true");
   expect(attributes.tabindex).toBeNull();
   expect(attributes.tabIndex).toBe(-1);
+  expect(await page.locator(".cm-scroller").first().getAttribute("data-minimap-scrollbar")).toBe(
+    "hidden",
+  );
 
   await editorContent(page).click();
   const before = await scrollTop(page);
@@ -512,4 +537,58 @@ test("E2E-016 live preview draws rendered blocks while source keeps raw text", a
   expect(await rail(page).getAttribute("data-minimap-render")).toBe("text");
   const source = await canvasHash(page);
   expect(source).not.toBe(rendered);
+});
+
+test("E2E-017 the rail replaces the native vertical scrollbar", async ({ page }) => {
+  await openFile(page, "scrollbar.md", numberedDocument(260));
+  await waitOn(page);
+
+  const metrics = () =>
+    page
+      .locator(".cm-scroller")
+      .first()
+      .evaluate((element) => {
+        const pseudo = getComputedStyle(element, "::-webkit-scrollbar");
+        const rail = document.querySelector<HTMLElement>(".cm-editor > .qm-minimap")!;
+        return {
+          attr: element.getAttribute("data-minimap-scrollbar"),
+          scrollbarWidth: getComputedStyle(element).scrollbarWidth,
+          pseudoWidth: pseudo.width,
+          overflowY: getComputedStyle(element).overflowY,
+          scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
+          scrollerRight: element.getBoundingClientRect().right,
+          railLeft: rail.getBoundingClientRect().left,
+        };
+      });
+
+  const hidden = await metrics();
+  expect(hidden.attr).toBe("hidden");
+  expect(hidden.scrollbarWidth).toBe("none");
+  expect(hidden.pseudoWidth).toBe("0px");
+  // `overflow: auto` must stay: the scroller is still the single scroll source.
+  expect(hidden.overflowY).toBe("auto");
+  expect(hidden.scrollHeight).toBeGreaterThan(hidden.clientHeight);
+  expect(hidden.railLeft).toBeGreaterThanOrEqual(hidden.scrollerRight);
+
+  const box = await rail(page).boundingBox();
+  expect(box).not.toBeNull();
+  const sliderBefore = await page
+    .locator(".cm-editor > .qm-minimap > .qm-minimap-slider")
+    .first()
+    .evaluate((element) => element.style.transform);
+  const beforeWheel = await scrollTop(page);
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => scrollTop(page)).toBeGreaterThan(beforeWheel);
+  expect(
+    await page
+      .locator(".cm-editor > .qm-minimap > .qm-minimap-slider")
+      .first()
+      .evaluate((element) => element.style.transform),
+  ).not.toBe(sliderBefore);
+
+  await emitMenuAction(page, "view.toggleLivePreview");
+  await waitOn(page);
+  expect((await metrics()).attr).toBe("hidden");
 });
