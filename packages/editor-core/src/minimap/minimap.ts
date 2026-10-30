@@ -69,6 +69,16 @@ const minimapOptions = Facet.define<MinimapOptions, MinimapOptions>({
 });
 
 const minimapTheme = EditorView.theme({
+  // Once the rail is visible it owns vertical navigation, so the native
+  // scrollbar is redundant. Keep the scroller itself untouched: it stays the
+  // single scroll source for ViewStateRecorder, the wheel and the keyboard.
+  '& > .cm-scroller[data-minimap-scrollbar="hidden"]': {
+    scrollbarWidth: "none",
+  },
+  '& > .cm-scroller[data-minimap-scrollbar="hidden"]::-webkit-scrollbar': {
+    width: "0",
+    height: "0",
+  },
   "& > .qm-minimap": {
     position: "absolute",
     zIndex: "10",
@@ -579,6 +589,7 @@ class MinimapController {
     this.rail.remove();
     this.view.dom.style.paddingRight = this.originalPaddingRight;
     this.view.dom.style.removeProperty("--qm-minimap-width");
+    this.setScrollbarReplaced(false);
   }
 
   private clearTimers(): void {
@@ -942,6 +953,7 @@ class MinimapController {
     this.rail.style.visibility = this.hasFrame ? "visible" : "hidden";
     this.view.dom.style.paddingRight = `${this.reserve}px`;
     this.view.dom.style.setProperty("--qm-minimap-width", `${this.options.railWidth}px`);
+    this.setScrollbarReplaced(true);
     this.setState("pending");
   }
 
@@ -949,6 +961,7 @@ class MinimapController {
     this.rail.style.display = "block";
     this.rail.style.visibility = "visible";
     this.view.dom.style.paddingRight = `${this.reserve}px`;
+    this.setScrollbarReplaced(true);
     this.setState(state);
   }
 
@@ -965,6 +978,7 @@ class MinimapController {
     this.rail.style.visibility = "hidden";
     this.view.dom.style.paddingRight = this.originalPaddingRight;
     this.view.dom.style.removeProperty("--qm-minimap-width");
+    this.setScrollbarReplaced(false);
     this.setState("off");
   }
 
@@ -981,7 +995,21 @@ class MinimapController {
     this.rail.style.visibility = "hidden";
     this.view.dom.style.paddingRight = this.originalPaddingRight;
     this.view.dom.style.removeProperty("--qm-minimap-width");
+    this.setScrollbarReplaced(false);
     this.setState("unsupported");
+  }
+
+  /**
+   * Hides the native vertical scrollbar while the rail is on screen. The
+   * scroller keeps `overflow: auto`, so wheel, keyboard and ViewStateRecorder
+   * continue to use the same element; only the native thumb disappears.
+   */
+  private setScrollbarReplaced(replaced: boolean): void {
+    if (replaced) {
+      this.view.scrollDOM.dataset.minimapScrollbar = "hidden";
+    } else {
+      delete this.view.scrollDOM.dataset.minimapScrollbar;
+    }
   }
 
   private draw(): boolean {

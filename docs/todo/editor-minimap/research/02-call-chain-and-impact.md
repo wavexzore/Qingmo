@@ -166,6 +166,11 @@ EditorState.doc (Text)
 ### 3.2 滚动 → 滑块
 
 ```text
+rail 显示/隐藏
+  -> scrollDOM.dataset.minimapScrollbar = "hidden" / delete
+  -> CSS: scrollbar-width:none + ::-webkit-scrollbar 0px
+  -> scrollDOM 的 overflow/scrollTop 不变
+
 scrollDOM "scroll" (passive)
   -> requestAnimationFrame
   -> docY = clamp(scrollTop - documentPadding.top, 0, docHeight)

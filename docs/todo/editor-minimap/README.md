@@ -27,7 +27,7 @@ verification_status: "pass"  # not_run | pass | fail | partial | skipped
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "pnpm test:e2e -> 119 passed, 1 skipped; C-011 cpu p95=10.80ms"
+last_verification_command: "pnpm test:e2e -> 120 passed, 1 skipped; C-011 cpu p95=10.80ms"
 last_updated: "2026-10-30T22:30:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
@@ -69,7 +69,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 ## 1. 一句话结论
 
-`editor-minimap` 已 `done`：T-001~T-007、T-009 完成，T-008 因 Q-002=B 保持 `skipped`。实现采用“模式感知 Canvas 缩略图（源码模式 1:1 文本，实时预览按渲染块与真实文档高度绘制）+ 视口窗口 + 文档纵轴滑块 + 内容区让位”，零新增持久化配置/DB/Rust。100k 行真实 Chromium 完整 rebuild CPU p95 `10.80ms`（≤16ms）；全量 Vitest `594 passed`，minimap E2E `16 passed`，全量 E2E `119 passed / 1 skipped`（skip 为 C-011 默认关闭）。
+`editor-minimap` 已 `done`：T-001~T-007、T-009 完成，T-008 因 Q-002=B 保持 `skipped`。实现采用“模式感知 Canvas 缩略图（源码模式 1:1 文本，实时预览按渲染块与真实文档高度绘制）+ 视口窗口 + 文档纵轴滑块（rail 可见时取代原生纵向滚动条）+ 内容区让位”，零新增持久化配置/DB/Rust。100k 行真实 Chromium 完整 rebuild CPU p95 `10.80ms`（≤16ms）；全量 Vitest `594 passed`，minimap E2E `17 passed`，全量 E2E `120 passed / 1 skipped`（skip 为 C-011 默认关闭）。
 
 ---
 
@@ -80,7 +80,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | R-ID | 目标 | 验收方式 | 状态 |
 |---|---|---|---|
 | R-001 | 长文档右侧显示与当前模式一致的缩略图 | E2E-001：212 行 fixture 可见、Canvas 非空且为 `rendered`；E2E-002：6 行 fixture 不可见；E2E-016：模式切换后重绘 | pass |
-| R-002 | 点击/拖拽/滚轮导航，位置与内容对齐 | E2E-003/004/005：scrollTop 落点、单调拖拽、滚轮 | pass |
+| R-002 | 点击/拖拽/滚轮导航，位置与内容对齐；rail 显示时原生纵向滚动条由滑块取代 | E2E-003/004/005/017：scrollTop 落点、单调拖拽、滚轮、滚动条隐藏 | pass |
 | R-003 | 不破坏现有单一真源 | 代码审查 + UT-016 + 现有 view-state E2E；无新增 IPC/持久化 | pass |
 | R-004 | 大文档降级与性能预算 | BENCH-001~004；C-011 实测 100k CPU p95 10.80ms；保留 100k 上限 | pass |
 | R-005 | 主题/布局/可访问性与现有约定一致 | E2E-006/008/012；Canvas 像素采样；无横向溢出 | pass |
@@ -148,6 +148,8 @@ EditorSession.create / createUntitled / restoreDraft
 | Live Preview | `rendered` | 去掉 Markdown 行内/块级标记；标题带、正文、代码卡、表格网格、引用、列表、图片占位、公式块按真实 `lineDocY` 比例绘制 |
 | Canvas 文本绘制异常 | `blocks` | 原有结构条带降级 |
 
+当 rail 进入 `pending`/`on`/`degraded` 时，插件在 `view.scrollDOM` 上写 `data-minimap-scrollbar="hidden"`，主题用 `scrollbar-width: none` + `::-webkit-scrollbar { width: 0; height: 0 }` 隐藏原生纵向滚动条；`overflow: auto` 保持不变，滚轮、键盘、拖拽和 `ViewStateRecorder` 仍使用同一个 `scrollDOM`。短文档、超限文档和 `unsupported` 状态不写该属性，保留系统原生滚动条。
+
 ---
 
 ## 4. 当前实施状态总览
@@ -159,7 +161,7 @@ EditorSession.create / createUntitled / restoreDraft
 | T-003 | 纯函数模型与锚点映射 | done | T-002 | C-001 + bench | — |
 | T-004 | 主题、Canvas、ViewPlugin | done | T-003 | C-001/C-004 | — |
 | T-005 | `EditorSession` 集成 | done | T-004 | C-003 105 tests | — |
-| T-006 | E2E 交互/布局/主题/降级/模式 | done | T-005 | C-006 16 + C-007 46 | — |
+| T-006 | E2E 交互/布局/主题/降级/模式/滚动条 | done | T-005 | C-006 17 + C-007 46 | — |
 | T-007 | 性能与可访问性校准 | done | T-006 | C-008 + C-011 p95 10.80ms | — |
 | T-008 | 会话内切换命令（Q-002=B，不实施） | skipped | —（Q-002=B 不启动） | none | Q-002=B 已确认，保持 `skipped`；仅未来产品重新评审 Q-002 并改 A 时恢复 |
 | T-009 | 全量验证与收尾 | done | T-007（T-008 skipped） | C-009/C-010；VERDICT PASS | — |
@@ -284,6 +286,7 @@ interface AnchorSample {
 | AC-010 | 可访问性 | T-004/T-007 | E2E-012 | pass |
 | AC-011 | 零配置/DB/Rust | T-009 | `git diff --stat` + 审查 | pass |
 | AC-012 | 回滚可执行 | T-009 | 移除扩展注入后回归 | pass |
+| AC-013 | rail 可见时原生纵向滚动条隐藏，scrollDOM 滚动能力保留 | T-004/T-006 | E2E-017（`scrollbar-width:none` + `::-webkit-scrollbar` 0px；滚轮/滑块仍生效） | pass |
 
 ---
 
@@ -324,14 +327,14 @@ pnpm test:e2e
 | C-003 | `pnpm vitest run apps/desktop/src/features/editor` | T-005 后 | PASS |
 | C-004 | `pnpm typecheck` | 每任务后 | PASS |
 | C-005 | `pnpm lint` | T-009 | PASS |
-| C-006 | `pnpm exec playwright test e2e/minimap.spec.ts` | T-006 | PASS（16 tests） |
+| C-006 | `pnpm exec playwright test e2e/minimap.spec.ts` | T-006 | PASS（17 tests） |
 | C-007 | `pnpm exec playwright test e2e/open-edit-save.spec.ts e2e/view-state.spec.ts e2e/markdown-syntax.spec.ts e2e/palette-theme.spec.ts` | T-006 | PASS |
 | C-008 | `pnpm typecheck:bench && pnpm exec vitest run --config vitest.bench.config.ts bench/minimap.bench.ts` | T-007 | 纯函数 p50/p95 |
 | C-009 | `pnpm ci:web` | T-009 | PASS |
 | C-010 | `pnpm test:e2e` | T-009 | PASS |
 | C-011 | `MINIMAP_PERF=1 pnpm exec playwright test e2e/minimap-perf.spec.ts` | T-007 | 真实 Chromium 100k rebuild CPU p50/p95；T-009 PASS 条件 |
 
-> 2026-10-30 全部命令已运行：C-001 25、C-002 43、C-003 105、C-006 16、C-007 46、C-011 1（CPU p95 10.80ms）；C-009/C-010 见 `02` §3。C-011 默认 skip，只有设置 `MINIMAP_PERF=1` 才执行。
+> 2026-10-30 全部命令已运行：C-001 25、C-002 43、C-003 105、C-006 17、C-007 46、C-011 1（CPU p95 10.80ms）；C-009/C-010 见 `02` §3。C-011 默认 skip，只有设置 `MINIMAP_PERF=1` 才执行。
 
 ---
 

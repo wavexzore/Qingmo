@@ -92,6 +92,7 @@ describe("minimap ViewPlugin", () => {
     expect(rail?.style.display).toBe("block");
     expect(rail?.style.visibility).toBe("visible");
     expect(view.dom.style.paddingRight).toBe("88px");
+    expect(view.scrollDOM.dataset.minimapScrollbar).toBe("hidden");
     expect(canvas?.width).toBeGreaterThan(1);
     expect(canvas?.height).toBeGreaterThan(1);
     expect(context.fillRect).toHaveBeenCalled();
@@ -102,6 +103,7 @@ describe("minimap ViewPlugin", () => {
     cleanup = undefined;
     expect(parent.querySelector(".qm-minimap")).toBeNull();
     expect(view.dom.style.paddingRight).toBe("");
+    expect(view.scrollDOM.dataset.minimapScrollbar).toBeUndefined();
     parent.remove();
   });
 
@@ -123,6 +125,7 @@ describe("minimap ViewPlugin", () => {
     expect(rail?.getAttribute("data-minimap-state")).toBe("off");
     expect(rail?.style.display).toBe("none");
     expect(view.dom.style.paddingRight).toBe("");
+    expect(view.scrollDOM.hasAttribute("data-minimap-scrollbar")).toBe(false);
     expect(context.fillRect).not.toHaveBeenCalled();
   });
 
@@ -144,6 +147,7 @@ describe("minimap ViewPlugin", () => {
     expect(rail?.getAttribute("data-minimap-state")).toBe("unsupported");
     expect(rail?.style.display).toBe("none");
     expect(view.dom.style.paddingRight).toBe("");
+    expect(view.scrollDOM.hasAttribute("data-minimap-scrollbar")).toBe(false);
   });
 
   it("hides oversized documents before scanning or drawing", async () => {
