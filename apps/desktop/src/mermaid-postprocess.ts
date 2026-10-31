@@ -664,6 +664,34 @@ function routeBackEdges(
   return { routed, boxes: routedBoxes };
 }
 
+/** Mermaid's fixed default for `actor-line`; long diagrams outgrow it. */
+const SEQUENCE_LIFELINE_DEFAULT_BOTTOM = 2000;
+
+/**
+ * Mermaid draws every actor lifeline down to a hard-coded y=2000 and only
+ * shortens it for destroyed actors. With `mirrorActors: false` nothing ever
+ * corrects that default, so every message past y=2000 floats without its
+ * lifelines. Extend untouched default lines to the content bottom while
+ * leaving intentionally shortened (destroyed participant) lines alone.
+ */
+export function extendSequenceLifelines(root: SVGSVGElement, contentBottom: number): number {
+  if (!Number.isFinite(contentBottom)) {
+    return 0;
+  }
+  let extended = 0;
+  for (const line of root.querySelectorAll<SVGLineElement>(
+    'line.actor-line[data-et="life-line"]',
+  )) {
+    const end = Number(line.getAttribute("y2"));
+    if (end !== SEQUENCE_LIFELINE_DEFAULT_BOTTOM || contentBottom <= end) {
+      continue;
+    }
+    line.setAttribute("y2", contentBottom.toFixed(2));
+    extended += 1;
+  }
+  return extended;
+}
+
 function recolorSankey(root: SVGSVGElement, palette: MermaidPalette): void {
   const colors = palette.accents;
   if (colors.length === 0) {
@@ -799,11 +827,17 @@ export function postProcessMermaidSvg(
     if (kind === "treemap") {
       recolorTreemap(root, palette);
     }
+    let extendedLifelines = 0;
+    if (kind === "sequence") {
+      const content = root.getBBox();
+      extendedLifelines = extendSequenceLifelines(root, content.y + content.height);
+    }
     const { routed, boxes } = routeBackEdges(root, kind);
     const mergedArrowheads = kind === "state" ? mergeOverlappingArrowheads(root) : 0;
     applyViewBox(root, kind, boxes);
     root.setAttribute("data-routed-back-edges", String(routed));
     root.setAttribute("data-merged-arrowheads", String(mergedArrowheads));
+    root.setAttribute("data-extended-lifelines", String(extendedLifelines));
     return new XMLSerializer().serializeToString(root);
   } finally {
     host.remove();

@@ -83,6 +83,22 @@ stateDiagram-v2
 结尾段落
 `;
 
+const LONG_SEQUENCE_DOC = `# 长时序图
+
+\`\`\`mermaid
+sequenceDiagram
+  participant A as 客户端
+  participant B as 网关
+  participant C as 服务端
+${Array.from(
+  { length: 55 },
+  (_, index) => `  A->>B: 第 ${index + 1} 次请求\n  B->>C: 转发第 ${index + 1} 次请求`,
+).join("\n")}
+\`\`\`
+
+结尾段落
+`;
+
 test("card chrome exposes the kind, hover tools and working zoom", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await openApp(page, [{ path: "/docs/mermaid-card.md", text: FLOW_DOC }]);
@@ -435,4 +451,21 @@ test("oversized diagrams keep a readable width and only scroll horizontally", as
   }));
   expect(tallMetrics.scroll).toBeLessThanOrEqual(tallMetrics.client + 1);
   expect((await tall.boundingBox())?.height ?? 0).toBeGreaterThan(700);
+});
+
+test("extends long sequence lifelines past Mermaid's fixed height", async ({ page }) => {
+  await openApp(page, [{ path: "/docs/long-sequence.md", text: LONG_SEQUENCE_DOC }]);
+  await openSeededFile(page, "long-sequence.md");
+
+  const card = page.locator(".cm-md-mermaid").first();
+  await expect(card).toHaveAttribute("data-mermaid-kind", "sequence");
+  const svg = card.locator("svg");
+  await expect(svg).toBeVisible({ timeout: 30_000 });
+
+  await expect(svg).toHaveAttribute("data-extended-lifelines", "3");
+  const lifelineEnds = await svg
+    .locator("line.actor-line")
+    .evaluateAll((lines) => lines.map((line) => Number(line.getAttribute("y2"))));
+  expect(lifelineEnds).toHaveLength(3);
+  expect(lifelineEnds.every((end) => end > 2000)).toBe(true);
 });

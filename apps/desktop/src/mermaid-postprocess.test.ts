@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPersonSilhouette,
+  extendSequenceLifelines,
   externalTypeLabel,
   isVerticalBackEdge,
   terminalArrowOverlap,
@@ -121,5 +122,41 @@ describe("vertical back-edge routing contract", () => {
 
     const close = box({ top: 190, bottom: 210, cy: 200 });
     expect(isVerticalBackEdge(source, close)).toBe(false);
+  });
+});
+
+describe("sequence lifeline extension", () => {
+  function lifelines(...ends: number[]): SVGSVGElement {
+    const root = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    for (const end of ends) {
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "actor-line 200");
+      line.setAttribute("data-et", "life-line");
+      line.setAttribute("y2", String(end));
+      root.append(line);
+    }
+    return root;
+  }
+
+  function ends(root: SVGSVGElement): number[] {
+    return [...root.querySelectorAll("line")].map((line) => Number(line.getAttribute("y2")));
+  }
+
+  it("extends untouched default lifelines to the content bottom", () => {
+    const root = lifelines(2000, 2000);
+    expect(extendSequenceLifelines(root, 3200)).toBe(2);
+    expect(ends(root)).toEqual([3200, 3200]);
+  });
+
+  it("keeps lifelines shortened by destroy participants", () => {
+    const root = lifelines(2000, 1400);
+    expect(extendSequenceLifelines(root, 3200)).toBe(1);
+    expect(ends(root)).toEqual([3200, 1400]);
+  });
+
+  it("leaves lifelines that already reach the content untouched", () => {
+    const root = lifelines(2000);
+    expect(extendSequenceLifelines(root, 1800)).toBe(0);
+    expect(ends(root)).toEqual([2000]);
   });
 });
