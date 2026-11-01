@@ -774,18 +774,31 @@ export interface EligibilityInput {
   units: number;
   editorWidth: number;
   wasVisible: boolean;
+  /** Overrides the 640px default so instances can tune the threshold. */
+  minEditorWidth?: number;
+  /** Overrides the document-size caps. */
+  maxLines?: number;
+  maxUnits?: number;
 }
 
-export function isEligible({ lines, units, editorWidth, wasVisible }: EligibilityInput): boolean {
-  if (!Number.isFinite(lines) || lines < 1 || lines > MINIMAP_MAX_LINES) {
+export function isEligible({
+  lines,
+  units,
+  editorWidth,
+  wasVisible,
+  minEditorWidth = MINIMAP_MIN_EDITOR_WIDTH,
+  maxLines = MINIMAP_MAX_LINES,
+  maxUnits = MINIMAP_MAX_UNITS,
+}: EligibilityInput): boolean {
+  if (!Number.isFinite(lines) || lines < 1 || lines > maxLines) {
     return false;
   }
-  if (!Number.isFinite(units) || units > MINIMAP_MAX_UNITS) {
+  if (!Number.isFinite(units) || units > maxUnits) {
     return false;
   }
   const minimumWidth = wasVisible
-    ? MINIMAP_MIN_EDITOR_WIDTH - MINIMAP_WIDTH_HYSTERESIS
-    : MINIMAP_MIN_EDITOR_WIDTH;
+    ? Math.max(1, minEditorWidth - MINIMAP_WIDTH_HYSTERESIS)
+    : minEditorWidth;
   return editorWidth >= minimumWidth;
 }
 

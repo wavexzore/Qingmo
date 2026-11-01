@@ -1,7 +1,8 @@
 import { ensureSyntaxTree } from "@codemirror/language";
+import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 
-import { createEditorState } from "../index";
+import { createEditorState, imageSrcResolver, setImageSrcResolverEffect } from "../index";
 import { readMediaBlocks } from "./media-blocks";
 
 function stateFor(doc: string) {
@@ -55,6 +56,76 @@ describe("readMediaBlocks", () => {
     expect(picture[0]?.width).toBe("200");
     expect(picture[0]?.sources[0]?.srcset).toBe("./dark.png");
     expect(picture[0]?.sources[0]?.media).toBe("(prefers-color-scheme: dark)");
+  });
+
+  it("resolves media image sources through the installed resolver", () => {
+    const doc = '<img src="./pics/a.png" alt="图">\n';
+    const state = createEditorState({
+      doc,
+      extraExtensions: [imageSrcResolver.of((src) => `asset://localhost/docs/${src}`)],
+    });
+    ensureSyntaxTree(state, state.doc.length, 10_000);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: state.update({}).state, parent });
+    try {
+      view.dispatch({ selection: { anchor: doc.length } });
+      const image = view.dom.querySelector<HTMLImageElement>(".cm-md-media-image");
+      expect(image?.getAttribute("src")).toBe("asset://localhost/docs/./pics/a.png");
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
+  });
+
+  it("resolves mixed srcset candidates without breaking data URLs", () => {
+    const doc =
+      '<picture>\n<source srcset="./a.png 1x, data:image/png;base64,AAAA 2x, ./b.png 3x" />\n' +
+      '<img src="./c.png" alt="p">\n</picture>\n';
+    const state = createEditorState({
+      doc,
+      extraExtensions: [
+        imageSrcResolver.of((src) =>
+          src.startsWith("data:") ? src : `asset://localhost${src.slice(1)}`,
+        ),
+      ],
+    });
+    ensureSyntaxTree(state, state.doc.length, 10_000);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: state.update({}).state, parent });
+    try {
+      view.dispatch({ selection: { anchor: doc.length } });
+      const source = view.dom.querySelector<HTMLSourceElement>("source");
+      expect(source?.getAttribute("srcset")).toBe(
+        "asset://localhost/a.png 1x, data:image/png;base64,AAAA 2x, asset://localhost/b.png 3x",
+      );
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
+  });
+
+  it("rebuilds HTML media when the resolver changes", () => {
+    const doc = '<img src="./pics/a.png" alt="图">\n';
+    const state = createEditorState({ doc });
+    ensureSyntaxTree(state, state.doc.length, 10_000);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: state.update({}).state, parent });
+    try {
+      view.dispatch({ selection: { anchor: doc.length } });
+      const image = () => view.dom.querySelector<HTMLImageElement>(".cm-md-media-image");
+      expect(image()?.getAttribute("src")).toBe("./pics/a.png");
+
+      view.dispatch({
+        effects: setImageSrcResolverEffect((src) => `asset://localhost${src.slice(1)}`),
+      });
+      expect(image()?.getAttribute("src")).toBe("asset://localhost/pics/a.png");
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
   });
 
   it("reads iframe embeds as inert cards", () => {

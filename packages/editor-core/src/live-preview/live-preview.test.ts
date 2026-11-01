@@ -11,8 +11,10 @@ import {
   codeBlockPreview,
   collectDecorationSpecs,
   createEditorState,
+  imageSrcResolver,
   livePreviewPlugin,
   setEditorUiCopyEffect,
+  setImageSrcResolverEffect,
   setReadOnlyEffect,
   type DecorationSpec,
   type EditorUiCopy,
@@ -354,11 +356,42 @@ describe("collectDecorationSpecs", () => {
         title: "title",
         width: null,
         height: null,
+        block: true,
       },
     });
 
     const touched = collect(state, [{ from: 3, to: 3 }]);
     expect(findWidget(touched, "image")).toBeUndefined();
+  });
+
+  it("decodes CommonMark destination escapes and angle delimiters", () => {
+    const escaped = "![alt](a\\[1\\].png)\n";
+    expect(
+      findWidget(
+        collect(stateFor(escaped), [{ from: escaped.length, to: escaped.length }]),
+        "image",
+      ),
+    ).toMatchObject({ widget: { kind: "image", src: "a[1].png" } });
+
+    const angle = "![alt](<my pic.png>)\n";
+    expect(
+      findWidget(collect(stateFor(angle), [{ from: angle.length, to: angle.length }]), "image"),
+    ).toMatchObject({ widget: { kind: "image", src: "my pic.png" } });
+
+    const entity = "![alt](a&amp;b.png)\n";
+    expect(
+      findWidget(collect(stateFor(entity), [{ from: entity.length, to: entity.length }]), "image"),
+    ).toMatchObject({ widget: { kind: "image", src: "a&b.png" } });
+  });
+
+  it("keeps an image inline when text shares the paragraph", () => {
+    const doc = "前文 ![alt](./pic.png) 后文\n";
+    const state = stateFor(doc);
+    const specs = collect(state, [{ from: doc.length, to: doc.length }]);
+
+    expect(findWidget(specs, "image")).toMatchObject({
+      widget: { kind: "image", block: false },
+    });
   });
 
   it("resolves reference-style images through their definitions", () => {
@@ -377,6 +410,7 @@ describe("collectDecorationSpecs", () => {
         title: "title",
         width: null,
         height: null,
+        block: true,
       },
     });
     expect(find(specs, "line", "cm-md-link-reference")).toBeDefined();
@@ -741,6 +775,45 @@ describe("livePreviewPlugin", () => {
     expect(view.dom.querySelector(".cm-md-task input")).not.toBeNull();
     expect(view.dom.querySelector(".cm-md-rule")).not.toBeNull();
     expect(view.dom.querySelector(".cm-md-image")).not.toBeNull();
+  });
+
+  it("resolves image sources through the installed resolver", () => {
+    const doc = "![alt](x.png)\n";
+    const state = createEditorState({
+      doc,
+      uiCopy: zhCopy,
+      extraExtensions: [imageSrcResolver.of((src) => `asset://localhost/notes/${src}`)],
+    });
+    ensureSyntaxTree(state, state.doc.length, 10_000);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: state.update({}).state, parent });
+    views.push({ view, parent });
+
+    view.dispatch({ selection: { anchor: doc.length } });
+
+    const image = view.dom.querySelector<HTMLImageElement>(".cm-md-image img");
+    expect(image?.getAttribute("src")).toBe("asset://localhost/notes/x.png");
+  });
+
+  it("re-renders an image when the resolver facet changes", () => {
+    const doc = "![alt](x.png)\n";
+    const state = createEditorState({ doc, uiCopy: zhCopy });
+    ensureSyntaxTree(state, state.doc.length, 10_000);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: state.update({}).state, parent });
+    views.push({ view, parent });
+
+    view.dispatch({ selection: { anchor: doc.length } });
+    const image = () => view.dom.querySelector<HTMLImageElement>(".cm-md-image img");
+    expect(image()?.getAttribute("src")).toBe("x.png");
+
+    // Same document, tree, viewport and selection: only the resolver differs.
+    view.dispatch({
+      effects: setImageSrcResolverEffect((src) => `asset://localhost/notes/${src}`),
+    });
+    expect(image()?.getAttribute("src")).toBe("asset://localhost/notes/x.png");
   });
 
   it("toggles a task checkbox through the widget", () => {

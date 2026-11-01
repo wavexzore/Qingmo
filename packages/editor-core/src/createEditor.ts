@@ -9,6 +9,7 @@ import { DEFAULT_EDITOR_UI_COPY, editorUiCopy, type EditorUiCopy } from "./i18n"
 import { previewTierFor } from "./limits";
 import { headingOutline, outlineParseDriver } from "./live-preview/outline";
 import { livePreview } from "./live-preview/plugin";
+import { imageSrcResolver, type ImageSrcResolver } from "./live-preview/image-src";
 
 /**
  * Reconfiguration seams used by later tasks:
@@ -22,6 +23,7 @@ export const readOnlyCompartment = new Compartment();
 export const modeCompartment = new Compartment();
 export const placeholderCompartment = new Compartment();
 export const uiCopyCompartment = new Compartment();
+export const imageSrcCompartment = new Compartment();
 
 export interface CreateEditorStateOptions {
   /** Raw text; CRLF/CR is normalized to the LF-only in-memory contract. */
@@ -39,6 +41,11 @@ export interface CreateEditorStateOptions {
   placeholder?: string;
   /** Injected Widget/block copy; defaults to editor-core's English fallback. */
   uiCopy?: EditorUiCopy;
+  /**
+   * Maps document-relative image sources to loadable URLs. The desktop shell
+   * installs one per document; without it sources pass through unchanged.
+   */
+  imageSrcResolver?: ImageSrcResolver;
   /**
    * Effective Live Preview switch. Defaults to
    * `previewTierFor(doc.length) !== "source"`; later tasks pass
@@ -83,6 +90,14 @@ export function setEditorUiCopyEffect(copy: EditorUiCopy) {
 }
 
 /**
+ * Swaps the document-relative image resolver. Save As needs this so a document
+ * that just gained a path starts resolving against its new directory.
+ */
+export function setImageSrcResolverEffect(resolver: ImageSrcResolver) {
+  return imageSrcCompartment.reconfigure(imageSrcResolver.of(resolver));
+}
+
+/**
  * The single CM6 state factory. It intentionally accepts no `lineSeparator`
  * and no DOM node: the document is always LF-only and the view is created by
  * T-010's EditorHost.
@@ -94,6 +109,7 @@ export function createEditorState({
   extraExtensions = [],
   placeholder,
   uiCopy = DEFAULT_EDITOR_UI_COPY,
+  imageSrcResolver: resolver,
   previewEnabled,
 }: CreateEditorStateOptions): EditorState {
   const normalized = normalizeLineEndings(doc);
@@ -122,6 +138,7 @@ export function createEditorState({
       modeCompartment.of(previewOn ? livePreview() : []),
       placeholderCompartment.of(placeholder ? cmPlaceholder(placeholder) : []),
       uiCopyCompartment.of(editorUiCopy.of(uiCopy)),
+      imageSrcCompartment.of(resolver ? imageSrcResolver.of(resolver) : []),
       ...extraExtensions,
     ],
   });

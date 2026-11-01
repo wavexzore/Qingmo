@@ -5,6 +5,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemir
 import { editorCopyChanged, editorUiCopy, type EditorUiCopy } from "../i18n";
 import { PREVIEW_FULL_MAX_UNITS } from "../limits";
 import { readDetailsBlocks } from "./details";
+import { imageSrcResolver, resolveImageSrc } from "./image-src";
 import { renderInlineMarkdown } from "./inline-render";
 import type { MarkdownNode } from "./markdown-node";
 
@@ -71,13 +72,83 @@ function safeSrcset(value: string | undefined | null): string | null {
   if (!trimmed) {
     return null;
   }
-  const first = trimmed.split(",")[0]?.trim().split(/\s+/)[0] ?? "";
-  return safeUrl(first) ? trimmed : null;
+  const first = parseSrcset(trimmed)[0];
+  return first && safeUrl(first.url) ? trimmed : null;
+}
+
+interface SrcsetCandidate {
+  url: string;
+  descriptor: string;
+}
+
+/**
+ * Splits a srcset without breaking URLs that contain commas (data URLs) or
+ * attribute descriptors. Commas only separate candidates outside a URL.
+ */
+function parseSrcset(value: string): SrcsetCandidate[] {
+  const candidates: SrcsetCandidate[] = [];
+  let index = 0;
+  while (index < value.length) {
+    while (index < value.length && /[\s,]/.test(value[index] ?? "")) {
+      index += 1;
+    }
+    if (index >= value.length) {
+      break;
+    }
+    const start = index;
+    const isData = value.startsWith("data:", index);
+    if (isData) {
+      while (index < value.length && !/\s/.test(value[index] ?? "")) {
+        index += 1;
+      }
+    } else {
+      while (index < value.length && !/[\s,]/.test(value[index] ?? "")) {
+        index += 1;
+      }
+    }
+    // A data URL keeps its own commas; a separator comma at the end is not
+    // part of the payload.
+    const url = isData ? value.slice(start, index).replace(/,+$/, "") : value.slice(start, index);
+    let descriptor = "";
+    if (index < value.length && value[index] !== ",") {
+      while (index < value.length && /\s/.test(value[index] ?? "")) {
+        index += 1;
+      }
+      const descriptorStart = index;
+      while (index < value.length && value[index] !== ",") {
+        index += 1;
+      }
+      descriptor = value.slice(descriptorStart, index).trim();
+    }
+    if (index < value.length) {
+      index += 1;
+    }
+    if (url.length > 0) {
+      candidates.push({ url, descriptor });
+    }
+  }
+  return candidates;
 }
 
 function dimension(value: string | undefined | null): string | null {
   const trimmed = value?.trim() ?? "";
   return /^\d+(?:\.\d+)?%?$/.test(trimmed) ? trimmed : null;
+}
+
+function sameSources(left: readonly MediaSource[], right: readonly MediaSource[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((source, index) => {
+    const other = right[index];
+    return (
+      other !== undefined &&
+      other.src === source.src &&
+      other.srcset === source.srcset &&
+      other.type === source.type &&
+      other.media === source.media
+    );
+  });
 }
 
 function fileNameOf(src: string | null): string {
@@ -205,6 +276,34 @@ function insideKey(state: EditorState, ranges: readonly MediaBlock[]): string {
     .join(",");
 }
 
+function resolveMediaBlock(state: EditorState, block: MediaBlock): MediaBlock {
+  if (block.src === null && block.poster === null && block.sources.length === 0) {
+    return block;
+  }
+  return {
+    ...block,
+    src: block.src === null ? null : resolveImageSrc(state, block.src),
+    poster: block.poster === null ? null : resolveImageSrc(state, block.poster),
+    sources: block.sources.map((source) => ({
+      ...source,
+      src: source.src === null ? null : resolveImageSrc(state, source.src),
+      srcset: resolveSrcset(state, source.srcset),
+    })),
+  };
+}
+
+function resolveSrcset(state: EditorState, srcset: string | null): string | null {
+  if (!srcset) {
+    return srcset;
+  }
+  return parseSrcset(srcset)
+    .map((candidate) => {
+      const url = resolveImageSrc(state, candidate.url);
+      return candidate.descriptor ? `${url} ${candidate.descriptor}` : url;
+    })
+    .join(", ");
+}
+
 function buildMedia(state: EditorState): MediaState {
   if (state.doc.length > PREVIEW_FULL_MAX_UNITS) {
     return emptyState();
@@ -221,7 +320,7 @@ function buildMedia(state: EditorState): MediaState {
       decorations.push(
         Decoration.replace({
           block: true,
-          widget: new MediaWidget(copy, range),
+          widget: new MediaWidget(copy, resolveMediaBlock(state, range)),
         }).range(range.from, range.to),
       );
     }
@@ -475,7 +574,14 @@ class MediaWidget extends WidgetType {
     return (
       other instanceof MediaWidget &&
       other.copy.version === this.copy.version &&
-      other.block.raw === this.block.raw
+      other.block.raw === this.block.raw &&
+      other.block.src === this.block.src &&
+      other.block.poster === this.block.poster &&
+      other.block.alt === this.block.alt &&
+      other.block.title === this.block.title &&
+      other.block.width === this.block.width &&
+      other.block.height === this.block.height &&
+      sameSources(other.block.sources, this.block.sources)
     );
   }
 
@@ -542,6 +648,11 @@ class MediaWidget extends WidgetType {
 export const mediaBlockPreview = StateField.define<MediaState>({
   create: buildMedia,
   update(value, transaction) {
+    if (
+      transaction.state.facet(imageSrcResolver) !== transaction.startState.facet(imageSrcResolver)
+    ) {
+      return buildMedia(transaction.state);
+    }
     const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
     if (editorCopyChanged(transaction) || transaction.docChanged || treeChanged) {
       return buildMedia(transaction.state);

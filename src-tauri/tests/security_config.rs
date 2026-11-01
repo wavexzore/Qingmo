@@ -200,7 +200,8 @@ fn production_csp_is_strict_and_has_no_wildcards() {
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: https:",
+        "img-src 'self' data: blob: https: asset: http://asset.localhost",
+        "media-src 'self' data: blob: https: asset: http://asset.localhost",
         "connect-src 'self' ipc: http://ipc.localhost",
         "frame-src 'self'",
         "object-src 'none'",
@@ -219,10 +220,33 @@ fn production_csp_is_strict_and_has_no_wildcards() {
         .map(str::trim)
         .find(|directive| directive.starts_with("img-src "))
         .expect("CSP must contain an img-src directive");
-    assert_eq!(img_src, "img-src 'self' data: https:");
+    assert_eq!(
+        img_src,
+        "img-src 'self' data: blob: https: asset: http://asset.localhost"
+    );
     assert!(
-        !img_src.contains("http:"),
+        !img_src.split_whitespace().any(|source| source == "http:"),
         "plain HTTP images must stay blocked: {img_src}"
+    );
+
+    let media_src = csp
+        .split(';')
+        .map(str::trim)
+        .find(|directive| directive.starts_with("media-src "))
+        .expect("CSP must contain a media-src directive");
+    assert_eq!(
+        media_src,
+        "media-src 'self' data: blob: https: asset: http://asset.localhost"
+    );
+    assert!(
+        !media_src.split_whitespace().any(|source| source == "http:"),
+        "plain HTTP media must stay blocked: {media_src}"
+    );
+    // Without an explicit media-src, local video/audio falls back to
+    // `default-src 'self'` and the asset protocol is blocked.
+    assert!(
+        !csp.split(';').any(|directive| directive.trim().is_empty()),
+        "CSP must not contain an empty directive: {csp}"
     );
 
     let dev_csp = security["devCsp"]
@@ -231,6 +255,7 @@ fn production_csp_is_strict_and_has_no_wildcards() {
     assert!(!dev_csp.contains('*'), "dev CSP must not contain wildcards");
     assert!(dev_csp.contains("ws://localhost:1420"));
     assert!(dev_csp.contains("http://localhost:1420"));
+    assert!(dev_csp.contains("media-src 'self' data: blob: https: asset: http://asset.localhost"));
 }
 
 #[test]
@@ -283,8 +308,24 @@ fn window_and_asset_protocol_are_locked_down() {
     let app = &config["app"];
 
     assert_eq!(app["withGlobalTauri"], Value::Bool(false));
+    // The asset protocol is enabled but starts with an empty allowlist:
+    // document directories are granted at runtime when a file opens.
     assert_eq!(
         app["security"]["assetProtocol"]["enable"],
+        Value::Bool(true)
+    );
+    assert_eq!(
+        app["security"]["assetProtocol"]["scope"],
+        serde_json::json!({
+            "allow": [],
+            "deny": [],
+            "requireLiteralLeadingDot": false,
+        })
+    );
+    // Dotfiles (`.assets/x.png`) are legitimate image targets on Unix, where
+    // Tauri otherwise requires a literal leading dot.
+    assert_eq!(
+        app["security"]["assetProtocol"]["scope"]["requireLiteralLeadingDot"],
         Value::Bool(false)
     );
     assert_eq!(

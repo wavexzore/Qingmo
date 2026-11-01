@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   editorActiveLine,
@@ -13,6 +13,7 @@ import {
   openSeededFile,
   typeInEditor,
 } from "./helpers";
+import tauriConfig from "../src-tauri/tauri.conf.json";
 
 const DOC_PATH = "/docs/MARKDOWN-SYNTAX.md";
 const DOC_TEXT = readFileSync(path.join(__dirname, "../docs/MARKDOWN-SYNTAX.md"), "utf8");
@@ -275,14 +276,17 @@ test("re-renders Mermaid diagrams when the theme changes", async ({ page }) => {
   });
 });
 
-const PRODUCTION_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data:; font-src 'self' data:; " +
-  "connect-src 'self' ipc: http://ipc.localhost; frame-src 'self'; " +
-  "object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+// Read from the real config so the E2E CSP cannot drift from production.
+const PRODUCTION_CSP = tauriConfig.app.security.csp;
 
-test("renders Mermaid under the production CSP", async ({ page }) => {
+/** Serves the production CSP on the document response. */
+async function installProductionCsp(page: Page): Promise<void> {
   await page.route("**/*", async (route) => {
+    if (route.request().resourceType() !== "document") {
+      // Assets and the asset protocol keep their own handling.
+      await route.fallback();
+      return;
+    }
     const response = await route.fetch();
     const headers = { ...response.headers() };
     if ((headers["content-type"] ?? "").includes("text/html")) {
@@ -290,6 +294,10 @@ test("renders Mermaid under the production CSP", async ({ page }) => {
     }
     await route.fulfill({ response, headers });
   });
+}
+
+test("renders Mermaid under the production CSP", async ({ page }) => {
+  await installProductionCsp(page);
 
   await openApp(page, [{ path: DOC_PATH, text: DOC_TEXT }]);
   await openSeededFile(page, "MARKDOWN-SYNTAX.md");
@@ -761,6 +769,136 @@ test("hides image and paragraph attribute blocks", async ({ page }) => {
   await expect(page.locator(".cm-line.cm-md-attr-warning")).toHaveCount(1);
   await expect(editorContent(page)).not.toContainText("{width=200");
   await expect(editorContent(page)).not.toContainText("{: .warning");
+});
+
+const BLOCK_IMAGE_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="2284" height="2217"><rect width="100%" height="100%" fill="#dde"/></svg>';
+const BLOCK_IMAGE_DOC = `# 图片
+
+![示意图](data:image/svg+xml,${encodeURIComponent(BLOCK_IMAGE_SVG)})
+
+结尾段落
+`;
+
+test("renders a standalone image as a full-width block", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await openApp(page, [{ path: "/docs/block-image.md", text: BLOCK_IMAGE_DOC }]);
+  await openSeededFile(page, "block-image.md");
+
+  const widget = page.locator(".cm-md-image-block");
+  await expect(widget.locator("img")).toBeVisible();
+  const metrics = await widget.evaluate((element) => ({
+    image: element.querySelector("img")?.getBoundingClientRect().width ?? 0,
+    line: element.closest(".cm-line")?.getBoundingClientRect().width ?? 0,
+  }));
+  expect(metrics.image).toBeGreaterThan(metrics.line * 0.8);
+
+  const minimap = page.locator(".qm-minimap");
+  await expect(minimap).toHaveAttribute("data-minimap-state", "on");
+  await expect(minimap).toHaveAttribute("data-minimap-render", "rendered");
+  const painted = await page.locator(".qm-minimap-canvas").evaluate((canvas) => {
+    const element = canvas as HTMLCanvasElement;
+    const data = element.getContext("2d")?.getImageData(0, 0, element.width, element.height).data;
+    if (!data) {
+      return 0;
+    }
+    let count = 0;
+    for (let index = 3; index < data.length; index += 4) {
+      if (data[index]! > 0) {
+        count += 1;
+      }
+    }
+    return count;
+  });
+  expect(painted).toBeGreaterThan(1000);
+});
+
+const ASSET_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/** Emulates the Tauri runtime and answers every asset request with a pixel. */
+async function installAssetProtocol(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: { convertFileSrc: (path: string) => `asset://localhost/${encodeURI(path)}` },
+    });
+  });
+  await page.route(/^asset:\/\/localhost\//, (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: ASSET_PNG }),
+  );
+}
+
+test("loads a relative image through the asset protocol under the production CSP", async ({
+  page,
+}) => {
+  await installAssetProtocol(page);
+  await installProductionCsp(page);
+
+  const doc = "# 图片\n\n![本地图](pics/local%20pic.png)\n\n结尾段落\n";
+  await openApp(page, [{ path: "/docs/assets.md", text: doc }]);
+  await openSeededFile(page, "assets.md");
+
+  const image = page.locator(".cm-md-image img");
+  await expect(image).toHaveAttribute("src", "asset://localhost//docs/pics/local%20pic.png");
+  await expect
+    .poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth))
+    .toBe(1);
+  await expect(page.locator(".cm-md-image")).toHaveAttribute("title", "local pic.png");
+});
+
+test("re-resolves a draft image after Save As", async ({ page }) => {
+  await installAssetProtocol(page);
+  const text = "![草稿图](pic.png)\n\n尾段\n";
+
+  await openApp(page, [], {
+    drafts: [
+      {
+        schemaVersion: 1,
+        id: "00000000-0000-4000-8000-0000000000aa",
+        kind: "untitled",
+        path: null,
+        title: "草稿",
+        text,
+        textUnits: text.length,
+        sizeBytes: new TextEncoder().encode(text).length,
+        anchor: text.length,
+        head: text.length,
+        createdAtMs: 1_700_000_000_000,
+        updatedAtMs: 1_700_000_100_000,
+        appVersion: "e2e",
+      },
+    ],
+  });
+  await page.getByTestId("recovery-open").click();
+  await page.getByTestId("recovery-restore-00000000-0000-4000-8000-0000000000aa").click();
+  await expect(page.locator(".cm-md-image img")).toHaveAttribute("src", "pic.png");
+
+  await editorLines(page).filter({ hasText: "尾段" }).click();
+  await page.keyboard.press(`${modifier()}+s`);
+
+  await expect(page.locator(".cm-md-image img")).toHaveAttribute(
+    "src",
+    "asset://localhost//docs/pic.png",
+  );
+});
+
+test("indents a block image inside a list item", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 900 });
+  const doc = `# 列表\n\n- ![图](data:image/svg+xml,${encodeURIComponent(BLOCK_IMAGE_SVG)})\n\n结尾段落\n`;
+  await openApp(page, [{ path: "/docs/list-image.md", text: doc }]);
+  await openSeededFile(page, "list-image.md");
+  await editorLines(page).filter({ hasText: "结尾段落" }).click();
+
+  await expect(page.locator(".cm-md-image-block img")).toBeVisible();
+  const metrics = await page.evaluate(() => {
+    const bullet = document.querySelector(".cm-md-bullet")?.getBoundingClientRect();
+    const image = document.querySelector(".cm-md-image-block img")?.getBoundingClientRect();
+    return { bullet: bullet?.left ?? 0, image: image?.left ?? 0 };
+  });
+  expect(metrics.image).toBeGreaterThan(metrics.bullet + 8);
 });
 
 const LINK_DOC = `[带标题](https://example.com "悬停提示") and [参考][ref] and https://bare.example

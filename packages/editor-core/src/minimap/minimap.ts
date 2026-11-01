@@ -19,7 +19,9 @@ import {
   computeSliderGeometry,
   createAnchorMap,
   docYToScrollTop,
+  isEligible,
   lineAtDocY,
+  nextVisibility,
   railToDocY,
   scanMinimapDocument,
   scrollTopToDocY,
@@ -53,6 +55,7 @@ export type MinimapState = "off" | "pending" | "on" | "unsupported" | "degraded"
 const RAIL_WIDTH = 76;
 const RAIL_GAP = 12;
 const REBUILD_DEBOUNCE = 120;
+const DRAW_RETRIES = 8;
 const ANCHOR_REFRESH = 250;
 const TRACK_PADDING_Y = 6;
 const INDENT_PX = 2;
@@ -424,11 +427,14 @@ class MinimapController {
   private glyphFont = "";
   private glyphs: GlyphTable | null = null;
   private hasFrame = false;
+  private drawFailures = 0;
   private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private anchorTimer: ReturnType<typeof setTimeout> | null = null;
+  private redrawTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly svgThumbnails = new WeakMap<SVGSVGElement, { image: HTMLImageElement | null }>();
   private scrollFrame = 0;
-  private generation = 0;
   private measureGeneration = 0;
+  private mediaScan: readonly { line: number; element: Element }[] | null = null;
   private dragging = false;
   private pointerId: number | null = null;
   private grabRatio = 0.5;
@@ -491,6 +497,9 @@ class MinimapController {
     if (this.resizeObserver) {
       this.resizeObserver.observe(view.dom);
       this.resizeObserver.observe(view.scrollDOM);
+      // Async blocks (images, diagrams) grow the content without resizing the
+      // scroller, so a rail that hid before they rendered would never return.
+      this.resizeObserver.observe(view.contentDOM);
     }
 
     this.themeObserver =
@@ -503,6 +512,15 @@ class MinimapController {
     });
 
     this.scheduleRebuild(0);
+    // Async media grows the document after the first frame; re-evaluate even
+    // when no resize notification is delivered (slow image/diagram render).
+    for (const delay of [400, 1200]) {
+      window?.setTimeout(() => {
+        if (!this.destroyed) {
+          this.scheduleRebuild(0);
+        }
+      }, delay);
+    }
   }
 
   update(update: ViewUpdate): void {
@@ -557,7 +575,6 @@ class MinimapController {
       return;
     }
     this.destroyed = true;
-    this.generation += 1;
     this.measureGeneration += 1;
     this.clearTimers();
     if (this.scrollFrame) {
@@ -595,6 +612,24 @@ class MinimapController {
       clearTimeout(this.anchorTimer);
       this.anchorTimer = null;
     }
+    if (this.redrawTimer !== null) {
+      clearTimeout(this.redrawTimer);
+      this.redrawTimer = null;
+    }
+  }
+
+  /** Coalesces thumbnail loads into one repaint of the current frame. */
+  private requestDraw(): void {
+    if (this.redrawTimer !== null) {
+      return;
+    }
+    this.redrawTimer = setTimeout(() => {
+      this.redrawTimer = null;
+      if (this.destroyed || !this.hasFrame) {
+        return;
+      }
+      this.refreshScroll(true);
+    }, 16);
   }
 
   private setState(next: MinimapState): void {
@@ -608,20 +643,15 @@ class MinimapController {
 
   private eligible(editorWidth: number): boolean {
     const doc = this.view.state.doc;
-    if (
-      !Number.isFinite(doc.lines) ||
-      doc.lines < 1 ||
-      doc.lines > this.options.maxLines ||
-      !Number.isFinite(doc.length) ||
-      doc.length > this.options.maxUnits
-    ) {
-      return false;
-    }
-    const wasVisible = this.hasFrame || isVisibleState(this.state);
-    const minimumWidth = wasVisible
-      ? Math.max(1, this.options.minEditorWidth - 16)
-      : this.options.minEditorWidth;
-    return editorWidth >= minimumWidth;
+    return isEligible({
+      lines: doc.lines,
+      units: doc.length,
+      editorWidth,
+      wasVisible: this.hasFrame || isVisibleState(this.state),
+      minEditorWidth: this.options.minEditorWidth,
+      maxLines: this.options.maxLines,
+      maxUnits: this.options.maxUnits,
+    });
   }
 
   private scheduleRebuild(delay: number): void {
@@ -705,6 +735,11 @@ class MinimapController {
         const readStartedAt = performance.now();
         const measurement = this.readMeasurement(view);
         this.readMs = performance.now() - readStartedAt;
+        if (!measurement && !this.destroyed) {
+          // Layout can still be empty during the first frames; requestMeasure
+          // had no write phase to retry from, so schedule one here.
+          this.scheduleRebuild(120);
+        }
         return measurement;
       },
       write: (measurement) => {
@@ -897,8 +932,17 @@ class MinimapController {
         measurement.geometry.documentPadding.bottom,
     );
     const visible =
-      this.eligible(measurement.geometry.editorWidth) &&
-      measurement.geometry.scrollHeight > measurement.geometry.clientHeight + 1;
+      nextVisibility({
+        lines: doc.lines,
+        units: doc.length,
+        editorWidth: measurement.geometry.editorWidth,
+        wasVisible: this.hasFrame || isVisibleState(this.state),
+        minEditorWidth: this.options.minEditorWidth,
+        maxLines: this.options.maxLines,
+        maxUnits: this.options.maxUnits,
+        scrollHeight: measurement.geometry.scrollHeight,
+        clientHeight: measurement.geometry.clientHeight,
+      }) === "visible";
     if (!visible || measurement.unsupported) {
       this.hide();
       return;
@@ -914,7 +958,7 @@ class MinimapController {
 
     this.palette = resolveMinimapPalette(this.view.dom);
     if (!this.palette) {
-      this.markUnsupported();
+      this.retryDraw();
       return;
     }
 
@@ -922,21 +966,32 @@ class MinimapController {
     this.updateScrollLayout();
     const drawn = this.draw();
     if (!drawn) {
-      if (this.hasFrame) {
-        this.show("degraded");
-        this.applySliderStyles();
-        this.updateCaret();
-      } else {
-        this.markUnsupported();
-      }
+      this.retryDraw();
       return;
     }
-
+    this.drawFailures = 0;
     this.hasFrame = true;
     this.show(measurement.degraded || this.lastMeasurementDegraded ? "degraded" : "on");
     this.applySliderStyles();
     this.updateCaret();
     this.dispatchBuild();
+  }
+
+  /**
+   * Keeps the rail alive across transient first-frame failures (palette not
+   * ready, canvas unavailable during mount) instead of hiding it for good.
+   */
+  private retryDraw(): void {
+    this.drawFailures += 1;
+    if (this.drawFailures > DRAW_RETRIES) {
+      this.markUnsupported();
+      return;
+    }
+    this.hasFrame = true;
+    this.show("degraded");
+    this.applySliderStyles();
+    this.updateCaret();
+    this.scheduleRebuild(120);
   }
 
   private setPending(): void {
@@ -958,6 +1013,7 @@ class MinimapController {
 
   private hide(): void {
     this.hasFrame = false;
+    this.drawFailures = 0;
     this.window = null;
     this.caret.style.display = "none";
     this.rail.style.display = "none";
@@ -975,6 +1031,7 @@ class MinimapController {
 
   private markUnsupported(): void {
     this.hasFrame = false;
+    this.drawFailures = 0;
     this.window = null;
     this.caret.style.display = "none";
     this.rail.style.display = "none";
@@ -1009,6 +1066,7 @@ class MinimapController {
     const map = this.anchorMap;
     const palette = this.palette;
     this.renderedMode = isRenderedMode(this.view);
+    this.mediaScan = null;
     if (!geometry || !lines || !map || !palette) {
       return false;
     }
@@ -1066,7 +1124,8 @@ class MinimapController {
       visibleContext.drawImage(this.buffer, 0, 0, width, height);
       visibleContext.restore();
       return true;
-    } catch {
+    } catch (error) {
+      console.warn("minimap draw failed", error);
       return false;
     }
   }
@@ -1393,6 +1452,139 @@ class MinimapController {
     context.globalAlpha = 1;
   }
 
+  private lineAtElement(element: Element): number {
+    try {
+      return this.view.state.doc.lineAt(this.view.posAtDOM(element)).number - 1;
+    } catch {
+      return -1;
+    }
+  }
+
+  /** Rasterizes a Mermaid SVG once per DOM node; redraws when it is ready. */
+  private svgThumbnail(svg: SVGSVGElement): HTMLImageElement | null {
+    const cached = this.svgThumbnails.get(svg);
+    if (cached) {
+      return cached.image;
+    }
+    const entry: { image: HTMLImageElement | null } = { image: null };
+    this.svgThumbnails.set(svg, entry);
+    let url: string | null = null;
+    try {
+      const source = new XMLSerializer().serializeToString(svg);
+      url = URL.createObjectURL(new Blob([source], { type: "image/svg+xml;charset=utf-8" }));
+      const image = new Image();
+      image.addEventListener("load", () => {
+        entry.image = image;
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+        this.requestDraw();
+      });
+      image.addEventListener("error", () => {
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+        // The cached null entry stops a malformed diagram from being
+        // re-serialized on every frame.
+        entry.image = null;
+      });
+      image.src = url;
+    } catch {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Paints real image/diagram content over a media band. The band keeps the
+   * block's real document height, so the thumbnail is a navigable landmark
+   * instead of an empty rectangle; the generic icon remains the fallback.
+   */
+  private drawMediaContent(
+    context: CanvasRenderingContext2D,
+    block: MinimapBlock,
+    top: number,
+    bottom: number,
+    width: number,
+  ): boolean {
+    const geometry = this.geometry;
+    if (!geometry) {
+      return false;
+    }
+    const innerLeft = 3;
+    const innerRight = Math.max(innerLeft + 1, width - 3);
+    const innerWidth = Math.max(1, innerRight - innerLeft);
+    const trackTop = geometry.trackTop;
+    const trackBottom = geometry.trackTop + geometry.trackHeight;
+
+    let drawn = false;
+    for (const { line, element } of this.mediaElements()) {
+      if (line < block.fromLine || line > block.toLine) {
+        continue;
+      }
+      try {
+        const source: CanvasImageSource | null =
+          element instanceof SVGSVGElement
+            ? this.svgThumbnail(element)
+            : element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0
+              ? element
+              : null;
+        if (!source) {
+          continue;
+        }
+        const rect = element.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) {
+          continue;
+        }
+        const localTop = this.docYToLocal(rect.top - this.view.documentTop);
+        const localBottom = this.docYToLocal(rect.bottom - this.view.documentTop);
+        const clippedTop = Math.max(top, trackTop, localTop);
+        const clippedBottom = Math.min(bottom, trackBottom, localBottom);
+        if (clippedBottom - clippedTop < 0.5) {
+          continue;
+        }
+        context.save();
+        context.beginPath();
+        context.rect(innerLeft, clippedTop, innerWidth, clippedBottom - clippedTop);
+        context.clip();
+        context.globalAlpha = 0.9;
+        context.drawImage(
+          source,
+          innerLeft,
+          localTop,
+          innerWidth,
+          Math.max(1, localBottom - localTop),
+        );
+        context.restore();
+        drawn = true;
+      } catch {
+        // One unreadable SVG must not erase every other thumbnail in the frame.
+        context.restore();
+      }
+    }
+    return drawn;
+  }
+
+  /**
+   * Indexes the images and Mermaid diagrams once per frame. Without the cache
+   * every media band re-ran a full DOM query plus one `posAtDOM` per element.
+   */
+  private mediaElements(): readonly { line: number; element: Element }[] {
+    if (this.mediaScan) {
+      return this.mediaScan;
+    }
+    const elements = [
+      ...Array.from(this.view.dom.querySelectorAll("img")),
+      ...Array.from(this.view.dom.querySelectorAll<SVGSVGElement>(".cm-md-mermaid-canvas svg")),
+    ];
+    this.mediaScan = elements
+      .map((element) => ({ line: this.lineAtElement(element), element }))
+      .filter((entry) => entry.line >= 0);
+    return this.mediaScan;
+  }
+
   private drawRenderedBlock(
     context: CanvasRenderingContext2D,
     block: MinimapBlock,
@@ -1419,30 +1611,32 @@ class MinimapController {
 
     if (block.kind === "fence") {
       if (/^mermaid\b/i.test(block.info)) {
-        const nodeWidth = Math.max(4, Math.min(14, Math.floor(innerWidth / 3)));
-        const nodeHeight = Math.max(2, Math.min(5, Math.floor(height / 4)));
-        const topRow = top + Math.max(2, Math.floor(height * 0.22));
-        const bottomRow = top + Math.max(2, Math.floor(height * 0.62));
-        context.globalAlpha = 0.55;
-        context.fillStyle = color;
-        context.fillRect(innerLeft, topRow, nodeWidth, nodeHeight);
-        context.fillRect(innerRight - nodeWidth, topRow, nodeWidth, nodeHeight);
-        context.fillRect(
-          innerLeft + Math.floor(innerWidth / 2) - Math.floor(nodeWidth / 2),
-          bottomRow,
-          nodeWidth,
-          nodeHeight,
-        );
-        context.globalAlpha = 0.35;
-        context.strokeStyle = color;
-        context.beginPath();
-        context.moveTo(innerLeft + nodeWidth, topRow + nodeHeight / 2);
-        context.lineTo(innerRight - nodeWidth, topRow + nodeHeight / 2);
-        context.stroke();
-        context.beginPath();
-        context.moveTo(innerLeft + nodeWidth / 2, topRow + nodeHeight);
-        context.lineTo(innerLeft + innerWidth / 2, bottomRow);
-        context.stroke();
+        if (!this.drawMediaContent(context, block, top, bottom, width)) {
+          const nodeWidth = Math.max(4, Math.min(14, Math.floor(innerWidth / 3)));
+          const nodeHeight = Math.max(2, Math.min(5, Math.floor(height / 4)));
+          const topRow = top + Math.max(2, Math.floor(height * 0.22));
+          const bottomRow = top + Math.max(2, Math.floor(height * 0.62));
+          context.globalAlpha = 0.55;
+          context.fillStyle = color;
+          context.fillRect(innerLeft, topRow, nodeWidth, nodeHeight);
+          context.fillRect(innerRight - nodeWidth, topRow, nodeWidth, nodeHeight);
+          context.fillRect(
+            innerLeft + Math.floor(innerWidth / 2) - Math.floor(nodeWidth / 2),
+            bottomRow,
+            nodeWidth,
+            nodeHeight,
+          );
+          context.globalAlpha = 0.35;
+          context.strokeStyle = color;
+          context.beginPath();
+          context.moveTo(innerLeft + nodeWidth, topRow + nodeHeight / 2);
+          context.lineTo(innerRight - nodeWidth, topRow + nodeHeight / 2);
+          context.stroke();
+          context.beginPath();
+          context.moveTo(innerLeft + nodeWidth / 2, topRow + nodeHeight);
+          context.lineTo(innerLeft + innerWidth / 2, bottomRow);
+          context.stroke();
+        }
       } else {
         if (height >= 10) {
           context.globalAlpha = 0.35;
@@ -1479,20 +1673,22 @@ class MinimapController {
         context.stroke();
       }
     } else if (block.kind === "media") {
-      context.globalAlpha = 0.35;
-      context.strokeStyle = color;
-      context.strokeRect(innerLeft, top + 2, innerWidth, Math.max(1, height - 4));
-      const baseline = top + height * 0.65;
-      context.beginPath();
-      context.moveTo(innerLeft + 2, baseline);
-      context.lineTo(innerLeft + innerWidth * 0.35, top + height * 0.35);
-      context.lineTo(innerLeft + innerWidth * 0.6, baseline);
-      context.lineTo(innerLeft + innerWidth * 0.8, top + height * 0.5);
-      context.lineTo(innerRight - 2, baseline);
-      context.stroke();
-      context.beginPath();
-      context.arc(innerRight - 5, top + Math.max(3, height * 0.25), 1.5, 0, Math.PI * 2);
-      context.stroke();
+      if (!this.drawMediaContent(context, block, top, bottom, width)) {
+        context.globalAlpha = 0.35;
+        context.strokeStyle = color;
+        context.strokeRect(innerLeft, top + 2, innerWidth, Math.max(1, height - 4));
+        const baseline = top + height * 0.65;
+        context.beginPath();
+        context.moveTo(innerLeft + 2, baseline);
+        context.lineTo(innerLeft + innerWidth * 0.35, top + height * 0.35);
+        context.lineTo(innerLeft + innerWidth * 0.6, baseline);
+        context.lineTo(innerLeft + innerWidth * 0.8, top + height * 0.5);
+        context.lineTo(innerRight - 2, baseline);
+        context.stroke();
+        context.beginPath();
+        context.arc(innerRight - 5, top + Math.max(3, height * 0.25), 1.5, 0, Math.PI * 2);
+        context.stroke();
+      }
     } else if (block.kind === "math") {
       const middle = top + height / 2;
       context.globalAlpha = 0.5;
@@ -1687,11 +1883,11 @@ class MinimapController {
         : MINIMAP_CHAR_WIDTH;
   }
 
-  private refreshScroll(): void {
+  private refreshScroll(forceDraw = false): void {
     const changed = this.updateScrollLayout();
     this.applySliderStyles();
     this.updateCaret();
-    if (changed && this.hasFrame) {
+    if (this.hasFrame && (changed || forceDraw)) {
       this.draw();
     }
   }
@@ -1787,7 +1983,7 @@ class MinimapController {
     }
     this.palette = resolveMinimapPalette(this.view.dom);
     if (!this.palette) {
-      this.markUnsupported();
+      this.retryDraw();
       return;
     }
     if (this.geometry && this.anchorMap && this.lineTable && isVisibleState(this.state)) {
@@ -1911,14 +2107,16 @@ class MinimapController {
   }
 
   private onWheel(event: WheelEvent): void {
-    if (!isVisibleState(this.state)) {
+    // A pending rebuild still owns the wheel: the rail is visible and the
+    // page must not scroll underneath it.
+    if (!isVisibleState(this.state) && this.state !== "pending") {
       return;
     }
+    event.preventDefault();
     const geometry = this.geometry;
     if (!geometry) {
       return;
     }
-    event.preventDefault();
     let delta = event.deltaY;
     if (event.shiftKey && event.deltaX !== 0) {
       delta = event.deltaX;

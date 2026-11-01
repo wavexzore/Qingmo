@@ -46,6 +46,8 @@ export type LivePreviewWidgetSpec =
       title: string | null;
       width: string | null;
       height: string | null;
+      /** Alone in its paragraph: render as a full-width block plate. */
+      block: boolean;
     }
   | { kind: "code-language"; language: string; title: string | null }
   | { kind: "entity"; raw: string }
@@ -521,8 +523,39 @@ function normalizeReferenceLabel(value: string): string {
   return value.replace(/^\[/, "").replace(/\]$/, "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+const BACKSLASH_ESCAPE = /\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g;
+const ENTITIES: Readonly<Record<string, string>> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+};
+
+/**
+ * Applies CommonMark destination rules: `<...>` delimiters are removed and
+ * backslash escapes / character references are decoded, so `my pic.png` and
+ * `a\[1\].png` reach the resolver as real file names.
+ */
+function decodeDestination(raw: string): string {
+  const trimmed = raw.trim();
+  const inner = trimmed.startsWith("<") && trimmed.endsWith(">") ? trimmed.slice(1, -1) : trimmed;
+  return inner
+    .replace(BACKSLASH_ESCAPE, "$1")
+    .replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => ENTITIES[entity] ?? entity);
+}
+
 function titleText(doc: EditorState["doc"], node: MarkdownNode | null): string | null {
   return node ? doc.sliceString(node.from, node.to).replace(/^["'(]|["')]$/g, "") : null;
+}
+
+function imageIsBlock(doc: EditorState["doc"], node: MarkdownNode): boolean {
+  const parent = node.parent;
+  return (
+    parent?.name === "Paragraph" &&
+    doc.sliceString(parent.from, node.from).trim() === "" &&
+    doc.sliceString(node.to, parent.to).trim() === ""
+  );
 }
 
 function readImage(
@@ -541,14 +574,16 @@ function readImage(
 
   const alt = doc.sliceString(opening.to, closingLabel.from);
   const title = titleText(doc, firstChild(node, "LinkTitle"));
+  const block = imageIsBlock(doc, node);
   if (url) {
     return {
       kind: "image",
-      src: doc.sliceString(url.from, url.to),
+      src: decodeDestination(doc.sliceString(url.from, url.to)),
       alt,
       title,
       width: null,
       height: null,
+      block,
     };
   }
 
@@ -563,11 +598,12 @@ function readImage(
   return definition
     ? {
         kind: "image",
-        src: definition.url,
+        src: decodeDestination(definition.url),
         alt,
         title: definition.title,
         width: null,
         height: null,
+        block,
       }
     : null;
 }
@@ -1214,6 +1250,7 @@ export function collectDecorationSpecs(
                   title: copy.media.imageEmbedTitle(embed.target),
                   width: size?.width ?? null,
                   height: size?.height ?? null,
+                  block: imageIsBlock(doc, syntaxNode),
                 });
                 return false;
               }

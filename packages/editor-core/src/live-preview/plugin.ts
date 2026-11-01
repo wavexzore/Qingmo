@@ -26,6 +26,7 @@ import { tableBlockPreview, tableSelectionGuard } from "./table-blocks";
 import { tocPreview } from "./toc";
 import { livePreviewTheme } from "./theme";
 import { createLivePreviewWidget } from "./widgets";
+import { imageSrcResolver, type ImageSrcResolver } from "./image-src";
 
 type SyntaxTreeRef = ReturnType<typeof syntaxTree>;
 
@@ -35,6 +36,7 @@ interface CacheKey {
   viewport: string;
   selections: string;
   uiCopy: string;
+  imageResolver: ImageSrcResolver;
 }
 
 interface LivePreviewBuild {
@@ -53,6 +55,7 @@ function cacheKey(state: EditorState, ranges: readonly VisibleRange[]): CacheKey
     viewport: rangeKey(ranges),
     selections: rangeKey(state.selection.ranges),
     uiCopy: state.facet(editorUiCopy).version,
+    imageResolver: state.facet(imageSrcResolver),
   };
 }
 
@@ -62,7 +65,8 @@ function sameKey(left: CacheKey, right: CacheKey): boolean {
     left.tree === right.tree &&
     left.viewport === right.viewport &&
     left.selections === right.selections &&
-    left.uiCopy === right.uiCopy
+    left.uiCopy === right.uiCopy &&
+    left.imageResolver === right.imageResolver
   );
 }
 
@@ -75,7 +79,11 @@ function emptyBuild(): LivePreviewBuild {
  * collected separately as atomic ranges so arrow keys and selection cannot
  * land inside a bullet, checkbox, rule, image or language badge.
  */
-function buildFromSpecs(specs: readonly DecorationSpec[], copy: EditorUiCopy): LivePreviewBuild {
+function buildFromSpecs(
+  specs: readonly DecorationSpec[],
+  copy: EditorUiCopy,
+  resolveImage: ImageSrcResolver,
+): LivePreviewBuild {
   const decorations: ReturnType<Decoration["range"]>[] = [];
   const atomic: ReturnType<Decoration["range"]>[] = [];
 
@@ -99,7 +107,7 @@ function buildFromSpecs(specs: readonly DecorationSpec[], copy: EditorUiCopy): L
       continue;
     }
 
-    const widget = createLivePreviewWidget(spec.widget, spec.from, spec.to, copy);
+    const widget = createLivePreviewWidget(spec.widget, spec.from, spec.to, copy, resolveImage);
     const decoration = Decoration.replace({ widget }).range(spec.from, spec.to);
     decorations.push(decoration);
     atomic.push(decoration);
@@ -124,6 +132,7 @@ export function buildLivePreviewDecorations(
   return buildFromSpecs(
     collectDecorationSpecs(state, ranges, selectionRanges, blockedRanges),
     state.facet(editorUiCopy),
+    state.facet(imageSrcResolver),
   ).decorations;
 }
 
@@ -158,6 +167,7 @@ function buildForView(view: EditorView): LivePreviewBuild {
   return buildFromSpecs(
     collectDecorationSpecs(state, ranges, state.selection.ranges, blocked),
     state.facet(editorUiCopy),
+    state.facet(imageSrcResolver),
   );
 }
 
