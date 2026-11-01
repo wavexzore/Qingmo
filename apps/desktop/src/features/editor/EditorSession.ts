@@ -11,6 +11,7 @@ import {
   previewTierFor,
   readHeadingOutline,
   setEditorUiCopyEffect,
+  setImageSrcResolverEffect,
   setModeEffect,
   setPlaceholderEffect,
   setReadOnlyEffect,
@@ -23,6 +24,8 @@ import {
 import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
 
 import type { SaveState } from "../../lib/save-state";
+
+import { createImageSrcResolver } from "./session/resolve-image-src";
 
 export const STATUS_THROTTLE_MS = 100;
 export const UNTITLED_DOC_TOKEN = "untitled";
@@ -86,6 +89,11 @@ export interface EditorSessionOptions {
   untitledTitle?: string;
   /** Initial Widget/block copy; the locale hook replaces it on changes. */
   uiCopy?: EditorUiCopy;
+  /**
+   * Overrides the default resolver, which maps document-relative sources to
+   * asset-protocol URLs.
+   */
+  resolveImageSrc?: (src: string) => string;
   /** User preference for Live Preview; defaults to true. */
   previewPreference?: boolean;
   /**
@@ -186,7 +194,9 @@ export class EditorSession {
   private readonly statusListeners = new Set<() => void>();
   private readonly docChangedListeners = new Set<() => void>();
   private readonly outlineListeners = new Set<() => void>();
-  private readonly extraExtensions: readonly Extension[];
+  private readonly baseExtensions: readonly Extension[];
+  private readonly customImageResolver: boolean;
+  private imageResolver: (src: string) => string;
   private readonly statusThrottleMs: number;
   private placeholder: string | undefined;
   private pendingPlaceholder: string | null = null;
@@ -217,7 +227,9 @@ export class EditorSession {
     this.statusThrottleMs = options.statusThrottleMs ?? STATUS_THROTTLE_MS;
     // The open-link gesture needs a host port even before the first view
     // exists, so the facet travels with the state rather than the DOM.
-    this.extraExtensions = [
+    this.customImageResolver = options.resolveImageSrc !== undefined;
+    this.imageResolver = options.resolveImageSrc ?? createImageSrcResolver(payload.path);
+    this.baseExtensions = [
       ...(options.extensions ?? []),
       editorOpenExternal.of({ open: options.openExternal ?? (() => undefined) }),
       minimapExtension(),
@@ -234,7 +246,8 @@ export class EditorSession {
     const state = createEditorState({
       doc: payload.text,
       readOnly: payload.readOnly,
-      extraExtensions: this.extraExtensions,
+      extraExtensions: this.baseExtensions,
+      imageSrcResolver: this.imageResolver,
       previewEnabled: effective,
       ...(options.initialSelection ? { selection: options.initialSelection } : {}),
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
@@ -354,6 +367,7 @@ export class EditorSession {
     this.docTokenValue = payload.docToken;
     this.untitled = false;
     this.metadata = metadataOf(payload);
+    this.applyImageResolver(payload.path);
 
     if (payload.readOnly) {
       const effect = setReadOnlyEffect(true);
@@ -384,6 +398,23 @@ export class EditorSession {
   }
 
   /**
+   * Replaces the document-relative resolver and lets the view rebuild the
+   * affected decorations. A host-supplied resolver stays in charge.
+   */
+  private applyImageResolver(path: string): void {
+    if (this.customImageResolver) {
+      return;
+    }
+    this.imageResolver = createImageSrcResolver(path);
+    const effect = setImageSrcResolverEffect(this.imageResolver);
+    if (this.view) {
+      this.view.dispatch({ effects: effect });
+    } else {
+      this.state = this.state.update({ effects: effect }).state;
+    }
+  }
+
+  /**
    * Rebuilds the state from a reloaded payload. A fresh EditorState also
    * clears undo history, which is the required conflict-reload semantic.
    */
@@ -394,13 +425,17 @@ export class EditorSession {
     if (payload.docToken !== this.docToken) {
       throw new Error("reload returned a different docToken");
     }
+    if (!this.customImageResolver && payload.path !== this.metadata.docId) {
+      this.imageResolver = createImageSrcResolver(payload.path);
+    }
 
     const tier = previewTierFor(normalizeLineEndings(payload.text).length);
     const effective = this.previewPreference && tier !== "source";
     let state = createEditorState({
       doc: payload.text,
       readOnly: payload.readOnly,
-      extraExtensions: this.extraExtensions,
+      extraExtensions: this.baseExtensions,
+      imageSrcResolver: this.imageResolver,
       previewEnabled: effective,
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
       ...(this.uiCopy !== undefined ? { uiCopy: this.uiCopy } : {}),

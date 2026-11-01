@@ -991,6 +991,29 @@ export const livePreviewTheme = EditorView.theme(
       maxHeight: "320px",
       borderRadius: "4px",
     },
+    ".cm-md-image-block": {
+      display: "flex",
+      justifyContent: "center",
+      width: "100%",
+      padding: "0.08em 0.4em",
+      boxSizing: "border-box",
+    },
+    // A block image inside a list wraps below the marker; indent it so it
+    // aligns with the item text instead of the left edge.
+    ".cm-md-image-block.is-loaded": {
+      paddingTop: "0.25em",
+      paddingBottom: "0.25em",
+      backgroundColor: "transparent",
+    },
+    ".cm-line:has(.cm-md-bullet) .cm-md-image-block, .cm-line:has(.cm-md-task) .cm-md-image-block":
+      {
+        paddingLeft: "1.45em",
+      },
+    ".cm-md-image-block img": {
+      width: "auto",
+      height: "auto",
+      maxHeight: "none",
+    },
     ".cm-md-image-icon": {
       color: "var(--qm-accent)",
       fontFamily: "var(--qm-font-mono)",

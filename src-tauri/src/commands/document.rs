@@ -33,6 +33,39 @@ pub async fn document_open(app: State<'_, AppHandle>) -> Result<(), AppError> {
     open_path_in_new_window(app, path).await
 }
 
+/// Number of parent directories granted non-recursively for `../` images.
+const ASSET_SCOPE_ANCESTORS: usize = 3;
+
+/// Grants the asset protocol read access needed by one document.
+///
+/// The document's own directory is recursive so a sibling `assets/` folder
+/// works; ancestors are granted non-recursively so `../image.png` resolves
+/// without opening whole trees. The glob patterns are additive and live for
+/// the process, matching Tauri's scope API.
+fn allow_document_assets<R: tauri::Runtime>(app: &tauri::AppHandle<R>, document: &Path) {
+    let scope = app.asset_protocol_scope();
+    for (dir, recursive) in asset_scope_dirs(document) {
+        let _ = scope.allow_directory(&dir, recursive);
+    }
+}
+
+/// Directories granted for one document: its own directory recursively, then
+/// ancestors non-recursively. Kept pure so the shape is unit-testable.
+fn asset_scope_dirs(document: &Path) -> Vec<(PathBuf, bool)> {
+    let mut dirs = Vec::new();
+    let Some(parent) = document.parent() else {
+        return dirs;
+    };
+    dirs.push((parent.to_path_buf(), true));
+    let mut ancestor = parent.parent();
+    for _ in 0..ASSET_SCOPE_ANCESTORS {
+        let Some(dir) = ancestor else { break };
+        dirs.push((dir.to_path_buf(), false));
+        ancestor = dir.parent();
+    }
+    dirs
+}
+
 /// Asks the native dialog for one document.
 async fn pick_document(app: &AppHandle) -> Result<PathBuf, AppError> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -77,6 +110,9 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
                 format!("document open task failed: {error}"),
             )
         })??;
+
+    // Images referenced by the document load through the asset protocol.
+    allow_document_assets(&app, Path::new(&payload.path));
 
     let app_name = app
         .state::<crate::state::ShellLocale>()
@@ -228,6 +264,9 @@ pub async fn document_save_as<R: tauri::Runtime>(
             )
         })??;
 
+    // The new location may be the first directory this session can read.
+    allow_document_assets(window.app_handle(), Path::new(&payload.path));
+
     if let Err(error) = window.set_title(&window_title_for(Path::new(&payload.path), &app_name)) {
         tracing::warn!(%error, "failed to update the window title");
     }
@@ -281,7 +320,7 @@ pub async fn document_write_atomic(
 
 #[cfg(test)]
 mod tests {
-    use super::{opened_paths, startup_paths, window_title_for};
+    use super::{asset_scope_dirs, opened_paths, startup_paths, window_title_for};
     use std::path::Path;
     use tauri::Url;
 
@@ -345,5 +384,23 @@ mod tests {
         let missing = dir.path().join("gone.md");
 
         assert!(opened_paths(&[Url::from_file_path(&missing).expect("url")]).is_empty());
+    }
+
+    #[test]
+    fn asset_scope_grants_the_document_directory_first() {
+        let dirs = asset_scope_dirs(Path::new("/notes/topic/doc.md"));
+
+        assert_eq!(dirs[0], (std::path::PathBuf::from("/notes/topic"), true));
+        assert_eq!(dirs.len(), 3);
+        assert!(dirs[1..].iter().all(|(_, recursive)| !recursive));
+        assert_eq!(dirs[1].0, std::path::PathBuf::from("/notes"));
+        assert_eq!(dirs[2].0, std::path::PathBuf::from("/"));
+    }
+
+    #[test]
+    fn asset_scope_stops_at_a_shallow_root() {
+        let dirs = asset_scope_dirs(Path::new("/doc.md"));
+
+        assert_eq!(dirs, vec![(std::path::PathBuf::from("/"), true)]);
     }
 }

@@ -1,15 +1,17 @@
 export {
   createEditorState,
+  imageSrcCompartment,
   modeCompartment,
   normalizeLineEndings,
   placeholderCompartment,
   readOnlyCompartment,
   readOnlyExtensions,
+  setEditorUiCopyEffect,
+  setImageSrcResolverEffect,
   setModeEffect,
   setPlaceholderEffect,
   setReadOnlyEffect,
   setThemeEffect,
-  setEditorUiCopyEffect,
   themeCompartment,
   uiCopyCompartment,
 } from "./createEditor";
@@ -60,6 +62,7 @@ export {
 export { readDetailsRanges, scanDetailsTags } from "./live-preview/details-range";
 export type { DetailsRange, DetailsTag } from "./live-preview/details-range";
 export { buildLivePreviewDecorations, livePreview, livePreviewPlugin } from "./live-preview/plugin";
+export { imageSrcResolver, resolveImageSrc, type ImageSrcResolver } from "./live-preview/image-src";
 export {
   collectDecorationSpecs,
   readTable,

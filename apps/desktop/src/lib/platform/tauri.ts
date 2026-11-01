@@ -1,3 +1,4 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { CloseRequestedPayload, MenuActionPayload } from "@qingmo/shared";
@@ -6,6 +7,17 @@ import { EVENTS, MENU_ACTION_NAMES, type MenuAction } from "../ipc/commands";
 import { normalizeError } from "../ipc/errors";
 import { getCompositionTracker } from "./composition";
 import type { PlatformPort } from "./port";
+
+/**
+ * Turns an absolute native path into an asset-protocol URL.
+ *
+ * Features cannot import `@tauri-apps/api` directly, so path helpers call this
+ * thin wrapper instead. Tauri percent-encodes the whole path and strips the
+ * Windows verbatim prefix (`\\?\`) before building the URL.
+ */
+export function toAssetUrl(path: string): string {
+  return convertFileSrc(path);
+}
 
 /**
  * The only production adapter allowed to import `@tauri-apps/api`.

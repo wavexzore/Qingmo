@@ -101,6 +101,7 @@ class ImageWidget extends WidgetType {
     private readonly title: string | null,
     private readonly width: string | null,
     private readonly height: string | null,
+    private readonly block = false,
   ) {
     super();
   }
@@ -112,14 +113,15 @@ class ImageWidget extends WidgetType {
       other.alt === this.alt &&
       other.title === this.title &&
       other.width === this.width &&
-      other.height === this.height
+      other.height === this.height &&
+      other.block === this.block
     );
   }
 
-  override toDOM(): HTMLElement {
-    const wrapper = document.createElement("span");
-    wrapper.className = "cm-md-image";
-    wrapper.title = this.title ?? this.src;
+  override toDOM(view: EditorView): HTMLElement {
+    const wrapper = document.createElement(this.block ? "div" : "span");
+    wrapper.className = this.block ? "cm-md-image cm-md-image-block" : "cm-md-image";
+    wrapper.title = this.title ?? displayName(this.src);
 
     const icon = document.createElement("span");
     icon.className = "cm-md-image-icon";
@@ -128,21 +130,25 @@ class ImageWidget extends WidgetType {
 
     const fallback = document.createElement("span");
     fallback.className = "cm-md-image-fallback";
-    fallback.textContent = this.alt || fileNameOf(this.src) || this.src;
+    fallback.textContent = this.alt || displayName(this.src) || this.src;
 
     wrapper.append(icon, fallback);
 
     if (this.src.length > 0) {
       const image = document.createElement("img");
       image.alt = this.alt;
+      image.decoding = "async";
       image.loading = "lazy";
       image.referrerPolicy = "no-referrer";
       image.addEventListener("error", () => {
         image.remove();
+        view.requestMeasure();
       });
       image.addEventListener("load", () => {
+        wrapper.classList.add("is-loaded");
         icon.remove();
         fallback.remove();
+        view.requestMeasure();
       });
       if (this.width) {
         image.setAttribute("width", this.width);
@@ -707,11 +713,22 @@ function fileNameOf(src: string): string {
   return parts[parts.length - 1] ?? withoutQuery;
 }
 
+/** Short, human-readable name for tooltips and fallbacks. */
+function displayName(src: string): string {
+  const name = fileNameOf(src);
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
 export function createLivePreviewWidget(
   spec: LivePreviewWidgetSpec,
   from: number,
   to: number,
   copy: EditorUiCopy,
+  resolveImage: (src: string) => string = (src) => src,
 ): WidgetType {
   switch (spec.kind) {
     case "bullet":
@@ -721,7 +738,14 @@ export function createLivePreviewWidget(
     case "rule":
       return new RuleWidget();
     case "image":
-      return new ImageWidget(spec.src, spec.alt, spec.title, spec.width, spec.height);
+      return new ImageWidget(
+        resolveImage(spec.src),
+        spec.alt,
+        spec.title,
+        spec.width,
+        spec.height,
+        spec.block,
+      );
     case "code-language":
       return new CodeLanguageWidget(copy, spec.language, spec.title);
     case "entity":

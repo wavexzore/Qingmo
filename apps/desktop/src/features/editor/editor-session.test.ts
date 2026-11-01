@@ -4,7 +4,12 @@ import { EditorView } from "@codemirror/view";
 import type { FilePayload } from "@qingmo/shared";
 import { describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_EDITOR_UI_COPY, editorUiCopy, type EditorUiCopy } from "@qingmo/editor-core";
+import {
+  DEFAULT_EDITOR_UI_COPY,
+  editorUiCopy,
+  imageSrcResolver,
+  type EditorUiCopy,
+} from "@qingmo/editor-core";
 import { EditorSession, UNTITLED_DOC_TOKEN } from "./EditorSession";
 
 function payload(overrides: Partial<FilePayload> = {}): FilePayload {
@@ -52,6 +57,77 @@ describe("EditorSession", () => {
     expect(snapshot.selection).toEqual({ anchor: 0, head: 0 });
     expect(snapshot.cursor).toEqual({ line: 1, column: 1 });
     expect(snapshot.version).toBe(0);
+  });
+
+  it("installs an image resolver when Save As binds a draft to a path", () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: { convertFileSrc: (path: string) => `asset://localhost${path}` },
+    });
+    try {
+      const session = EditorSession.createUntitled("draft", { initialText: "x" });
+      expect(session.editorState.facet(imageSrcResolver)("a.png")).toBe("a.png");
+
+      session.adoptSavedAs(payload({ docToken: "token-2", path: "/docs/topic/note.md" }));
+      expect(session.editorState.facet(imageSrcResolver)("a.png")).toBe(
+        "asset://localhost/docs/topic/a.png",
+      );
+    } finally {
+      delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    }
+  });
+
+  it("keeps a host-supplied resolver across Save As", () => {
+    const session = EditorSession.createUntitled("draft", {
+      initialText: "x",
+      resolveImageSrc: (src) => `custom:${src}`,
+    });
+
+    session.adoptSavedAs(payload({ docToken: "token-2", path: "/docs/topic/note.md" }));
+    expect(session.editorState.facet(imageSrcResolver)("a.png")).toBe("custom:a.png");
+  });
+
+  it("propagates the resolver to an attached view", () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: { convertFileSrc: (path: string) => `asset://localhost${path}` },
+    });
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const session = EditorSession.createUntitled("draft", { initialText: "x" });
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+    try {
+      session.adoptSavedAs(payload({ docToken: "token-2", path: "/docs/topic/note.md" }));
+      expect(view.state.facet(imageSrcResolver)("a.png")).toBe(
+        "asset://localhost/docs/topic/a.png",
+      );
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+      delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    }
+  });
+
+  it("re-installs the resolver after a reload even when the path is unchanged", () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: { convertFileSrc: (path: string) => `asset://localhost${path}` },
+    });
+    try {
+      const session = EditorSession.create(payload({ path: "/docs/topic/note.md" }));
+      expect(session.editorState.facet(imageSrcResolver)("a.png")).toBe(
+        "asset://localhost/docs/topic/a.png",
+      );
+
+      session.replacePayload(payload({ path: "/docs/topic/note.md", text: "y" }));
+      expect(session.editorState.facet(imageSrcResolver)("a.png")).toBe(
+        "asset://localhost/docs/topic/a.png",
+      );
+    } finally {
+      delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    }
   });
 
   it("never puts document text in the React snapshot", () => {
@@ -288,7 +364,8 @@ describe("EditorSession", () => {
       expect(session.isUntitled).toBe(false);
       expect(session.docToken).toBe("token-2");
       expect(session.attachedView).toBe(view);
-      expect(view.state).toBe(stateBefore);
+      // Only the resolver compartment is reconfigured; text and history stay.
+      expect(view.state.doc).toBe(stateBefore.doc);
       expect(session.readText()).toBe("draft");
       expect(session.getSnapshot()).toMatchObject({
         docId: "/docs/untitled.md",
