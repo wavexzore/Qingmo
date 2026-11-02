@@ -16,7 +16,10 @@ import {
 import tauriConfig from "../src-tauri/tauri.conf.json";
 
 const DOC_PATH = "/docs/MARKDOWN-SYNTAX.md";
-const DOC_TEXT = readFileSync(path.join(__dirname, "../docs/MARKDOWN-SYNTAX.md"), "utf8");
+const DOC_TEXT = readFileSync(
+  path.join(__dirname, "../packages/editor-core/src/live-preview/fixtures/markdown-syntax.md"),
+  "utf8",
+);
 const SECTION_HEADING = "## 4. 删除线、高亮、上下标";
 const SECTION_LINE = DOC_TEXT.slice(0, DOC_TEXT.indexOf(SECTION_HEADING)).split("\n").length;
 
@@ -851,6 +854,11 @@ test("loads a relative image through the asset protocol under the production CSP
 
 test("re-resolves a draft image after Save As", async ({ page }) => {
   await installAssetProtocol(page);
+  // An unsaved draft has no directory, so `pic.png` is fetched relative to the
+  // page. Serve it so the image element survives its load event before Save As.
+  await page.route("**/pic.png", (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: ASSET_PNG }),
+  );
   const text = "![草稿图](pic.png)\n\n尾段\n";
 
   await openApp(page, [], {
