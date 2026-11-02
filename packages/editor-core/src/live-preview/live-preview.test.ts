@@ -1443,7 +1443,10 @@ describe("livePreviewPlugin", () => {
   });
 
   it("renders the Markdown syntax guide's inline syntax table", () => {
-    const guide = readFileSync("docs/MARKDOWN-SYNTAX.md", "utf8");
+    const guide = readFileSync(
+      "packages/editor-core/src/live-preview/fixtures/markdown-syntax.md",
+      "utf8",
+    );
     const start = guide.indexOf("| 语法 | 写法 | 渲染 | 支持度 |");
     const end = guide.indexOf("\n\n", start);
     expect(start).toBeGreaterThan(-1);

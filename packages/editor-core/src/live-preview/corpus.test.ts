@@ -19,7 +19,10 @@ import { tocPreview } from "./toc";
  * this file were cross-checked against Typora 1.14.15's HTML export, so a
  * change here means either the guide changed or a block parser regressed.
  */
-const DOC = readFileSync("docs/MARKDOWN-SYNTAX.md", "utf8");
+const DOC = readFileSync(
+  "packages/editor-core/src/live-preview/fixtures/markdown-syntax.md",
+  "utf8",
+);
 
 function stateFor(doc: string) {
   const state = createEditorState({ doc });
