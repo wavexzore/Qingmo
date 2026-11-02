@@ -310,13 +310,14 @@ export class FakeIpc implements IpcPort {
 
   /**
    * Browser harness fallback: reset the only window to a fresh untitled
-   * document. The caller replaces the React session; clearing the token and
-   * pending payload keeps the next save on the Save As path.
+   * document. The caller flushes the current session before replacing it, so
+   * the active token must survive until that flush completes. The new
+   * untitled session never writes through it, and the next Open/Save As
+   * replaces it.
    */
   async documentNew(): Promise<DocumentNewPlacement> {
     await this.wait(COMMANDS.documentNew);
     this.maybeThrow(COMMANDS.documentNew);
-    this.active = null;
     this.pending = null;
     return "current";
   }

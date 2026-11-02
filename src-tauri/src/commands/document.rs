@@ -11,29 +11,35 @@ use crate::state::{
     DocumentRegistry, DocumentWatcher, FocusTracker, StartupWindow, WindowSessions,
 };
 
-/// Native window title for an open document.
+/// The one native title format for every document window.
 ///
-/// The macOS window is the document surface, so the file name belongs in the
-/// title bar rather than in a second in-app header.
-pub(crate) fn window_title_for(path: &Path, app_name: &str) -> String {
-    match path.file_name().and_then(|name| name.to_str()) {
+/// The macOS window is the document surface, so the file name (or the
+/// localized "Untitled" name) belongs in the title bar rather than in a second
+/// in-app header.
+fn format_window_title(document_name: Option<&str>, app_name: &str) -> String {
+    match document_name {
         Some(name) => format!("{name} — {app_name}"),
         None => app_name.to_string(),
     }
 }
 
+/// Native window title for an open document.
+pub(crate) fn window_title_for(path: &Path, app_name: &str) -> String {
+    format_window_title(path.file_name().and_then(|name| name.to_str()), app_name)
+}
+
 /// Native window title for a document that has no path yet.
 pub(crate) fn window_title_for_untitled(untitled_file_name: &str, app_name: &str) -> String {
-    format!("{untitled_file_name} — {app_name}")
+    format_window_title(Some(untitled_file_name), app_name)
 }
 
 /// Builds one document window with the single window configuration shared by
 /// Open and New, then records and applies focus.
-fn build_document_window(
-    app: &AppHandle,
+fn build_document_window<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     label: &str,
     title: String,
-) -> tauri::Result<WebviewWindow> {
+) -> tauri::Result<WebviewWindow<R>> {
     let window = WebviewWindowBuilder::new(
         app,
         label,
@@ -49,6 +55,51 @@ fn build_document_window(
         tracing::warn!(%error, "failed to focus the document window");
     }
     Ok(window)
+}
+
+/// Whether any window can hold a document.
+///
+/// About and Settings never do, so they cannot keep the app alive on their
+/// own. Used to decide whether a failed window creation must fall back to the
+/// main window.
+pub fn has_editable_window<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
+    app.webview_windows()
+        .keys()
+        .any(|label| !crate::commands::close::is_auxiliary_window(label))
+}
+
+/// Creates one document window and rolls back the caller's staged state when
+/// the webview cannot be built.
+///
+/// Open and New differ only in preparing the label/title and undoing their own
+/// staged state, so the build order, rollback and windowless fallback live
+/// here. A failure only creates the main window when the failed window would
+/// have been the last editable one.
+pub fn create_document_window<R, Build, Rollback>(
+    app: &AppHandle<R>,
+    label: String,
+    title: String,
+    build: Build,
+    rollback: Rollback,
+) -> Result<(), AppError>
+where
+    R: tauri::Runtime,
+    Build: FnOnce(&AppHandle<R>, &str, String) -> tauri::Result<WebviewWindow<R>>,
+    Rollback: FnOnce(),
+{
+    match build(app, &label, title) {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            rollback();
+            if !has_editable_window(app) {
+                crate::ensure_main_window(app);
+            }
+            Err(AppError::new(
+                AppErrorCode::Io,
+                format!("failed to create the document window: {error}"),
+            ))
+        }
+    }
 }
 
 /// Opens the selected file in a new document window.
@@ -78,7 +129,7 @@ pub async fn document_new(app: State<'_, AppHandle>) -> Result<(), AppError> {
 ///
 /// Shared by the IPC command and the startup menu fallback (no webview is
 /// alive yet during the boot delay, so there is nothing to forward).
-pub(crate) async fn create_untitled_window(app: AppHandle) -> Result<(), AppError> {
+pub async fn create_untitled_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), AppError> {
     let locale = app.state::<crate::state::ShellLocale>();
     let app_name = locale
         .labels()
@@ -88,27 +139,17 @@ pub(crate) async fn create_untitled_window(app: AppHandle) -> Result<(), AppErro
     let label = format!("doc-{}", uuid::Uuid::new_v4());
     let sessions = app.state::<WindowSessions>().inner().clone();
 
-    // New is also a document open: the startup fallback main window must not
-    // appear behind a window created during the boot delay.
-    app.state::<StartupWindow>().mark_opened();
+    // New is also a document open: atomically claim the launch so the startup
+    // fallback timer cannot add a blank main window behind this one.
+    app.state::<StartupWindow>().claim_if_unopened();
     sessions.mark_untitled(&label);
 
-    match build_document_window(&app, &label, title) {
-        Ok(_) => {
-            tracing::info!(window = %label, "opened an untitled document window");
-            Ok(())
-        }
-        Err(error) => {
-            sessions.clear_untitled(&label);
-            if app.webview_windows().is_empty() {
-                crate::ensure_main_window(&app);
-            }
-            Err(AppError::new(
-                AppErrorCode::Io,
-                format!("failed to create the document window: {error}"),
-            ))
-        }
-    }
+    let rollback_label = label.clone();
+    create_document_window(&app, label, title, build_document_window, || {
+        sessions.clear_untitled(&rollback_label);
+    })?;
+    tracing::info!(window = %rollback_label, "opened an untitled document window");
+    Ok(())
 }
 
 /// Number of parent directories granted non-recursively for `../` images.
@@ -175,7 +216,10 @@ async fn pick_document(app: &AppHandle) -> Result<PathBuf, AppError> {
 /// it on boot through `document_take_pending`. The caller owns user-visible
 /// error reporting: the dialog command forwards it over IPC, the OS handler
 /// only logs it.
-pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Result<(), AppError> {
+pub(crate) async fn open_path_in_new_window<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    path: PathBuf,
+) -> Result<(), AppError> {
     let registry = app.state::<DocumentRegistry>().inner().clone();
     let sessions = app.state::<WindowSessions>().inner().clone();
 
@@ -202,20 +246,12 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
     let label = format!("doc-{}", uuid::Uuid::new_v4());
     sessions.stage(&label, payload);
 
-    match build_document_window(&app, &label, title) {
-        Ok(_) => {
-            tracing::info!(window = %label, "opened a document window");
-        }
-        Err(error) => {
-            sessions.discard_pending(&label);
-            registry.release(&doc_token);
-            return Err(AppError::new(
-                AppErrorCode::Io,
-                format!("failed to create the document window: {error}"),
-            ));
-        }
-    }
-
+    let rollback_label = label.clone();
+    create_document_window(&app, label, title, build_document_window, || {
+        sessions.discard_pending(&rollback_label);
+        registry.release(&doc_token);
+    })?;
+    tracing::info!(window = %rollback_label, "opened a document window");
     Ok(())
 }
 

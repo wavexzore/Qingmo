@@ -525,9 +525,11 @@ fn command_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
         .and_then(|label| app.get_webview_window(&label))
         .or_else(|| app.get_webview_window("main"))
         .or_else(|| {
+            // Auxiliary windows have no menu listener, so Settings owning the
+            // last focus during startup must not swallow a document command.
             app.webview_windows()
                 .values()
-                .find(|window| window.label() != ABOUT_WINDOW_LABEL)
+                .find(|window| !commands::close::is_auxiliary_window(window.label()))
                 .cloned()
         })
 }
@@ -611,7 +613,7 @@ const MAIN_WINDOW_BOOT_DELAY: Duration = Duration::from_millis(300);
 /// The window is declared with `create: false` so a launch caused by opening a
 /// document can skip it. A failed open falls back to it instead of ending the
 /// launch with no window at all.
-pub(crate) fn ensure_main_window(app: &AppHandle) {
+pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
     if app.get_webview_window("main").is_some() {
         return;
     }
@@ -722,6 +724,20 @@ pub fn run() {
                 return;
             }
 
+            if id == MENU_FILE_NEW {
+                // New is always a separate native window, so Rust owns it
+                // directly. That also works during the startup delay, when no
+                // webview exists to receive an action event, and keeps New
+                // available while Settings owns the last focus.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = commands::document::create_untitled_window(app).await {
+                        tracing::error!(%error, "failed to create a document window");
+                    }
+                });
+                return;
+            }
+
             if MENU_ACTIONS.contains(&id) {
                 match command_window(app) {
                     Some(window) => {
@@ -737,19 +753,6 @@ pub fn run() {
                         ) {
                             tracing::error!(menu_action = id, %error, "failed to emit menu action");
                         }
-                    }
-                    None if id == MENU_FILE_NEW => {
-                        // The boot fallback window does not exist yet during
-                        // the 300 ms delay, so a Cmd+N there has no webview to
-                        // receive the action. Create the document directly.
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(error) =
-                                commands::document::create_untitled_window(app).await
-                            {
-                                tracing::error!(%error, "failed to create a document window");
-                            }
-                        });
                     }
                     None => tracing::warn!(menu_action = id, "no window to receive menu action"),
                 }
@@ -832,7 +835,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(MAIN_WINDOW_BOOT_DELAY).await;
-                if !handle.state::<state::StartupWindow>().was_opened() {
+                if handle.state::<state::StartupWindow>().claim_if_unopened() {
                     ensure_main_window(&handle);
                 }
             });

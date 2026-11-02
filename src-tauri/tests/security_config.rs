@@ -65,6 +65,8 @@ fn capability_contains_only_expected_permissions() {
             "allow-session-view-state-set",
             "allow-session-draft-write",
             "allow-session-draft-discard",
+            "allow-session-draft-list",
+            "allow-session-draft-read",
         ]
     );
 

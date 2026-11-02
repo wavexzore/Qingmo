@@ -47,7 +47,7 @@ interface DocumentSessionContextValue {
   /** Writes crash drafts for untitled/error/conflict documents. */
   journal: DraftJournal | null;
   viewState: EditorViewState | null;
-  /** Main-window recovery list; empty in document windows. */
+  /** Crash drafts available for recovery in this window. */
   drafts: DraftMeta[];
   setSession(next: EditorSession | null, extras?: SetSessionExtras): void;
   /** Replaces the current document with a fresh empty untitled session. */
@@ -217,9 +217,8 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
   }, [documentWindow, ipc, startSession, startUntitled]);
 
   useLayoutEffect(() => {
-    if (documentWindow) {
-      return;
-    }
+    // Every window may recover: a New-only launch has no main window, and the
+    // capability now grants draft list/read to document windows too.
     let cancelled = false;
     ipc
       .sessionDraftList()
@@ -234,7 +233,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [documentWindow, ipc]);
+  }, [ipc]);
 
   const restoreDraft = useCallback(
     async (id: string): Promise<Result<void, AppError>> => {

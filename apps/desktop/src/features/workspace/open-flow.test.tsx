@@ -411,15 +411,32 @@ describe("blank editor -> editor open flow", () => {
   it("keeps the current document when New opens a native window", async () => {
     const ipc = fileIpc("# Current\n");
     const newSpy = vi.spyOn(ipc, "documentNew").mockResolvedValue("window");
-    const { platform } = renderApp(ipc);
+    const writeSpy = vi.spyOn(ipc, "documentWriteAtomic");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
 
     platform.emitMenuAction("file.open");
     expect(await screen.findByTestId("document-session")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md"));
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    // Press New before the 800ms debounce can save on its own, so the
+    // assertion proves the native window path does not flush.
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nchanged" } });
+    });
 
     platform.emitMenuAction("file.new");
 
     await waitFor(() => expect(newSpy).toHaveBeenCalledTimes(1));
+    expect(writeSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId("document-session")).toBeInTheDocument();
     expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md");
     await waitFor(() => expect(screen.getByTestId("editor-host")).toHaveTextContent("Current"));
@@ -448,6 +465,92 @@ describe("blank editor -> editor open flow", () => {
     expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/editor");
     expect(saveAsSpy).not.toHaveBeenCalled();
+  });
+
+  it("flushes a dirty named document before the browser harness replaces it", async () => {
+    const ipc = fileIpc("# Original\n");
+    const saveAsSpy = vi.spyOn(ipc, "documentSaveAs");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nchanged" } });
+    });
+
+    platform.emitMenuAction("file.new");
+
+    expect(await screen.findByTestId("untitled-editor")).toBeInTheDocument();
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text).toBe("# Original\n\nchanged"));
+    expect(captured.current?.isUntitled).toBe(true);
+    expect(saveAsSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current session when the browser flush fails", async () => {
+    const ipc = fileIpc("# Original\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nchanged" } });
+    });
+    ipc.failNext(COMMANDS.documentWriteAtomic, "PERMISSION_DENIED", "denied");
+
+    platform.emitMenuAction("file.new");
+
+    expect(await screen.findByText("没有读取或写入该文件的权限。")).toBeInTheDocument();
+    expect(screen.getByTestId("document-session")).toBeInTheDocument();
+    expect(captured.current?.isUntitled).toBe(false);
+    expect(captured.current?.readText()).toContain("changed");
+  });
+
+  it("journals a dirty untitled document before the browser harness replaces it", async () => {
+    const ipc = fileIpc();
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "# draft" } });
+    });
+
+    platform.emitMenuAction("file.new");
+
+    await waitFor(() =>
+      expect(ipc.draftWrites.some((draft) => draft.text.includes("# draft"))).toBe(true),
+    );
+    expect(await screen.findByTestId("untitled-editor")).toBeInTheDocument();
+    expect(captured.current?.readText()).toBe("");
+    expect(captured.current?.isUntitled).toBe(true);
   });
 
   it("does not run Save As from a dirty untitled document", async () => {

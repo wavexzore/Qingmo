@@ -150,6 +150,42 @@ describe("DocumentSessionProvider", () => {
     expect(captured.current?.session?.isUntitled).toBe(false);
   });
 
+  it("loads crash drafts in a document window", async () => {
+    window.history.replaceState({}, "", "/?window=document");
+    const ipc = new FakeIpc();
+    await ipc.sessionDraftWrite({
+      kind: "untitled",
+      title: "recover me",
+      text: "# draft",
+      anchor: 0,
+      head: 0,
+    });
+    const captured: { current: ContextValue | null } = { current: null };
+
+    render(
+      <AppServicesProvider
+        services={{
+          ipc,
+          platform: new FakePlatform(),
+          updates: new FakeUpdatePort(),
+          logs: new FakeLogPort(),
+        }}
+      >
+        <DocumentSessionProvider>
+          <Probe
+            ipc={ipc}
+            onContext={(value) => {
+              captured.current = value;
+            }}
+          />
+        </DocumentSessionProvider>
+      </AppServicesProvider>,
+    );
+
+    await waitFor(() => expect(captured.current?.drafts).toHaveLength(1));
+    expect(captured.current?.drafts[0]?.title).toBe("recover me");
+  });
+
   it("falls back to untitled when a document window has no staged payload", async () => {
     window.history.replaceState({}, "", "/?window=document");
     const ipc = new FakeIpc({ files: [{ path: "/docs/note.md", text: "x" }] });

@@ -148,22 +148,36 @@ export function WorkspaceLayout() {
     }
     creatingRef.current = true;
     try {
-      // New never saves or replaces the current document: Tauri creates a
-      // separate window. Browser harnesses cannot, so they report `current`
-      // and the caller resets this window to a fresh untitled session.
+      // New never saves or replaces the current document in Tauri: a new
+      // window is created. Browser harnesses cannot, so they report `current`
+      // and this window is reset. Flush a named document before replacing it;
+      // an untitled document writes a crash draft instead (auto flush is a
+      // no-op there), and a failed flush keeps the current session visible.
       const result = await newDocument(ipc);
       if (!result.ok) {
         handleCommandError(result.error);
         return;
       }
       if (result.value === "current") {
+        const current = sessionRef.current;
+        const coordinator = coordinatorRef.current;
+        if (current && coordinator) {
+          const flushed = await coordinator.flush("auto");
+          await journal?.flushNow();
+          if (!flushed.ok) {
+            handleCommandError(
+              flushed.error ?? new AppErrorClass("IO", "the current document could not be saved"),
+            );
+            return;
+          }
+        }
         startUntitled();
         navigate("/editor");
       }
     } finally {
       creatingRef.current = false;
     }
-  }, [handleCommandError, ipc, navigate, startUntitled]);
+  }, [handleCommandError, ipc, journal, navigate, startUntitled]);
 
   const runMenuCommand = useCallback(
     async (id: string) => {
