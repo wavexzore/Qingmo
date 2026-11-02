@@ -27,6 +27,7 @@ import { LogDialog } from "../logs/LogDialog";
 import { UpdateHost } from "../update/UpdateHost";
 import { useUpdateController, useUpdateSnapshot } from "../update/UpdateProvider";
 import { openFile } from "./openFile";
+import { newDocument } from "./newDocument";
 
 /**
  * App-level workspace layout. It owns the single `file.open` registration and
@@ -39,7 +40,8 @@ export function WorkspaceLayout() {
   const toast = useToast();
   const navigate = useNavigate();
   const { ipc, platform } = useAppServices();
-  const { session, coordinator, recorder, journal, setSession } = useDocumentSession();
+  const { session, coordinator, recorder, journal, setSession, startUntitled } =
+    useDocumentSession();
   const closeGuard = useCloseGuard({
     ipc,
     platform,
@@ -53,6 +55,7 @@ export function WorkspaceLayout() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const openingRef = useRef(false);
+  const creatingRef = useRef(false);
   const sessionRef = useRef(session);
   const coordinatorRef = useRef(coordinator);
   sessionRef.current = session;
@@ -139,6 +142,29 @@ export function WorkspaceLayout() {
     }
   }, [i18n.language, ipc, navigate, setSession, t, toast]);
 
+  const createDocument = useCallback(async () => {
+    if (creatingRef.current) {
+      return;
+    }
+    creatingRef.current = true;
+    try {
+      // New never saves or replaces the current document: Tauri creates a
+      // separate window. Browser harnesses cannot, so they report `current`
+      // and the caller resets this window to a fresh untitled session.
+      const result = await newDocument(ipc);
+      if (!result.ok) {
+        handleCommandError(result.error);
+        return;
+      }
+      if (result.value === "current") {
+        startUntitled();
+        navigate("/editor");
+      }
+    } finally {
+      creatingRef.current = false;
+    }
+  }, [handleCommandError, ipc, navigate, startUntitled]);
+
   const runMenuCommand = useCallback(
     async (id: string) => {
       if (!commandRegistry.list().some((command) => command.id === id)) {
@@ -168,6 +194,9 @@ export function WorkspaceLayout() {
     }
     return platform.onMenuAction((action) => {
       switch (action) {
+        case MENU_ACTIONS.fileNew:
+          void createDocument();
+          break;
         case MENU_ACTIONS.fileOpen:
           void openDocument();
           break;
@@ -206,7 +235,7 @@ export function WorkspaceLayout() {
           break;
       }
     });
-  }, [menuEnabled, openDocument, openPalette, platform, runMenuCommand]);
+  }, [menuEnabled, createDocument, openDocument, openPalette, platform, runMenuCommand]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({
@@ -220,6 +249,17 @@ export function WorkspaceLayout() {
     });
     return () => disposable.dispose();
   }, []);
+
+  useEffect(() => {
+    const disposable = commandRegistry.register({
+      id: "file.new",
+      titleKey: "commands:file.new",
+      category: "commands:category.file",
+      keybinding: "Mod+N",
+      run: createDocument,
+    });
+    return () => disposable.dispose();
+  }, [createDocument]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({

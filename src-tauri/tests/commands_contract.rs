@@ -53,7 +53,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 29);
+    assert_eq!(COMMANDS.len(), 30);
     assert_eq!(
         EVENTS,
         &[
@@ -72,7 +72,8 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 12);
+    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 13);
+    assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"file.new"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.zh-CN"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.en"));
 }
@@ -581,6 +582,7 @@ fn valid_labels() -> NativeShellLabels {
         show_all: "Show All".to_string(),
         quit_app: "Quit Qingmo".to_string(),
         file: "File".to_string(),
+        new: "New".to_string(),
         open: "Open…".to_string(),
         save: "Save".to_string(),
         close_window: "Close Window".to_string(),

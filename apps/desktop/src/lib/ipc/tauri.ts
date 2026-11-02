@@ -32,6 +32,10 @@ export function createTauriIpc(): IpcPort {
     documentOpen() {
       return invokeCommand(COMMANDS.documentOpen, {});
     },
+    async documentNew() {
+      await invokeCommand(COMMANDS.documentNew, {});
+      return "window";
+    },
     documentTakePending() {
       return invokeCommand(COMMANDS.documentTakePending, {});
     },

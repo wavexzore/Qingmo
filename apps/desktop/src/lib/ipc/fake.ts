@@ -18,7 +18,12 @@ import type {
 
 import { COMMANDS, type CommandName } from "./commands";
 import { AppError } from "./errors";
-import type { CloseConfirmRequest, IpcPort, LivePreviewRequest } from "./port";
+import type {
+  CloseConfirmRequest,
+  DocumentNewPlacement,
+  IpcPort,
+  LivePreviewRequest,
+} from "./port";
 
 export const FAKE_MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const FAKE_MAX_DRAFT_BYTES = 2 * 1024 * 1024;
@@ -301,6 +306,19 @@ export class FakeIpc implements IpcPort {
   /** Seeds a payload for a simulated document window boot. */
   stagePending(payload: FilePayload): void {
     this.pending = payload;
+  }
+
+  /**
+   * Browser harness fallback: reset the only window to a fresh untitled
+   * document. The caller replaces the React session; clearing the token and
+   * pending payload keeps the next save on the Save As path.
+   */
+  async documentNew(): Promise<DocumentNewPlacement> {
+    await this.wait(COMMANDS.documentNew);
+    this.maybeThrow(COMMANDS.documentNew);
+    this.active = null;
+    this.pending = null;
+    return "current";
   }
 
   /** Seeds the file currently registered under `path` for a document window. */

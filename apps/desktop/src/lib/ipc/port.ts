@@ -20,6 +20,15 @@ export interface LivePreviewRequest {
 }
 
 /**
+ * Where a New request placed the untitled document.
+ *
+ * Tauri creates a native window (`window`). Browser harnesses cannot, so they
+ * reset the current window (`current`) and the caller adopts the new empty
+ * session in place.
+ */
+export type DocumentNewPlacement = "window" | "current";
+
+/**
  * The only document/file channel available to the UI.
  *
  * There is deliberately no path parameter: the native dialog runs in Rust and
@@ -34,6 +43,11 @@ export interface IpcPort {
    * they return the payload for the caller to adopt in place.
    */
   documentOpen(): Promise<FilePayload | null>;
+  /**
+   * Creates a new empty document. The current document is never saved or
+   * replaced; a native window receives an untitled session on boot.
+   */
+  documentNew(): Promise<DocumentNewPlacement>;
   /** Consumes the payload staged for a freshly created document window. */
   documentTakePending(): Promise<FilePayload | null>;
   documentReload(docToken: string): Promise<FilePayload>;

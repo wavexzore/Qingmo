@@ -456,6 +456,7 @@ export const settings = {
 
 export const commandLabels = {
   file: {
+    new: "新建文件",
     open: "打开文件",
     save: "保存文件",
   },

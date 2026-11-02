@@ -43,6 +43,7 @@ fn capability_contains_only_expected_permissions() {
         app_permissions,
         vec![
             "allow-document-open",
+            "allow-document-new",
             "allow-document-take-pending",
             "allow-document-reload",
             "allow-document-save-as",

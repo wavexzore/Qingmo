@@ -50,6 +50,8 @@ interface DocumentSessionContextValue {
   /** Main-window recovery list; empty in document windows. */
   drafts: DraftMeta[];
   setSession(next: EditorSession | null, extras?: SetSessionExtras): void;
+  /** Replaces the current document with a fresh empty untitled session. */
+  startUntitled(): void;
   restoreDraft(id: string): Promise<Result<void, AppError>>;
   discardDraft(id: string): Promise<Result<void, AppError>>;
 }
@@ -120,15 +122,40 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
     [ipc],
   );
 
+  const setSession = useCallback(
+    (next: EditorSession | null, extras: SetSessionExtras = {}) => {
+      const previous = currentRef.current;
+      if (previous === next) {
+        return;
+      }
+
+      journalRef.current?.dispose();
+      recorderRef.current?.dispose();
+      coordinatorRef.current?.dispose();
+      previous?.dispose();
+      journalRef.current = null;
+      recorderRef.current = null;
+      coordinatorRef.current = null;
+      currentRef.current = null;
+
+      if (next) {
+        startSession(next, extras.viewState ?? null, extras.draftId ?? null);
+      } else {
+        setBundle(null);
+      }
+    },
+    [startSession],
+  );
+
   const startUntitled = useCallback(() => {
-    startSession(
+    setSession(
       EditorSession.createUntitled(i18n.t("editor:empty.title"), {
         placeholder: i18n.t("editor:empty.placeholder"),
         uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
         openExternal: createOpenExternal(ipc),
       }),
     );
-  }, [ipc, startSession]);
+  }, [ipc, setSession]);
 
   // The startup document is a resource with a subscription. Creating it in a
   // layout effect keeps StrictMode's setup/cleanup/setup sequence correct: a
@@ -162,8 +189,9 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
             }
             startSession(created.session, created.viewState);
           } else {
-            // Only reachable after a manual reload, which already discards
-            // the webview session; keep the window usable.
+            // A New window has no staged payload, and a manual reload already
+            // discards the webview session; both keep the window usable by
+            // starting a fresh untitled document.
             startUntitled();
           }
         })
@@ -187,31 +215,6 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
       currentRef.current = null;
     };
   }, [documentWindow, ipc, startSession, startUntitled]);
-
-  const setSession = useCallback(
-    (next: EditorSession | null, extras: SetSessionExtras = {}) => {
-      const previous = currentRef.current;
-      if (previous === next) {
-        return;
-      }
-
-      journalRef.current?.dispose();
-      recorderRef.current?.dispose();
-      coordinatorRef.current?.dispose();
-      previous?.dispose();
-      journalRef.current = null;
-      recorderRef.current = null;
-      coordinatorRef.current = null;
-      currentRef.current = null;
-
-      if (next) {
-        startSession(next, extras.viewState ?? null, extras.draftId ?? null);
-      } else {
-        setBundle(null);
-      }
-    },
-    [startSession],
-  );
 
   useLayoutEffect(() => {
     if (documentWindow) {
@@ -296,6 +299,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         viewState: bundle?.viewState ?? null,
         drafts,
         setSession,
+        startUntitled,
         restoreDraft,
         discardDraft,
       }}
