@@ -10,6 +10,7 @@ import {
   renderMermaid,
   type MermaidRenderErrorCode,
 } from "./mermaid-render";
+import { fitMermaidNodeLabels } from "./mermaid-labels";
 import { sanitizeMermaidSvg } from "./mermaid-sanitize";
 import { diagramInfo } from "./mermaid-theme";
 import { readDetailsBlocks } from "./details";
@@ -533,6 +534,8 @@ class MermaidBlockWidget extends WidgetType {
           true,
         ) as unknown as SVGSVGElement;
         figure.replaceChildren(imported);
+        const fittedLabels = fitMermaidNodeLabels(imported, info.kind);
+        wrapper.dataset.fittedLabels = String(fittedLabels);
         naturalWidth = readNaturalWidth(imported);
         applyScale();
         revealTopContent(imported);

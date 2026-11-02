@@ -68,6 +68,17 @@ stateDiagram-v2
 结尾段落
 `;
 
+const CYLINDER_DOC = `# 存储节点
+
+\`\`\`mermaid
+flowchart TB
+  A[core-service] --> B[(Blob 证据 / 报告)]
+  A --> C[(PostgreSQL 16 platform / asset / security / cve / vuln)]
+\`\`\`
+
+结尾段落
+`;
+
 const MERGED_ARROWS_DOC = `# 汇合箭头
 
 \`\`\`mermaid
@@ -142,6 +153,82 @@ test("card chrome exposes the kind, hover tools and working zoom", async ({ page
   await card.getByRole("button", { name: "编辑 Mermaid 源码" }).click();
   await expect(card).toHaveCount(0);
   await expect(page.locator(".cm-line").filter({ hasText: "flowchart TB" }).first()).toBeVisible();
+});
+
+test("cylinder labels stay centred with a zero-width text origin", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  // WebKit can report a text bbox at x=0 while the centred `text-anchor`
+  // shifts the glyphs again. Mermaid then pre-offsets cylinder labels by half
+  // their width. Patch every document the app creates so the sandbox render
+  // takes that branch and the host-side correction has to undo it.
+  await page.addInitScript(() => {
+    if (typeof SVGGraphicsElement === "undefined") {
+      return;
+    }
+    const proto = SVGGraphicsElement.prototype as SVGGraphicsElement & {
+      getBBox: () => DOMRect;
+      __zeroTextOrigin?: boolean;
+    };
+    if (proto.__zeroTextOrigin) {
+      return;
+    }
+    proto.__zeroTextOrigin = true;
+    const original = proto.getBBox;
+    proto.getBBox = function measure() {
+      const box = original.call(this);
+      if (!(this instanceof SVGTextElement)) {
+        return box;
+      }
+      return {
+        x: 0,
+        y: box.y,
+        width: box.width,
+        height: box.height,
+        top: box.y,
+        left: 0,
+        right: box.width,
+        bottom: box.y + box.height,
+      } as DOMRect;
+    };
+  });
+
+  await openApp(page, [{ path: "/docs/cylinder.md", text: CYLINDER_DOC }]);
+  await openSeededFile(page, "cylinder.md");
+
+  const card = page.locator(".cm-md-mermaid").first();
+  await expect(card.locator("svg")).toBeVisible({ timeout: 30_000 });
+  await expect(card).toHaveAttribute("data-fitted-labels", /[1-9]/);
+
+  const labels = await card.evaluate((element) => {
+    const svg = element.querySelector("svg");
+    if (!svg) {
+      return [];
+    }
+    return [...svg.querySelectorAll("g.node")].flatMap((node) => {
+      const label = node.querySelector("g.label");
+      const shape = node.querySelector("path, rect");
+      if (!label || !shape) {
+        return [];
+      }
+      const labelBox = label.getBoundingClientRect();
+      const shapeBox = shape.getBoundingClientRect();
+      return [
+        {
+          shift: Math.abs(labelBox.x + labelBox.width / 2 - (shapeBox.x + shapeBox.width / 2)),
+          leftOverflow: shapeBox.x - labelBox.x,
+          rightOverflow: labelBox.right - shapeBox.right,
+        },
+      ];
+    });
+  });
+
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) {
+    expect(label.shift).toBeLessThan(1);
+    expect(label.leftOverflow).toBeLessThanOrEqual(1);
+    expect(label.rightOverflow).toBeLessThanOrEqual(1);
+  }
 });
 
 test("state diagram keeps its terminal marker clear of the card edge", async ({ page }) => {
