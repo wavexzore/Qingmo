@@ -16,21 +16,26 @@ test("Mod+N resets the harness window to a fresh untitled document", async ({ pa
   await expect(page.getByRole("textbox")).toHaveAttribute("aria-placeholder", "开始写作…");
 });
 
-test("New keeps the open file on disk and leaves an empty untitled editor", async ({ page }) => {
+test("New flushes unsaved harness edits and leaves an empty untitled editor", async ({ page }) => {
   await openApp(page);
   await openSeededFile(page, "note.md");
-  const before = await getFileText(page, NOTE_PATH);
+  await typeInEditor(page, "\nchanged before New");
 
+  // Press New inside the 800ms save debounce: the browser harness must
+  // flush the named document because it reuses this window instead of
+  // creating a second one.
   await page.keyboard.press(`${modifier()}+n`);
 
   await expect(page.getByTestId("untitled-editor")).toBeVisible();
   await expect(page.getByTestId("document-session")).toHaveCount(0);
   await expect(page.locator(".cm-content")).toHaveText("开始写作…");
-  await expect.poll(() => getFileText(page, NOTE_PATH)).toBe(before);
+  await expect.poll(() => getFileText(page, NOTE_PATH)).toContain("changed before New");
 });
 
-test("the palette exposes New File", async ({ page }) => {
+test("the palette exposes and runs New File", async ({ page }) => {
   await openApp(page);
+  await openSeededFile(page, "note.md");
+  await typeInEditor(page, "\nfrom palette");
 
   await page.keyboard.press(`${modifier()}+k`);
   const palette = page.getByRole("dialog", { name: "命令面板" });
@@ -44,4 +49,10 @@ test("the palette exposes New File", async ({ page }) => {
   await expect(palette).toBeHidden();
   await expect(page.getByTestId("untitled-editor")).toBeVisible();
   await expect(page.locator(".cm-content")).toHaveText("开始写作…");
+  await expect.poll(() => getFileText(page, NOTE_PATH)).toContain("from palette");
+
+  // The next palette session starts from a cleared query.
+  await page.keyboard.press(`${modifier()}+k`);
+  const reopened = page.getByRole("dialog", { name: "命令面板" });
+  await expect(reopened.getByRole("combobox")).toHaveValue("");
 });

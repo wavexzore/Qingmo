@@ -1,6 +1,6 @@
 {
   "identifier": "recovery",
-  "description": "Least-privilege recovery surface: only the main window may list and read crash drafts.",
+  "description": "Recovery surface for the main window. Document windows also receive draft list/read from `default` so a New-only window can recover crash drafts.",
   "windows": ["main"],
   "permissions": ["allow-session-draft-list", "allow-session-draft-read"]
 }

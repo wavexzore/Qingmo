@@ -44,8 +44,10 @@ export interface IpcPort {
    */
   documentOpen(): Promise<FilePayload | null>;
   /**
-   * Creates a new empty document. The current document is never saved or
-   * replaced; a native window receives an untitled session on boot.
+   * Creates a new empty document. A native window receives an untitled
+   * session on boot and this window keeps its document untouched. Browser
+   * adapters return `current`; the caller flushes (or journals) the current
+   * document and then replaces this window's session.
    */
   documentNew(): Promise<DocumentNewPlacement>;
   /** Consumes the payload staged for a freshly created document window. */
