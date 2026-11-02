@@ -12,9 +12,10 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the twenty-nine command names stable", () => {
+  it("keeps the thirty command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
+      "document_new",
       "document_take_pending",
       "document_reload",
       "document_save_as",
@@ -44,7 +45,7 @@ describe("IPC contract mirror", () => {
       "session_draft_read",
       "session_draft_discard",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(29);
+    expect(new Set(COMMAND_NAMES).size).toBe(30);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
@@ -52,6 +53,7 @@ describe("IPC contract mirror", () => {
       expect(COMMAND_PERMISSIONS[command]).toBe(commandPermission(command));
     }
     expect(COMMAND_PERMISSIONS[COMMANDS.documentOpen]).toBe("allow-document-open");
+    expect(COMMAND_PERMISSIONS[COMMANDS.documentNew]).toBe("allow-document-new");
     expect(COMMAND_PERMISSIONS[COMMANDS.documentSaveAs]).toBe("allow-document-save-as");
     expect(COMMAND_PERMISSIONS[COMMANDS.documentWriteAtomic]).toBe("allow-document-write-atomic");
     expect(COMMAND_PERMISSIONS[COMMANDS.appAboutOpenLink]).toBe("allow-app-about-open-link");
@@ -76,6 +78,7 @@ describe("IPC contract mirror", () => {
 
   it("exposes every native menu action once", () => {
     expect(MENU_ACTION_NAMES).toEqual([
+      "file.new",
       "file.open",
       "file.save",
       "palette.open",

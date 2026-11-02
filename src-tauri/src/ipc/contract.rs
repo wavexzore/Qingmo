@@ -5,6 +5,7 @@
 
 pub const COMMANDS: &[&str] = &[
     "document_open",
+    "document_new",
     "document_take_pending",
     "document_reload",
     "document_save_as",
@@ -55,6 +56,7 @@ pub const EVENTS: &[&str] = &[
 ///
 /// Predefined AppKit items (undo/copy/paste/close/fullscreen) stay native and
 /// are intentionally absent: they must be handled by the first responder.
+pub const MENU_FILE_NEW: &str = "file.new";
 pub const MENU_FILE_OPEN: &str = "file.open";
 pub const MENU_FILE_SAVE: &str = "file.save";
 pub const MENU_PALETTE_OPEN: &str = "palette.open";
@@ -69,6 +71,7 @@ pub const MENU_LANGUAGE_ZH_CN: &str = "language.zh-CN";
 pub const MENU_LANGUAGE_EN: &str = "language.en";
 
 pub const MENU_ACTIONS: &[&str] = &[
+    MENU_FILE_NEW,
     MENU_FILE_OPEN,
     MENU_FILE_SAVE,
     MENU_PALETTE_OPEN,

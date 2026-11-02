@@ -23,9 +23,10 @@ pub mod state;
 use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
-    EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_OPEN, MENU_FILE_SAVE, MENU_LANGUAGE_EN,
-    MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
-    MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE, MENU_VIEW_TOGGLE_THEME,
+    EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN, MENU_FILE_SAVE,
+    MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT,
+    MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE,
+    MENU_VIEW_TOGGLE_THEME,
 };
 use ipc::dto::{AppLanguage, MenuActionPayload, NativeShellLabels};
 
@@ -177,6 +178,7 @@ fn menu_layout<'a>(
     let macos = platform == MenuPlatform::Mac;
 
     let mut file_items = vec![
+        action(MENU_FILE_NEW, &labels.new, Some("CmdOrCtrl+N")),
         action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
         action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
     ];
@@ -323,11 +325,10 @@ fn menu_layout<'a>(
 /// guard and whose About item would add a second copy source.
 fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
     let macos = platform == MenuPlatform::Mac;
-    let mut file_items = vec![action(
-        MENU_CLOSE_WINDOW,
-        "Close Window",
-        Some("CmdOrCtrl+W"),
-    )];
+    let mut file_items = vec![
+        action(MENU_FILE_NEW, "New", Some("CmdOrCtrl+N")),
+        action(MENU_CLOSE_WINDOW, "Close Window", Some("CmdOrCtrl+W")),
+    ];
     if !macos {
         file_items.push(MenuEntry::Separator);
         file_items.push(action(MENU_QUIT, "Quit", Some("CmdOrCtrl+Q")));
@@ -571,6 +572,12 @@ fn resolve_window_title(
             commands::document::window_title_for(&record.canonical_target, &labels.app_name)
         });
     }
+    if sessions.is_untitled(label) {
+        return Some(commands::document::window_title_for_untitled(
+            &labels.untitled_file_name,
+            &labels.app_name,
+        ));
+    }
     Some(labels.app_name.clone())
 }
 
@@ -604,7 +611,7 @@ const MAIN_WINDOW_BOOT_DELAY: Duration = Duration::from_millis(300);
 /// The window is declared with `create: false` so a launch caused by opening a
 /// document can skip it. A failed open falls back to it instead of ending the
 /// launch with no window at all.
-fn ensure_main_window(app: &AppHandle) {
+pub(crate) fn ensure_main_window(app: &AppHandle) {
     if app.get_webview_window("main").is_some() {
         return;
     }
@@ -622,17 +629,22 @@ fn ensure_main_window(app: &AppHandle) {
     };
 
     let labels = app.state::<state::ShellLocale>().labels();
+    let title = labels.as_ref().map(|labels| {
+        commands::document::window_title_for_untitled(&labels.untitled_file_name, &labels.app_name)
+    });
     let built = WebviewWindowBuilder::from_config(app, &config).and_then(|builder| {
-        let builder = match labels.as_ref() {
-            // The config title is the product default; use the startup
-            // projection so an English launch does not briefly show it.
-            Some(labels) => builder.title(labels.app_name.clone()),
-            None => builder,
-        };
-        builder.build()
+        // The config title is the product default; use the startup projection
+        // so an English launch does not briefly show it. Every main window is
+        // an untitled document, matching the New window title.
+        match title {
+            Some(title) => builder.title(title).build(),
+            None => builder.build(),
+        }
     });
     if let Err(error) = built {
         tracing::error!(%error, "failed to create the main window");
+    } else {
+        app.state::<state::WindowSessions>().mark_untitled("main");
     }
 }
 
@@ -725,6 +737,19 @@ pub fn run() {
                         ) {
                             tracing::error!(menu_action = id, %error, "failed to emit menu action");
                         }
+                    }
+                    None if id == MENU_FILE_NEW => {
+                        // The boot fallback window does not exist yet during
+                        // the 300 ms delay, so a Cmd+N there has no webview to
+                        // receive the action. Create the document directly.
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) =
+                                commands::document::create_untitled_window(app).await
+                            {
+                                tracing::error!(%error, "failed to create a document window");
+                            }
+                        });
                     }
                     None => tracing::warn!(menu_action = id, "no window to receive menu action"),
                 }
@@ -958,6 +983,7 @@ mod menu_tests {
             show_all: format!("{prefix}-show-all"),
             quit_app: format!("{prefix}-quit"),
             file: format!("{prefix}-file"),
+            new: format!("{prefix}-new"),
             open: format!("{prefix}-open"),
             save: format!("{prefix}-save"),
             close_window: format!("{prefix}-close"),
@@ -1099,6 +1125,7 @@ mod menu_tests {
 
         let file_menu = menu(&layout, "zh-file");
         let file_ids = action_ids(file_menu);
+        assert!(file_ids.contains(&MENU_FILE_NEW));
         assert!(file_ids.contains(&MENU_FILE_OPEN));
         assert!(file_ids.contains(&MENU_FILE_SAVE));
         assert!(file_ids.contains(&MENU_CLOSE_WINDOW));
@@ -1107,7 +1134,21 @@ mod menu_tests {
             !file_ids.contains(&MENU_SETTINGS),
             "macOS keeps settings in the application menu"
         );
+        assert_eq!(action_label(action(file_menu, MENU_FILE_NEW)), "zh-new");
+        assert_eq!(
+            action_accelerator(action(file_menu, MENU_FILE_NEW)),
+            Some("CmdOrCtrl+N")
+        );
         assert_eq!(action_label(action(file_menu, MENU_FILE_OPEN)), "zh-open");
+        assert_eq!(
+            file_ids,
+            [
+                MENU_FILE_NEW,
+                MENU_FILE_OPEN,
+                MENU_FILE_SAVE,
+                MENU_CLOSE_WINDOW
+            ]
+        );
 
         assert_eq!(
             menu(&layout, "zh-window").items.last(),
@@ -1177,6 +1218,7 @@ mod menu_tests {
 
         let file_menu = menu(&layout, "en-file");
         let file_ids = action_ids(file_menu);
+        assert!(file_ids.contains(&MENU_FILE_NEW));
         assert!(file_ids.contains(&MENU_QUIT));
         assert!(file_ids.contains(&MENU_SETTINGS));
         assert_eq!(
@@ -1263,6 +1305,7 @@ mod menu_tests {
                 "startup menu must expose exactly one custom Quit on {platform:?}"
             );
             assert!(ids.contains(&MENU_CLOSE_WINDOW));
+            assert!(ids.contains(&MENU_FILE_NEW));
             assert!(!ids.contains(&MENU_ABOUT));
             assert!(!ids.contains(&MENU_SETTINGS));
             assert_every_action_has_a_handler(&layout);
@@ -1310,10 +1353,29 @@ mod menu_tests {
         let sessions = state::WindowSessions::new();
         let registry = state::DocumentRegistry::new();
 
+        sessions.mark_untitled("main");
+        assert_eq!(
+            resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
+            Some("zh.md — zh-app")
+        );
+        sessions.set_token("main", "main-token".to_string());
+        assert!(!sessions.is_untitled("main"));
+        assert!(
+            resolve_window_title("main", &labels, &sessions, &registry).is_none(),
+            "main keeps its title while a token has no record"
+        );
+        sessions.release("main");
         assert_eq!(
             resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
             Some("zh-app")
         );
+
+        sessions.mark_untitled("doc-new");
+        assert_eq!(
+            resolve_window_title("doc-new", &labels, &sessions, &registry).as_deref(),
+            Some("zh.md — zh-app")
+        );
+        sessions.clear_untitled("doc-new");
         assert_eq!(
             resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
             Some("zh-about")

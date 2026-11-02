@@ -7,7 +7,9 @@ use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{FilePayload, SaveResult};
 use crate::services::AtomicWriter;
 use crate::state::document_registry::ensure_supported_extension;
-use crate::state::{DocumentRegistry, DocumentWatcher, FocusTracker, WindowSessions};
+use crate::state::{
+    DocumentRegistry, DocumentWatcher, FocusTracker, StartupWindow, WindowSessions,
+};
 
 /// Native window title for an open document.
 ///
@@ -18,6 +20,35 @@ pub(crate) fn window_title_for(path: &Path, app_name: &str) -> String {
         Some(name) => format!("{name} — {app_name}"),
         None => app_name.to_string(),
     }
+}
+
+/// Native window title for a document that has no path yet.
+pub(crate) fn window_title_for_untitled(untitled_file_name: &str, app_name: &str) -> String {
+    format!("{untitled_file_name} — {app_name}")
+}
+
+/// Builds one document window with the single window configuration shared by
+/// Open and New, then records and applies focus.
+fn build_document_window(
+    app: &AppHandle,
+    label: &str,
+    title: String,
+) -> tauri::Result<WebviewWindow> {
+    let window = WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::App("index.html?window=document".into()),
+    )
+    .title(title)
+    .inner_size(1200.0, 800.0)
+    .min_inner_size(800.0, 600.0)
+    .focused(true)
+    .build()?;
+    app.state::<FocusTracker>().set(label);
+    if let Err(error) = window.set_focus() {
+        tracing::warn!(%error, "failed to focus the document window");
+    }
+    Ok(window)
 }
 
 /// Opens the selected file in a new document window.
@@ -31,6 +62,53 @@ pub async fn document_open(app: State<'_, AppHandle>) -> Result<(), AppError> {
     let app = app.inner().clone();
     let path = pick_document(&app).await?;
     open_path_in_new_window(app, path).await
+}
+
+/// Creates a new empty document window.
+///
+/// No payload is staged: the window's `document_take_pending` resolves `None`
+/// and the webview starts its existing untitled session. The command returns
+/// `null` because the caller has nothing to adopt.
+#[tauri::command]
+pub async fn document_new(app: State<'_, AppHandle>) -> Result<(), AppError> {
+    create_untitled_window(app.inner().clone()).await
+}
+
+/// Creates an untitled document window.
+///
+/// Shared by the IPC command and the startup menu fallback (no webview is
+/// alive yet during the boot delay, so there is nothing to forward).
+pub(crate) async fn create_untitled_window(app: AppHandle) -> Result<(), AppError> {
+    let locale = app.state::<crate::state::ShellLocale>();
+    let app_name = locale
+        .labels()
+        .map(|labels| labels.app_name)
+        .unwrap_or_else(|| "青墨".to_string());
+    let title = window_title_for_untitled(&locale.untitled_file_name(), &app_name);
+    let label = format!("doc-{}", uuid::Uuid::new_v4());
+    let sessions = app.state::<WindowSessions>().inner().clone();
+
+    // New is also a document open: the startup fallback main window must not
+    // appear behind a window created during the boot delay.
+    app.state::<StartupWindow>().mark_opened();
+    sessions.mark_untitled(&label);
+
+    match build_document_window(&app, &label, title) {
+        Ok(_) => {
+            tracing::info!(window = %label, "opened an untitled document window");
+            Ok(())
+        }
+        Err(error) => {
+            sessions.clear_untitled(&label);
+            if app.webview_windows().is_empty() {
+                crate::ensure_main_window(&app);
+            }
+            Err(AppError::new(
+                AppErrorCode::Io,
+                format!("failed to create the document window: {error}"),
+            ))
+        }
+    }
 }
 
 /// Number of parent directories granted non-recursively for `../` images.
@@ -124,24 +202,9 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
     let label = format!("doc-{}", uuid::Uuid::new_v4());
     sessions.stage(&label, payload);
 
-    let built = WebviewWindowBuilder::new(
-        &app,
-        &label,
-        WebviewUrl::App("index.html?window=document".into()),
-    )
-    .title(title)
-    .inner_size(1200.0, 800.0)
-    .min_inner_size(800.0, 600.0)
-    .focused(true)
-    .build();
-
-    match built {
-        Ok(window) => {
+    match build_document_window(&app, &label, title) {
+        Ok(_) => {
             tracing::info!(window = %label, "opened a document window");
-            app.state::<FocusTracker>().set(&label);
-            if let Err(error) = window.set_focus() {
-                tracing::warn!(%error, "failed to focus the document window");
-            }
         }
         Err(error) => {
             sessions.discard_pending(&label);
@@ -320,6 +383,7 @@ pub async fn document_write_atomic(
 
 #[cfg(test)]
 mod tests {
+    use super::window_title_for_untitled;
     use super::{asset_scope_dirs, opened_paths, startup_paths, window_title_for};
     use std::path::Path;
     use tauri::Url;
@@ -334,6 +398,18 @@ mod tests {
         assert_eq!(
             window_title_for(Path::new("/docs/note.md"), "青墨"),
             "note.md — 青墨"
+        );
+    }
+
+    #[test]
+    fn untitled_window_title_uses_the_localized_file_name() {
+        assert_eq!(
+            window_title_for_untitled("未命名.md", "青墨"),
+            "未命名.md — 青墨"
+        );
+        assert_eq!(
+            window_title_for_untitled("Untitled.md", "Qingmo"),
+            "Untitled.md — Qingmo"
         );
     }
 

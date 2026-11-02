@@ -19,6 +19,7 @@ import { DocumentSessionProvider, useDocumentSession } from "../editor/DocumentS
 import type { EditorSession } from "../editor/EditorSession";
 import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
 import { UpdateProvider } from "../update/UpdateProvider";
+import { newDocument } from "./newDocument";
 import { openFile } from "./openFile";
 
 function SessionProbe({ onSession }: { onSession: (session: EditorSession | null) => void }) {
@@ -67,6 +68,7 @@ function fileIpc(
 }
 
 afterEach(() => {
+  commandRegistry.unregister("file.new");
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");
@@ -138,6 +140,7 @@ describe("openFile", () => {
 
     const broken: IpcPort = {
       documentOpen: vi.fn().mockRejectedValue("bridge unavailable"),
+      documentNew: vi.fn(),
       documentTakePending: vi.fn(),
       documentReload: vi.fn(),
       documentSaveAs: vi.fn(),
@@ -159,6 +162,34 @@ describe("openFile", () => {
     if (!brokenResult.ok) {
       expect(brokenResult.error.code).toBe("IO");
       expect(brokenResult.error.message).toBe("bridge unavailable");
+    }
+  });
+});
+
+describe("newDocument", () => {
+  it("returns the placement reported by the port", async () => {
+    const ipc = fileIpc();
+    const spy = vi.spyOn(ipc, "documentNew").mockResolvedValue("window");
+
+    const result = await newDocument(ipc);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBe("window");
+    }
+    expect(spy).toHaveBeenCalledWith();
+  });
+
+  it("normalizes port failures", async () => {
+    const ipc = fileIpc();
+    ipc.failNext(COMMANDS.documentNew, "IO", "window backend failed");
+
+    const result = await newDocument(ipc);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("IO");
+      expect(result.error.message).toBe("window backend failed");
     }
   });
 });
@@ -287,9 +318,10 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(7);
+    expect(options).toHaveLength(8);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
+        expect.stringContaining("新建文件"),
         expect.stringContaining("打开文件"),
         expect.stringContaining("保存文件"),
         expect.stringContaining("切换大纲"),
@@ -374,6 +406,103 @@ describe("blank editor -> editor open flow", () => {
     expect(screen.queryByText("操作已取消。")).not.toBeInTheDocument();
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
     expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
+  });
+
+  it("keeps the current document when New opens a native window", async () => {
+    const ipc = fileIpc("# Current\n");
+    const newSpy = vi.spyOn(ipc, "documentNew").mockResolvedValue("window");
+    const { platform } = renderApp(ipc);
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md"));
+
+    platform.emitMenuAction("file.new");
+
+    await waitFor(() => expect(newSpy).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("document-session")).toBeInTheDocument();
+    expect(screen.getByTestId("status-bar")).toHaveTextContent("note.md");
+    await waitFor(() => expect(screen.getByTestId("editor-host")).toHaveTextContent("Current"));
+  });
+
+  it("resets the current window to a fresh untitled in the browser harness", async () => {
+    const ipc = fileIpc("# Named\n");
+    const saveAsSpy = vi.spyOn(ipc, "documentSaveAs");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { router, platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+
+    platform.emitMenuAction("file.new");
+
+    expect(await screen.findByTestId("untitled-editor")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(true));
+    expect(captured.current?.readText()).toBe("");
+    expect(captured.current?.getSnapshot().dirty).toBe(false);
+    expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/editor");
+    expect(saveAsSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not run Save As from a dirty untitled document", async () => {
+    const ipc = fileIpc();
+    vi.spyOn(ipc, "documentNew").mockResolvedValue("window");
+    const saveAsSpy = vi.spyOn(ipc, "documentSaveAs");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "# draft" } });
+    });
+    await waitFor(() => expect(captured.current?.getSnapshot().dirty).toBe(true));
+
+    platform.emitMenuAction("file.new");
+    await waitFor(() => expect(ipc.documentNew).toHaveBeenCalledTimes(1));
+
+    expect(saveAsSpy).not.toHaveBeenCalled();
+    expect(captured.current?.getSnapshot().dirty).toBe(true);
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+  });
+
+  it("shows an IO toast when New cannot create a window", async () => {
+    const ipc = fileIpc();
+    const newSpy = vi.spyOn(ipc, "documentNew");
+    ipc.failNext(COMMANDS.documentNew, "IO", "window backend failed");
+    const { platform } = renderApp(ipc);
+
+    platform.emitMenuAction("file.new");
+
+    expect(await screen.findByText("读写文件时发生错误。")).toBeInTheDocument();
+    expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
+    expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
+    expect(newSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs file.new from Mod+N and filters key repeats", async () => {
+    const ipc = fileIpc();
+    const newSpy = vi.spyOn(ipc, "documentNew").mockResolvedValue("window");
+    renderApp(ipc);
+
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+    await waitFor(() => expect(newSpy).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true, repeat: true });
+    await waitFor(() => expect(newSpy).toHaveBeenCalledTimes(1));
   });
 
   it("registers file.open exactly once while the blank editor is mounted", () => {

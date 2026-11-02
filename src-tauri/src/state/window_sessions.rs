@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::ipc::dto::FilePayload;
@@ -9,6 +9,8 @@ struct Inner {
     pending: HashMap<String, FilePayload>,
     /// Document token currently owned by each window.
     tokens: HashMap<String, String>,
+    /// Windows whose document has no path yet (created by New or the blank main).
+    untitled: HashSet<String>,
 }
 
 /// Per-window document handoff.
@@ -35,10 +37,26 @@ impl WindowSessions {
         self.lock().pending.remove(label);
     }
 
+    /// Marks a window as an untitled document so its title is localized.
+    pub fn mark_untitled(&self, label: &str) {
+        self.lock().untitled.insert(label.to_string());
+    }
+
+    /// Revokes the untitled mark, for example when window creation failed.
+    pub fn clear_untitled(&self, label: &str) {
+        self.lock().untitled.remove(label);
+    }
+
+    /// Whether the window currently owns an untitled document.
+    pub fn is_untitled(&self, label: &str) -> bool {
+        self.lock().untitled.contains(label)
+    }
+
     /// Hands the staged payload to its window and records token ownership.
     pub fn take_pending(&self, label: &str) -> Option<FilePayload> {
         let mut inner = self.lock();
         let payload = inner.pending.remove(label)?;
+        inner.untitled.remove(label);
         inner
             .tokens
             .insert(label.to_string(), payload.doc_token.clone());
@@ -47,7 +65,9 @@ impl WindowSessions {
 
     /// Records a new token after Save As or another in-window token change.
     pub fn set_token(&self, label: &str, token: String) {
-        self.lock().tokens.insert(label.to_string(), token);
+        let mut inner = self.lock();
+        inner.tokens.insert(label.to_string(), token);
+        inner.untitled.remove(label);
     }
 
     /// Path staged for a window that has not consumed its payload yet.
@@ -69,6 +89,7 @@ impl WindowSessions {
     pub fn release(&self, label: &str) -> Option<String> {
         let mut inner = self.lock();
         inner.pending.remove(label);
+        inner.untitled.remove(label);
         inner.tokens.remove(label)
     }
 
@@ -140,5 +161,41 @@ mod tests {
         sessions.take_pending("doc-1");
         sessions.set_token("doc-1", "token-2".to_string());
         assert_eq!(sessions.release("doc-1").as_deref(), Some("token-2"));
+    }
+
+    #[test]
+    fn untitled_mark_survives_a_missing_payload() {
+        let sessions = WindowSessions::new();
+        sessions.mark_untitled("doc-1");
+
+        assert!(sessions.take_pending("doc-1").is_none());
+        assert!(sessions.is_untitled("doc-1"));
+
+        assert_eq!(sessions.release("doc-1"), None);
+        assert!(!sessions.is_untitled("doc-1"));
+    }
+
+    #[test]
+    fn clear_untitled_revokes_the_title_mark() {
+        let sessions = WindowSessions::new();
+        sessions.mark_untitled("doc-1");
+        sessions.clear_untitled("doc-1");
+
+        assert!(!sessions.is_untitled("doc-1"));
+        assert!(!sessions.is_untitled("doc-2"));
+    }
+
+    #[test]
+    fn taking_a_payload_or_setting_a_token_clears_the_untitled_mark() {
+        let sessions = WindowSessions::new();
+        sessions.mark_untitled("doc-1");
+        sessions.stage("doc-1", payload("token-1"));
+        sessions.take_pending("doc-1");
+        assert!(!sessions.is_untitled("doc-1"));
+
+        sessions.mark_untitled("doc-2");
+        sessions.set_token("doc-2", "token-2".to_string());
+        assert!(!sessions.is_untitled("doc-2"));
+        assert_eq!(sessions.release("doc-2").as_deref(), Some("token-2"));
     }
 }
