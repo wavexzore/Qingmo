@@ -40,8 +40,16 @@ export function WorkspaceLayout() {
   const toast = useToast();
   const navigate = useNavigate();
   const { ipc, platform } = useAppServices();
-  const { session, coordinator, recorder, journal, refreshDrafts, setSession, startUntitled } =
-    useDocumentSession();
+  const {
+    session,
+    coordinator,
+    recorder,
+    journal,
+    refreshDrafts,
+    setSession,
+    startUntitled,
+    getCurrentBundle,
+  } = useDocumentSession();
   const closeGuard = useCloseGuard({
     ipc,
     platform,
@@ -69,12 +77,11 @@ export function WorkspaceLayout() {
     await previous;
     return release;
   }, []);
+
   const sessionRef = useRef(session);
   const coordinatorRef = useRef(coordinator);
-  const journalRef = useRef(journal);
   sessionRef.current = session;
   coordinatorRef.current = coordinator;
-  journalRef.current = journal;
   const hasSession = session !== null;
   const updateBlocked = closeGuard.closing || closeGuard.prompt !== null;
 
@@ -94,6 +101,50 @@ export function WorkspaceLayout() {
     },
     [t, toast],
   );
+
+  /**
+   * Preserves the current session before a harness Open/New replaces it.
+   *
+   * Named documents flush to disk; untitled ones force a crash draft (the
+   * store may have pruned an earlier copy). Retries when text arrives while a
+   * write is in flight. Returns false after surfacing the error, in which case
+   * the caller must keep the current session.
+   */
+  const preserveCurrentSession = useCallback(async (): Promise<boolean> => {
+    const { session: current, coordinator, journal: liveJournal } = getCurrentBundle();
+    if (!current || !coordinator) {
+      return true;
+    }
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const before = current.readText();
+      const flushed = await coordinator.flush("auto");
+      if (!flushed.ok) {
+        await liveJournal?.flushNow();
+        await refreshDrafts();
+        handleCommandError(
+          flushed.error ??
+            new AppErrorClass(
+              flushed.failure === "conflict" ? "CONFLICT" : "IO",
+              "the current document could not be saved",
+            ),
+        );
+        return false;
+      }
+      if (current.isUntitled && before.length > 0) {
+        const draft = await liveJournal?.flushNow({ force: true });
+        if (!draft?.ok) {
+          await refreshDrafts();
+          toast.push(t("errors:IO"));
+          return false;
+        }
+      }
+      if (current.readText() === before) {
+        break;
+      }
+    }
+    await refreshDrafts();
+    return true;
+  }, [getCurrentBundle, handleCommandError, refreshDrafts, t, toast]);
   useCommandKeybindings({
     enabled:
       !paletteOpen &&
@@ -131,9 +182,12 @@ export function WorkspaceLayout() {
     let release: (() => void) | null = null;
     try {
       release = await beginReplacement();
-      // Opening never replaces this window: Tauri creates a new document
-      // window, so there is nothing to flush and a dirty untitled buffer must
-      // not be forced through Save As first.
+      // Preserve before touching the harness's single active token. In Tauri
+      // this is a harmless save of the current window; in the browser harness
+      // it is the only chance before the session is replaced.
+      if (!(await preserveCurrentSession())) {
+        return;
+      }
       const result = await openFile(ipc);
       if (!result.ok) {
         if (result.error.code !== "CANCELLED") {
@@ -158,7 +212,16 @@ export function WorkspaceLayout() {
       release?.();
       openingRef.current = false;
     }
-  }, [beginReplacement, i18n.language, ipc, navigate, setSession, t, toast]);
+  }, [
+    beginReplacement,
+    i18n.language,
+    ipc,
+    navigate,
+    preserveCurrentSession,
+    setSession,
+    t,
+    toast,
+  ]);
 
   const createDocument = useCallback(async () => {
     if (creatingRef.current) {
@@ -179,41 +242,11 @@ export function WorkspaceLayout() {
         return;
       }
       if (result.value === "current") {
-        const current = sessionRef.current;
-        const coordinator = coordinatorRef.current;
-        if (current && coordinator) {
-          // Retry once when text arrived while a flush/draft write was in
-          // flight, then replace only if this session is still current.
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            const before = current.readText();
-            const flushed = await coordinator.flush("auto");
-            if (!flushed.ok) {
-              await journalRef.current?.flushNow();
-              await refreshDrafts();
-              handleCommandError(
-                flushed.error ??
-                  new AppErrorClass(
-                    flushed.failure === "conflict" ? "CONFLICT" : "IO",
-                    "the current document could not be saved",
-                  ),
-              );
-              return;
-            }
-            if (current.isUntitled && before.length > 0) {
-              const draft = await journalRef.current?.flushNow({ force: true });
-              if (!draft?.ok) {
-                await refreshDrafts();
-                toast.push(t("errors:IO"));
-                return;
-              }
-            }
-            if (current.readText() === before) {
-              break;
-            }
-          }
-          await refreshDrafts();
+        const current = getCurrentBundle().session;
+        if (!(await preserveCurrentSession())) {
+          return;
         }
-        if (sessionRef.current === current) {
+        if (getCurrentBundle().session === current) {
           startUntitled();
           navigate("/editor");
         }
@@ -222,7 +255,15 @@ export function WorkspaceLayout() {
       release?.();
       creatingRef.current = false;
     }
-  }, [beginReplacement, handleCommandError, ipc, navigate, refreshDrafts, startUntitled, t, toast]);
+  }, [
+    beginReplacement,
+    getCurrentBundle,
+    handleCommandError,
+    ipc,
+    navigate,
+    preserveCurrentSession,
+    startUntitled,
+  ]);
 
   const runMenuCommand = useCallback(
     async (id: string) => {

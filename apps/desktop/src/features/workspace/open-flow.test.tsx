@@ -659,6 +659,60 @@ describe("blank editor -> editor open flow", () => {
     expect(captured.current?.readText()).toContain("dirty");
   });
 
+  it("flushes the current untitled document before a harness Open adopts", async () => {
+    const ipc = fileIpc("# Note\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "precious" } });
+    });
+
+    platform.emitMenuAction("file.open");
+
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    const drafts = await ipc.sessionDraftList();
+    expect(drafts).toHaveLength(1);
+    expect((await ipc.sessionDraftRead(drafts[0]!.id)).text).toBe("precious");
+    await waitFor(() => expect(captured.current?.readText()).toBe("# Note\n"));
+  });
+
+  it("flushes a dirty named document before a harness Open adopts", async () => {
+    const ipc = fileIpc("# Note\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\ndirty" } });
+    });
+
+    platform.emitMenuAction("file.open");
+
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text).toContain("dirty"));
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    expect(captured.current?.readText()).toContain("dirty");
+  });
+
   it("keeps a dirty untitled document when the draft write fails", async () => {
     const ipc = fileIpc();
     const captured: { current: EditorSession | null } = { current: null };
