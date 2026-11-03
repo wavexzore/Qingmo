@@ -123,7 +123,7 @@ export function WorkspaceLayout() {
       const before = current.readText();
       const flushed = await coordinator.flush("auto");
       if (!flushed.ok) {
-        await liveJournal?.flushNow({ force: true });
+        await liveJournal?.flushNow({ force: true, preserveNamedDirty: true });
         await refreshDrafts();
         handleCommandError(
           flushed.error ??
@@ -230,7 +230,7 @@ export function WorkspaceLayout() {
       }
       // Browser harness fallback: no native window exists, adopt in place.
       const uiCopy = buildEditorUiCopy(normalizeLanguage(i18n.language));
-      let created = await createDocumentSession(ipc, result.value, uiCopy);
+      let created: Awaited<ReturnType<typeof createDocumentSession>>;
       if (replacesInPlace) {
         const live = getCurrentBundle().session;
         const late = live !== null && live.readText() !== baseline;
@@ -242,22 +242,27 @@ export function WorkspaceLayout() {
             await ipc.documentActivate(previousToken);
           }
           if (!(await preserveCurrentSession())) {
-            created.session.dispose();
             return;
           }
         }
-        await ipc.documentActivate(created.session.docToken);
+        const opened = await createDocumentSession(ipc, result.value, uiCopy);
+        created = opened;
+        await ipc.documentActivate(opened.session.docToken);
         if (late && live && live.getSnapshot().docId === result.value.path) {
           // Opening the same file: the payload predates the late save. Re-read
-          // so the adopted text and hash match what is now on disk.
+          // so the adopted text and hash match what is now on disk. Rebuild
+          // before disposing so a failed rebuild still has a usable session.
           try {
-            const fresh = await ipc.documentReload(created.session.docToken);
-            created.session.dispose();
+            const fresh = await ipc.documentReload(opened.session.docToken);
             created = await createDocumentSession(ipc, fresh, uiCopy);
+            opened.session.dispose();
           } catch (error) {
             console.warn("failed to reload the reopened document", normalizeError(error));
+            toast.push(t("errors:IO"));
           }
         }
+      } else {
+        created = await createDocumentSession(ipc, result.value, uiCopy);
       }
       setSession(created.session, { viewState: created.viewState });
       navigate("/editor");

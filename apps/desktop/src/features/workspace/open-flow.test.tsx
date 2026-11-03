@@ -777,8 +777,7 @@ describe("blank editor -> editor open flow", () => {
 
   it("journals input typed while an untitled Open is in flight", async () => {
     const ipc = fileIpc("# Note\n");
-    ipc.setCommandDelay(COMMANDS.documentOpen, 400);
-    const openSpy = vi.spyOn(ipc, "documentOpen");
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
     const captured: { current: EditorSession | null } = { current: null };
     const { platform } = renderApp(ipc, {
       onSession: (value) => {
@@ -795,11 +794,16 @@ describe("blank editor -> editor open flow", () => {
       view.dispatch({ changes: { from: 0, insert: "A" } });
     });
 
+    const original = ipc.documentOpen.bind(ipc);
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      return original();
+    });
+
     platform.emitMenuAction("file.open");
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
-    act(() => {
-      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
-    });
 
     await waitFor(() => expect(captured.current?.readText()).toBe("# Note\n"));
     const drafts = await ipc.sessionDraftList();
@@ -826,20 +830,25 @@ describe("blank editor -> editor open flow", () => {
       view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
     });
 
-    ipc.setCommandDelay(COMMANDS.documentOpen, 400);
-    const openSpy = vi.spyOn(ipc, "documentOpen");
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    const original = ipc.documentOpen.bind(ipc);
+    // Type in the dialog window itself; polling for the spy can be delayed by
+    // the 2 MiB hash and would miss the chance to type into the live view.
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      return original();
+    });
     const before = captured.current;
     platform.emitMenuAction("file.open");
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
-    act(() => {
-      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
-    });
 
-    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text).toContain("B"), {
-      timeout: 3_000,
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text.endsWith("AB")).toBe(true), {
+      timeout: 10_000,
     });
-    expect(captured.current?.isUntitled).toBe(false);
     expect(captured.current).not.toBe(before);
+    expect(captured.current?.readText().endsWith("AB")).toBe(true);
   });
 
   it("saves a late edit on a document above the draft cap to disk", async () => {
@@ -863,19 +872,23 @@ describe("blank editor -> editor open flow", () => {
       view.dispatch({ changes: { from: view.state.doc.length, insert: "A" } });
     });
 
-    ipc.setCommandDelay(COMMANDS.documentOpen, 200);
-    const openSpy = vi.spyOn(ipc, "documentOpen");
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    const original = ipc.documentOpen.bind(ipc);
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      return original();
+    });
     platform.emitMenuAction("file.open");
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
-    act(() => {
-      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
-    });
 
     // A crash draft would fail above 2 MiB; the late edit must reach the file.
     // Hashing a 2 MiB fixture several times is slow under a loaded suite.
     await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text.endsWith("AB")).toBe(true), {
       timeout: 10_000,
     });
+    expect(captured.current?.readText().endsWith("AB")).toBe(true);
     expect(screen.queryByText("读写文件时发生错误。")).not.toBeInTheDocument();
   });
 
@@ -917,6 +930,104 @@ describe("blank editor -> editor open flow", () => {
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
     expect(captured.current?.readText()).toBe("# Hello\n");
+  });
+
+  it("keeps a named session saveable when the late save fails", async () => {
+    const ipc = fileIpc("# Note\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
+    });
+
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    const original = ipc.documentOpen.bind(ipc);
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      // Arm only for the late save; the pre-open preserve must succeed.
+      ipc.failNext(COMMANDS.documentWriteAtomic, "PERMISSION_DENIED", "locked");
+
+      return original();
+    });
+
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+
+    // Adoption is abandoned, but the old token was restored and still saves.
+    expect(await screen.findByText("没有读取或写入该文件的权限。")).toBeInTheDocument();
+    expect(captured.current?.readText().endsWith("AB")).toBe(true);
+    expect(captured.current?.isUntitled).toBe(false);
+
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "C" } });
+    });
+    fireEvent.click(await screen.findByTestId("status-retry"));
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text.endsWith("ABC")).toBe(true));
+  });
+
+  it("keeps a late save on the old file when opening another", async () => {
+    const ipc = new FakeIpc({
+      files: [
+        { path: "/docs/note.md", text: "# Note\n" },
+        { path: "/docs/other.md", text: "# Other\n" },
+      ],
+    });
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
+    });
+
+    ipc.setOpenFile("/docs/other.md");
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    const original = ipc.documentOpen.bind(ipc);
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      return original();
+    });
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(captured.current?.readText()).toBe("# Other\n"));
+    expect(ipc.getFile("/docs/note.md")?.text.endsWith("AB")).toBe(true);
+    const opened = captured.current?.attachedView;
+    if (!opened) {
+      throw new Error("opened editor view is not attached");
+    }
+    act(() => {
+      opened.dispatch({ changes: { from: opened.state.doc.length, insert: "C" } });
+    });
+    platform.emitMenuAction("file.save");
+    await waitFor(() => expect(ipc.getFile("/docs/other.md")?.text.endsWith("C")).toBe(true));
+    expect(ipc.getFile("/docs/note.md")?.text.endsWith("AB")).toBe(true);
   });
 
   it("keeps a dirty untitled document when the draft write fails", async () => {
