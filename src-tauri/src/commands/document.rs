@@ -138,6 +138,11 @@ async fn wait_for_main<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<WebviewW
         if let Some(window) = app.get_webview_window("main") {
             return Some(window);
         }
+        // The boot build finished (success would have been caught above), so
+        // stop waiting out the full budget before building our own window.
+        if !app.state::<StartupWindow>().is_main_claimed() {
+            break;
+        }
         tokio::time::sleep(MAIN_WINDOW_WAIT_STEP).await;
     }
     app.get_webview_window("main")

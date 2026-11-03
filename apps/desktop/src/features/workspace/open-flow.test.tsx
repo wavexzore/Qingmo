@@ -553,6 +553,34 @@ describe("blank editor -> editor open flow", () => {
     expect(captured.current?.isUntitled).toBe(true);
   });
 
+  it("replaces a dirty untitled document whose draft already auto-wrote", async () => {
+    const ipc = fileIpc();
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "# draft" } });
+    });
+    // Let the debounce write the same snapshot New will flush.
+    await waitFor(() => expect(ipc.draftWrites).toHaveLength(1), { timeout: 3_000 });
+
+    platform.emitMenuAction("file.new");
+
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(true));
+    expect(captured.current?.readText()).toBe("");
+    expect(screen.queryByText("读写文件时发生错误。")).not.toBeInTheDocument();
+    expect(ipc.draftWrites).toHaveLength(1);
+  });
+
   it("keeps a dirty untitled document when the draft write fails", async () => {
     const ipc = fileIpc();
     const captured: { current: EditorSession | null } = { current: null };

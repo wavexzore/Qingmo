@@ -6,6 +6,8 @@ enum LaunchState {
     Undecided,
     /// The fallback timer won and is creating the blank main window.
     Main,
+    /// The fallback main window finished building.
+    MainReady,
     /// A document (OS open or New) owns the launch.
     Document,
 }
@@ -55,6 +57,17 @@ impl StartupWindow {
         }
         *state = LaunchState::Document;
         true
+    }
+
+    /// Marks the claimed main build as finished (success or failure).
+    ///
+    /// `Main` means "still building, reuse it when New arrives"; after this
+    /// transition New is a normal new-window request again.
+    pub fn mark_main_ready(&self) {
+        let mut state = self.lock();
+        if *state == LaunchState::Main {
+            *state = LaunchState::MainReady;
+        }
     }
 
     pub fn is_main_claimed(&self) -> bool {
@@ -107,6 +120,24 @@ mod tests {
         assert!(state.claim_main_if_undecided());
         assert!(!state.claim_document_if_undecided());
         assert!(!state.was_opened());
+    }
+
+    #[test]
+    fn a_ready_main_no_longer_counts_as_pending() {
+        let state = StartupWindow::new();
+        assert!(state.claim_main_if_undecided());
+        state.mark_main_ready();
+        assert!(!state.is_main_claimed());
+        assert!(!state.was_opened());
+    }
+
+    #[test]
+    fn a_failed_main_build_can_still_become_ready() {
+        let state = StartupWindow::new();
+        assert!(state.claim_main_if_undecided());
+        state.mark_main_ready();
+        state.mark_opened();
+        assert!(state.was_opened());
     }
 
     #[test]

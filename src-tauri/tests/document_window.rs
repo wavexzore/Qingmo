@@ -3,6 +3,8 @@
 //! The window builder itself needs a real event loop, so these tests inject a
 //! failing build closure and verify the shared rollback/fallback decision.
 
+use std::time::Duration;
+
 use qingmo_lib::commands::document::{
     create_document_window, create_untitled_window, has_editable_window,
 };
@@ -144,6 +146,53 @@ fn new_reuses_a_main_window_claimed_by_the_startup_timer() {
     assert_eq!(app.webview_windows().len(), 1);
     assert!(app.state::<WindowSessions>().is_untitled("main"));
     assert!(app.state::<StartupWindow>().was_opened());
+}
+
+#[test]
+fn new_builds_its_own_window_once_the_main_window_is_ready() {
+    let app = mock_app();
+    let handle = app.handle().clone();
+    let startup = app.state::<StartupWindow>();
+    assert!(startup.claim_main_if_undecided());
+    let _main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("main window");
+    app.state::<WindowSessions>().mark_untitled("main");
+    startup.mark_main_ready();
+
+    tauri::async_runtime::block_on(create_untitled_window(handle)).expect("New must succeed");
+
+    let windows = app.webview_windows();
+    assert_eq!(windows.len(), 2, "a ready main must not be reused");
+    assert!(windows.contains_key("main"));
+    assert!(windows.keys().any(|label| label.starts_with("doc-")));
+    assert!(!app.state::<StartupWindow>().is_main_claimed());
+}
+
+#[test]
+fn new_stops_waiting_as_soon_as_the_main_build_finishes() {
+    let app = mock_app();
+    let handle = app.handle().clone();
+    let startup = app.state::<StartupWindow>();
+    assert!(startup.claim_main_if_undecided());
+
+    let release = app.handle().clone();
+    let finishing = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(30));
+        release.state::<StartupWindow>().mark_main_ready();
+    });
+    let started = std::time::Instant::now();
+    tauri::async_runtime::block_on(create_untitled_window(handle)).expect("New must succeed");
+    let waited = started.elapsed();
+    finishing.join().expect("release thread must finish");
+
+    assert!(
+        waited < Duration::from_millis(300),
+        "New waited {waited:?} for a main build that already finished"
+    );
+    let windows = app.webview_windows();
+    assert_eq!(windows.len(), 1);
+    assert!(windows.keys().any(|label| label.starts_with("doc-")));
 }
 
 #[test]

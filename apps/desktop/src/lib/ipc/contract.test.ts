@@ -61,7 +61,7 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionDraftDiscard]).toBe("allow-session-draft-discard");
   });
 
-  it("keeps the five events stable", () => {
+  it("keeps the six events stable", () => {
     expect(EVENT_NAMES).toEqual([
       "app://close-requested",
       "app://update-state",

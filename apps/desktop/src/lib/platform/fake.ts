@@ -74,10 +74,11 @@ export class FakePlatform implements PlatformPort {
     }
   }
 
-  get listenerCounts(): { close: number; menu: number; blur: number } {
+  get listenerCounts(): { close: number; menu: number; newFailed: number; blur: number } {
     return {
       close: this.closeListeners.size,
       menu: this.menuListeners.size,
+      newFailed: this.newFailedListeners.size,
       blur: this.blurListeners.size,
     };
   }

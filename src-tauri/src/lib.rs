@@ -854,11 +854,13 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(MAIN_WINDOW_BOOT_DELAY).await;
-                if handle
-                    .state::<state::StartupWindow>()
-                    .claim_main_if_undecided()
-                {
+                let startup = handle.state::<state::StartupWindow>();
+                if startup.claim_main_if_undecided() {
                     ensure_main_window(&handle);
+                    // Success or failure, the boot claim is over: later New
+                    // requests must build their own window instead of waiting
+                    // for a `main` that will never appear.
+                    startup.mark_main_ready();
                 }
             });
             Ok(())
