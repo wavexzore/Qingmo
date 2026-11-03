@@ -617,6 +617,9 @@ const MAIN_WINDOW_BOOT_DELAY: Duration = Duration::from_millis(300);
 /// This is the one intentional exception to `create_document_window`: it uses
 /// the configured `main` window (different role and URL) and is itself the
 /// fallback target, so routing it through the shared primitive would recurse.
+///
+/// Every return path advances `Main` to `MainReady`: the boot claim is over
+/// once the build attempt ends, success or failure.
 pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
     let startup = app.state::<state::StartupWindow>();
     if app.get_webview_window("main").is_some() {

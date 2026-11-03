@@ -285,6 +285,7 @@ describe("blank editor -> editor open flow", () => {
     vi.stubGlobal("__TAURI_INTERNALS__", {});
     const ipc = fileIpc();
     const openSpy = vi.spyOn(ipc, "documentOpen").mockResolvedValue(null as unknown as FilePayload);
+    const draftSpy = vi.spyOn(ipc, "sessionDraftWrite");
     const captured: { current: EditorSession | null } = { current: null };
     const { platform } = renderApp(ipc, {
       onSession: (value) => {
@@ -301,14 +302,46 @@ describe("blank editor -> editor open flow", () => {
       view.dispatch({ changes: { from: 0, insert: "precious" } });
     });
     await waitFor(() => expect(captured.current?.getSnapshot().dirty).toBe(true));
-    // A failed draft must not stop the native dialog from opening.
+    // A failed draft must not stop the native dialog from opening either.
     ipc.failNext(COMMANDS.sessionDraftWrite, "IO", "draft storage unavailable");
 
     platform.emitMenuAction("file.open");
 
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
-    expect(ipc.draftWrites).toHaveLength(0);
+    expect(draftSpy).not.toHaveBeenCalled();
     expect(captured.current?.readText()).toBe("precious");
+    expect(captured.current?.isUntitled).toBe(true);
+  });
+
+  it("keeps typing that lands during the draft-list refresh before New", async () => {
+    const ipc = fileIpc();
+    ipc.setCommandDelay(COMMANDS.sessionDraftList, 150);
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "A" } });
+    });
+
+    platform.emitMenuAction("file.new");
+    // Typing after the first write but while the refresh is in flight must
+    // trigger another pass instead of being dropped.
+    await waitFor(() => expect(ipc.draftWrites).toHaveLength(1));
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+    });
+
+    await waitFor(() => expect(captured.current?.readText()).toBe(""));
+    expect(ipc.draftWrites.at(-1)?.text).toBe("AB");
   });
 
   it("keeps the same EditorView when the outline is toggled", async () => {

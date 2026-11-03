@@ -167,8 +167,8 @@ pub async fn create_untitled_window<R: tauri::Runtime>(app: AppHandle<R>) -> Res
         // path took over); this New still needs a window.
         startup.mark_opened();
     }
-    // If a document already owned the launch (OS open or an earlier New),
-    // each request still gets its own window.
+    // `MainReady` (boot build finished) and `Document` (OS open or an earlier
+    // New) both fall through here, so each request gets its own window.
 
     let locale = app.state::<crate::state::ShellLocale>();
     let app_name = locale
