@@ -50,8 +50,9 @@ impl StartupWindow {
 
     /// Claims the launch for a New document window when still undecided.
     ///
-    /// `false` means either the main window is being created (`is_main_claimed`)
-    /// or another document already owns the launch.
+    /// `false` means the timer owns the launch (`Main` building, or
+    /// `MainReady`/finished) or another document already owns it. Only `Main`
+    /// means a window is worth waiting for; see `is_main_claimed`.
     pub fn claim_document_if_undecided(&self) -> bool {
         let mut state = self.lock();
         if *state != LaunchState::Undecided {

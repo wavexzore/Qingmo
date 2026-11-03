@@ -13,6 +13,7 @@ import { buildEditorUiCopy } from "../../i18n/editorCopy";
 import { normalizeLanguage } from "../../i18n/language";
 import { MENU_ACTIONS } from "../../lib/ipc/commands";
 import { AppError as AppErrorClass, normalizeError } from "../../lib/ipc/errors";
+import { isE2eMode } from "../../e2e/bridge";
 import { isTauriRuntime } from "../../lib/platform/runtime";
 import { uiStore } from "../../stores/uiStore";
 import { CommandPalette } from "../commands/CommandPalette";
@@ -116,7 +117,8 @@ export function WorkspaceLayout() {
     if (!current || !coordinator) {
       return true;
     }
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+
+    const attempt = async (): Promise<"stable" | "changed" | "failed"> => {
       const before = current.readText();
       const flushed = await coordinator.flush("auto");
       if (!flushed.ok) {
@@ -129,7 +131,7 @@ export function WorkspaceLayout() {
               "the current document could not be saved",
             ),
         );
-        return false;
+        return "failed";
       }
       if (current.isUntitled && before.length > 0) {
         const draft = await liveJournal?.flushNow({ force: true });
@@ -140,15 +142,28 @@ export function WorkspaceLayout() {
               ? normalizeError(draft.error)
               : new AppErrorClass("IO", "the crash draft could not be written"),
           );
-          return false;
+          return "failed";
         }
       }
-      if (current.readText() === before) {
-        break;
+      // The list refresh is part of the protected interval too; text typed
+      // while it is in flight must trigger another pass, not vanish with the
+      // replaced session.
+      await refreshDrafts();
+      return current.readText() === before ? "stable" : "changed";
+    };
+
+    for (let attemptIndex = 0; attemptIndex < 3; attemptIndex += 1) {
+      const result = await attempt();
+      if (result === "failed") {
+        return false;
+      }
+      if (result === "stable") {
+        return true;
       }
     }
-    await refreshDrafts();
-    return true;
+    // The user out-typed every retry; write the latest snapshot once more
+    // rather than dropping the tail.
+    return (await attempt()) !== "failed";
   }, [getCurrentBundle, handleCommandError, refreshDrafts]);
   useCommandKeybindings({
     enabled:
@@ -187,10 +202,11 @@ export function WorkspaceLayout() {
     let release: (() => void) | null = null;
     try {
       release = await beginReplacement();
-      // Only the browser harness replaces this window; native Open creates a
-      // new window and must stay usable even when the current document cannot
-      // be saved. Harness adoption needs the current session preserved first.
-      if (!isTauriRuntime() && !(await preserveCurrentSession())) {
+      // Only the browser harness (or the E2E bridge) replaces this window;
+      // native Open creates a new window and must stay usable even when the
+      // current document cannot be saved.
+      const replacesInPlace = !isTauriRuntime() || isE2eMode();
+      if (replacesInPlace && !(await preserveCurrentSession())) {
         return;
       }
       const result = await openFile(ipc);
