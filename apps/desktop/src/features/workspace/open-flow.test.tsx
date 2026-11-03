@@ -553,6 +553,32 @@ describe("blank editor -> editor open flow", () => {
     expect(captured.current?.isUntitled).toBe(true);
   });
 
+  it("keeps a dirty untitled document when the draft write fails", async () => {
+    const ipc = fileIpc();
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "# draft" } });
+    });
+    ipc.failNext(COMMANDS.sessionDraftWrite, "IO", "draft storage unavailable");
+
+    platform.emitMenuAction("file.new");
+
+    expect(await screen.findByText("读写文件时发生错误。")).toBeInTheDocument();
+    expect(captured.current?.isUntitled).toBe(true);
+    expect(captured.current?.readText()).toContain("# draft");
+  });
+
   it("does not run Save As from a dirty untitled document", async () => {
     const ipc = fileIpc();
     vi.spyOn(ipc, "documentNew").mockResolvedValue("window");

@@ -61,7 +61,8 @@ fn frontend_command_mirror_contains_every_contract_name() {
             "app://update-state",
             "app://update-progress",
             "app://menu-action",
-            "app://document-changed"
+            "app://document-changed",
+            "app://document-new-failed"
         ]
     );
 

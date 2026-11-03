@@ -97,10 +97,19 @@ fn create_untitled_window_marks_the_window_and_has_no_payload() {
     tauri::async_runtime::block_on(create_untitled_window(handle)).expect("New must succeed");
 
     let windows = app.webview_windows();
-    let (label, _window) = windows
+    assert_eq!(windows.len(), 1, "New must create exactly one window");
+    let (label, window) = windows
         .iter()
         .find(|(label, _)| label.starts_with("doc-"))
         .expect("New must create a document window");
+    assert_eq!(
+        window.url().expect("mock URL is readable").path(),
+        "/index.html"
+    );
+    assert_eq!(
+        window.url().expect("mock URL is readable").query(),
+        Some("window=document")
+    );
 
     let sessions = app.state::<WindowSessions>();
     assert!(sessions.is_untitled(label));
@@ -118,4 +127,34 @@ fn create_untitled_window_marks_the_window_and_has_no_payload() {
         sessions.token_for(label).as_deref(),
         Some("token-after-save-as")
     );
+}
+
+#[test]
+fn new_reuses_a_main_window_claimed_by_the_startup_timer() {
+    let app = mock_app();
+    let handle = app.handle().clone();
+    assert!(app.state::<StartupWindow>().claim_main_if_undecided());
+    let _main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("main window");
+    app.state::<WindowSessions>().mark_untitled("main");
+
+    tauri::async_runtime::block_on(create_untitled_window(handle)).expect("New must succeed");
+
+    assert_eq!(app.webview_windows().len(), 1);
+    assert!(app.state::<WindowSessions>().is_untitled("main"));
+    assert!(app.state::<StartupWindow>().was_opened());
+}
+
+#[test]
+fn new_creates_a_window_when_the_main_claim_never_built() {
+    let app = mock_app();
+    let handle = app.handle().clone();
+    assert!(app.state::<StartupWindow>().claim_main_if_undecided());
+
+    tauri::async_runtime::block_on(create_untitled_window(handle)).expect("New must succeed");
+
+    let windows = app.webview_windows();
+    assert_eq!(windows.len(), 1);
+    assert!(windows.keys().any(|label| label.starts_with("doc-")));
 }

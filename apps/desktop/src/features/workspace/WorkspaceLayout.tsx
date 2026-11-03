@@ -40,7 +40,7 @@ export function WorkspaceLayout() {
   const toast = useToast();
   const navigate = useNavigate();
   const { ipc, platform } = useAppServices();
-  const { session, coordinator, recorder, journal, setSession, startUntitled } =
+  const { session, coordinator, recorder, journal, refreshDrafts, setSession, startUntitled } =
     useDocumentSession();
   const closeGuard = useCloseGuard({
     ipc,
@@ -58,8 +58,10 @@ export function WorkspaceLayout() {
   const creatingRef = useRef(false);
   const sessionRef = useRef(session);
   const coordinatorRef = useRef(coordinator);
+  const journalRef = useRef(journal);
   sessionRef.current = session;
   coordinatorRef.current = coordinator;
+  journalRef.current = journal;
   const hasSession = session !== null;
   const updateBlocked = closeGuard.closing || closeGuard.prompt !== null;
 
@@ -162,22 +164,46 @@ export function WorkspaceLayout() {
         const current = sessionRef.current;
         const coordinator = coordinatorRef.current;
         if (current && coordinator) {
-          const flushed = await coordinator.flush("auto");
-          await journal?.flushNow();
-          if (!flushed.ok) {
-            handleCommandError(
-              flushed.error ?? new AppErrorClass("IO", "the current document could not be saved"),
-            );
-            return;
+          // Retry once when text arrived while a flush/draft write was in
+          // flight, then replace only if this session is still current.
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            const before = current.readText();
+            const flushed = await coordinator.flush("auto");
+            if (!flushed.ok) {
+              await journalRef.current?.flushNow();
+              await refreshDrafts();
+              handleCommandError(
+                flushed.error ??
+                  new AppErrorClass(
+                    flushed.failure === "conflict" ? "CONFLICT" : "IO",
+                    "the current document could not be saved",
+                  ),
+              );
+              return;
+            }
+            if (current.isUntitled && before.length > 0) {
+              const draft = await journalRef.current?.flushNow();
+              if (!draft) {
+                await refreshDrafts();
+                toast.push(t("errors:IO"));
+                return;
+              }
+            }
+            if (current.readText() === before) {
+              break;
+            }
           }
+          await refreshDrafts();
         }
-        startUntitled();
-        navigate("/editor");
+        if (sessionRef.current === current) {
+          startUntitled();
+          navigate("/editor");
+        }
       }
     } finally {
       creatingRef.current = false;
     }
-  }, [handleCommandError, ipc, journal, navigate, startUntitled]);
+  }, [handleCommandError, ipc, navigate, refreshDrafts, startUntitled, t, toast]);
 
   const runMenuCommand = useCallback(
     async (id: string) => {
@@ -192,9 +218,9 @@ export function WorkspaceLayout() {
     [handleCommandError],
   );
 
-  // Native menu items are mirrored by the same availability gate as
-  // keyboard shortcuts: no menu-driven open/save while a modal or install is
-  // in progress.
+  // Menu items that still reach the webview share the keyboard-shortcut
+  // availability gate. Native New is handled entirely in Rust and is always
+  // available.
   const menuEnabled =
     !paletteOpen &&
     !logsOpen &&
@@ -250,6 +276,11 @@ export function WorkspaceLayout() {
       }
     });
   }, [menuEnabled, createDocument, openDocument, openPalette, platform, runMenuCommand]);
+
+  // Native New bypasses the webview; Rust only emits this when it failed.
+  useEffect(() => {
+    return platform.onDocumentNewFailed(handleCommandError);
+  }, [platform, handleCommandError]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({

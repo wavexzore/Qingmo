@@ -98,6 +98,7 @@ export const EVENTS = {
   updateProgress: "app://update-progress",
   menuAction: "app://menu-action",
   documentChanged: "app://document-changed",
+  documentNewFailed: "app://document-new-failed",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -108,6 +109,7 @@ export const EVENT_NAMES = [
   EVENTS.updateProgress,
   EVENTS.menuAction,
   EVENTS.documentChanged,
+  EVENTS.documentNewFailed,
 ] as const satisfies readonly EventName[];
 
 /**

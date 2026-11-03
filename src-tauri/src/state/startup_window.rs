@@ -1,14 +1,25 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
-/// Tracks whether the launch already settled on a document window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum LaunchState {
+    #[default]
+    Undecided,
+    /// The fallback timer won and is creating the blank main window.
+    Main,
+    /// A document (OS open or New) owns the launch.
+    Document,
+}
+
+/// Decides who creates the first window.
 ///
 /// The main window is declared with `create: false`; a short bootstrap delay
 /// creates it only when launch was not caused by opening a document or by a
-/// New request. `claim_if_unopened` makes the 300ms fallback decision atomic,
-/// so a New at the boundary cannot race it into an extra blank window.
+/// New request. Both sides claim the launch exactly once, so a New landing on
+/// the 300ms boundary cannot add a second empty window: if the timer already
+/// claimed the main window, New waits for it and reuses it.
 #[derive(Debug, Default)]
 pub struct StartupWindow {
-    opened: AtomicBool,
+    state: Mutex<LaunchState>,
 }
 
 impl StartupWindow {
@@ -16,33 +27,61 @@ impl StartupWindow {
         Self::default()
     }
 
-    /// Records that a document (OS open or New) already claimed the launch.
+    /// Records that a document already owns the launch.
     pub fn mark_opened(&self) {
-        self.opened.store(true, Ordering::SeqCst);
+        *self.lock() = LaunchState::Document;
     }
 
-    /// Atomically claims the fallback main window when nothing did so yet.
+    /// Claims the fallback main window when nothing did so yet.
     ///
-    /// Returns `true` for the single caller allowed to create the main window.
-    pub fn claim_if_unopened(&self) -> bool {
-        self.opened
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
+    /// Returns `true` for the single caller allowed to create it.
+    pub fn claim_main_if_undecided(&self) -> bool {
+        let mut state = self.lock();
+        if *state != LaunchState::Undecided {
+            return false;
+        }
+        *state = LaunchState::Main;
+        true
     }
 
-    /// Whether a document open or New request already claimed the launch.
+    /// Claims the launch for a New document window when still undecided.
+    ///
+    /// `false` means either the main window is being created (`is_main_claimed`)
+    /// or another document already owns the launch.
+    pub fn claim_document_if_undecided(&self) -> bool {
+        let mut state = self.lock();
+        if *state != LaunchState::Undecided {
+            return false;
+        }
+        *state = LaunchState::Document;
+        true
+    }
+
+    pub fn is_main_claimed(&self) -> bool {
+        *self.lock() == LaunchState::Main
+    }
+
+    /// Whether a document open or New request already owns the launch.
     pub fn was_opened(&self) -> bool {
-        self.opened.load(Ordering::SeqCst)
+        *self.lock() == LaunchState::Document
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, LaunchState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::StartupWindow;
+    use super::*;
 
     #[test]
-    fn starts_without_an_open_request() {
-        assert!(!StartupWindow::new().was_opened());
+    fn starts_undecided() {
+        let state = StartupWindow::new();
+        assert!(!state.was_opened());
+        assert!(!state.is_main_claimed());
     }
 
     #[test]
@@ -50,20 +89,32 @@ mod tests {
         let state = StartupWindow::new();
         state.mark_opened();
         assert!(state.was_opened());
+        assert!(!state.claim_main_if_undecided());
     }
 
     #[test]
     fn only_one_fallback_claim_wins() {
         let state = StartupWindow::new();
-        assert!(state.claim_if_unopened());
-        assert!(!state.claim_if_unopened());
-        assert!(!state.claim_if_unopened());
+        assert!(state.claim_main_if_undecided());
+        assert!(!state.claim_main_if_undecided());
+        assert!(state.is_main_claimed());
+        assert!(!state.was_opened());
+    }
+
+    #[test]
+    fn the_main_claim_blocks_a_document_claim() {
+        let state = StartupWindow::new();
+        assert!(state.claim_main_if_undecided());
+        assert!(!state.claim_document_if_undecided());
+        assert!(!state.was_opened());
     }
 
     #[test]
     fn a_document_claim_blocks_the_fallback() {
         let state = StartupWindow::new();
-        state.mark_opened();
-        assert!(!state.claim_if_unopened());
+        assert!(state.claim_document_if_undecided());
+        assert!(!state.claim_main_if_undecided());
+        assert!(state.was_opened());
+        assert!(!state.is_main_claimed());
     }
 }

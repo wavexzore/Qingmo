@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tauri::{AppHandle, Manager, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -125,11 +126,44 @@ pub async fn document_new(app: State<'_, AppHandle>) -> Result<(), AppError> {
     create_untitled_window(app.inner().clone()).await
 }
 
+const MAIN_WINDOW_WAIT_STEP: Duration = Duration::from_millis(10);
+const MAIN_WINDOW_WAIT_STEPS: usize = 50;
+
+/// Waits briefly for the startup fallback to finish creating `main`.
+///
+/// A New landing after the timer's claim but before the build finishes must
+/// reuse that untitled window instead of adding a second one.
+async fn wait_for_main<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
+    for _ in 0..MAIN_WINDOW_WAIT_STEPS {
+        if let Some(window) = app.get_webview_window("main") {
+            return Some(window);
+        }
+        tokio::time::sleep(MAIN_WINDOW_WAIT_STEP).await;
+    }
+    app.get_webview_window("main")
+}
+
 /// Creates an untitled document window.
 ///
 /// Shared by the IPC command and the startup menu fallback (no webview is
 /// alive yet during the boot delay, so there is nothing to forward).
 pub async fn create_untitled_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), AppError> {
+    let startup = app.state::<StartupWindow>();
+    if !startup.claim_document_if_undecided() && startup.is_main_claimed() {
+        if let Some(main) = wait_for_main(&app).await {
+            startup.mark_opened();
+            if let Err(error) = main.set_focus() {
+                tracing::warn!(%error, "failed to focus the reused main window");
+            }
+            tracing::info!(window = "main", "New reused the boot main window");
+            return Ok(());
+        }
+        // The timer's build failed; this New still needs a window.
+        startup.mark_opened();
+    }
+    // If a document already owned the launch (OS open or an earlier New),
+    // each request still gets its own window.
+
     let locale = app.state::<crate::state::ShellLocale>();
     let app_name = locale
         .labels()
@@ -138,10 +172,6 @@ pub async fn create_untitled_window<R: tauri::Runtime>(app: AppHandle<R>) -> Res
     let title = window_title_for_untitled(&locale.untitled_file_name(), &app_name);
     let label = format!("doc-{}", uuid::Uuid::new_v4());
     let sessions = app.state::<WindowSessions>().inner().clone();
-
-    // New is also a document open: atomically claim the launch so the startup
-    // fallback timer cannot add a blank main window behind this one.
-    app.state::<StartupWindow>().claim_if_unopened();
     sessions.mark_untitled(&label);
 
     let rollback_label = label.clone();

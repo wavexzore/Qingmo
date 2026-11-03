@@ -1,7 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { CloseRequestedPayload, MenuActionPayload } from "@qingmo/shared";
+import type { AppError, CloseRequestedPayload, MenuActionPayload } from "@qingmo/shared";
 
 import { EVENTS, MENU_ACTION_NAMES, type MenuAction } from "../ipc/commands";
 import { normalizeError } from "../ipc/errors";
@@ -102,6 +102,32 @@ export function createTauriPlatform(): PlatformPort {
         })
         .catch((error: unknown) => {
           console.error("failed to subscribe to app://menu-action", normalizeError(error));
+        });
+
+      return () => {
+        disposed = true;
+        unlisten?.();
+        unlisten = undefined;
+      };
+    },
+
+    onDocumentNewFailed(callback) {
+      let disposed = false;
+      let unlisten: UnlistenFn | undefined;
+      void listen<AppError>(EVENTS.documentNewFailed, (event) => {
+        if (!disposed) {
+          callback(event.payload);
+        }
+      })
+        .then((stop) => {
+          if (disposed) {
+            stop();
+          } else {
+            unlisten = stop;
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("failed to subscribe to app://document-new-failed", normalizeError(error));
         });
 
       return () => {

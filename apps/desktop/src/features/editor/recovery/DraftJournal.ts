@@ -1,4 +1,4 @@
-import type { DraftWriteRequest } from "@qingmo/shared";
+import type { DraftMeta, DraftWriteRequest } from "@qingmo/shared";
 
 import type { IpcPort } from "../../../lib/ipc/port";
 import type { EditorSession } from "../EditorSession";
@@ -55,7 +55,7 @@ export class DraftJournal {
   private ownedDraftId: string | null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
-  private inFlight: Promise<void> | null = null;
+  private inFlight: Promise<DraftMeta | null> | null = null;
   private lastWrittenKey: string | null = null;
   private lastSaveState: string | null = null;
   private warned = false;
@@ -141,17 +141,23 @@ export class DraftJournal {
     }
   }
 
-  /** Writes now when a draft is still warranted; safe to call while closing. */
-  async flushNow(): Promise<void> {
+  /**
+   * Writes now when a draft is still warranted; safe to call while closing.
+   *
+   * Returns the written draft, or `null` when nothing was needed or the write
+   * failed. Callers that are about to replace the session use the result to
+   * distinguish “nothing to preserve” from “preservation failed”.
+   */
+  async flushNow(): Promise<DraftMeta | null> {
     if (this.disposed || this.discarding) {
-      return;
+      return null;
     }
     this.cancelTimers();
     if (!this.shouldWrite()) {
       this.releaseWhenClean();
-      return;
+      return null;
     }
-    await this.writeOnce();
+    return this.writeOnce();
   }
 
   /**
@@ -197,8 +203,8 @@ export class DraftJournal {
     );
   }
 
-  private writeOnce(): Promise<void> {
-    const run = (this.inFlight ?? Promise.resolve()).then(() => this.writeLatest());
+  private writeOnce(): Promise<DraftMeta | null> {
+    const run = (this.inFlight ?? Promise.resolve(null)).then(() => this.writeLatest());
     this.inFlight = run;
     void run.finally(() => {
       if (this.inFlight === run) {
@@ -208,9 +214,9 @@ export class DraftJournal {
     return run;
   }
 
-  private async writeLatest(): Promise<void> {
+  private async writeLatest(): Promise<DraftMeta | null> {
     if (this.disposed || this.discarding || !this.shouldWrite()) {
-      return;
+      return null;
     }
     const snapshot = this.session.getSnapshot();
     const text = this.session.readText();
@@ -220,7 +226,7 @@ export class DraftJournal {
     const path = this.session.isUntitled ? null : snapshot.docId;
     const key = JSON.stringify([text, anchor, head, title, path]);
     if (key === this.lastWrittenKey) {
-      return;
+      return null;
     }
 
     const request: DraftWriteRequest = {
@@ -235,16 +241,18 @@ export class DraftJournal {
     try {
       const meta = await this.ipc.sessionDraftWrite(request);
       if (this.disposed) {
-        return;
+        return meta;
       }
       this.ownedDraftId = meta.id;
       this.lastWrittenKey = key;
       this.releaseIfNoLongerNeeded();
+      return meta;
     } catch (error) {
       if (!this.warned) {
         this.warned = true;
         console.warn("failed to write the crash draft", error);
       }
+      return null;
     }
   }
 

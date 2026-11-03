@@ -1,4 +1,4 @@
-import type { CloseReason } from "@qingmo/shared";
+import type { AppError, CloseReason } from "@qingmo/shared";
 
 import type { MenuAction } from "../ipc/commands";
 import type { PlatformPort } from "./port";
@@ -10,6 +10,7 @@ import type { PlatformPort } from "./port";
 export class FakePlatform implements PlatformPort {
   private readonly closeListeners = new Set<(reason: CloseReason) => void>();
   private readonly menuListeners = new Set<(action: MenuAction) => void>();
+  private readonly newFailedListeners = new Set<(error: AppError) => void>();
   private readonly blurListeners = new Set<() => void>();
   private composing = false;
 
@@ -24,6 +25,13 @@ export class FakePlatform implements PlatformPort {
     this.menuListeners.add(callback);
     return () => {
       this.menuListeners.delete(callback);
+    };
+  }
+
+  onDocumentNewFailed(callback: (error: AppError) => void): () => void {
+    this.newFailedListeners.add(callback);
+    return () => {
+      this.newFailedListeners.delete(callback);
     };
   }
 
@@ -57,6 +65,12 @@ export class FakePlatform implements PlatformPort {
   emitMenuAction(action: MenuAction): void {
     for (const listener of [...this.menuListeners]) {
       listener(action);
+    }
+  }
+
+  emitDocumentNewFailed(error: AppError): void {
+    for (const listener of [...this.newFailedListeners]) {
+      listener(error);
     }
   }
 
