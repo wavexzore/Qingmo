@@ -146,6 +146,17 @@ describe("DraftJournal", () => {
     expect(ipc.draftWrites).toHaveLength(1);
   });
 
+  it("force-rewrites a snapshot that was already written", async () => {
+    const { ipc, journal } = untitledJournal();
+
+    expect((await journal.flushNow()).ok).toBe(true);
+    const id = (await ipc.sessionDraftList())[0]?.id;
+    expect((await journal.flushNow({ force: true })).ok).toBe(true);
+    expect(ipc.draftWrites).toHaveLength(2);
+    expect(ipc.draftWrites[1]?.id).toBe(id);
+    expect((await ipc.sessionDraftList())[0]?.id).toBe(id);
+  });
+
   it("reports a failed flush with the write error and can retry", async () => {
     const { ipc, journal } = untitledJournal();
     const failure = new Error("disk full");

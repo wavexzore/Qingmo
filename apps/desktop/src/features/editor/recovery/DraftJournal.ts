@@ -19,6 +19,16 @@ export const DRAFT_MAX_WAIT_MS = 5_000;
  */
 export type DraftFlushResult = { ok: true; meta: DraftMeta | null } | { ok: false; error: unknown };
 
+export interface DraftFlushOptions {
+  /**
+   * Write even when the same snapshot was already written by this session.
+   *
+   * The global store prunes old drafts, so the local `lastWrittenKey` is not
+   * proof the rows still exist. Callers replacing the session must force.
+   */
+  force?: boolean;
+}
+
 const defaultTimers: SaveTimerApi = {
   setTimeout: (callback, milliseconds) => setTimeout(callback, milliseconds),
   clearTimeout: (handle) => clearTimeout(handle),
@@ -157,7 +167,7 @@ export class DraftJournal {
    * write: a snapshot already written earlier is a success. Callers that are
    * about to replace the session must keep it on `ok: false`.
    */
-  async flushNow(): Promise<DraftFlushResult> {
+  async flushNow({ force = false }: DraftFlushOptions = {}): Promise<DraftFlushResult> {
     if (this.disposed || this.discarding) {
       return { ok: true, meta: null };
     }
@@ -166,7 +176,7 @@ export class DraftJournal {
       this.releaseWhenClean();
       return { ok: true, meta: null };
     }
-    return this.writeOnce();
+    return this.writeOnce(force);
   }
 
   /**
@@ -212,9 +222,9 @@ export class DraftJournal {
     );
   }
 
-  private writeOnce(): Promise<DraftFlushResult> {
+  private writeOnce(force: boolean): Promise<DraftFlushResult> {
     const run = (this.inFlight ?? Promise.resolve({ ok: true, meta: null })).then(() =>
-      this.writeLatest(),
+      this.writeLatest(force),
     );
     this.inFlight = run;
     void run.finally(() => {
@@ -225,7 +235,7 @@ export class DraftJournal {
     return run;
   }
 
-  private async writeLatest(): Promise<DraftFlushResult> {
+  private async writeLatest(force: boolean): Promise<DraftFlushResult> {
     if (this.disposed || this.discarding || !this.shouldWrite()) {
       return { ok: true, meta: null };
     }
@@ -236,7 +246,7 @@ export class DraftJournal {
     const title = snapshot.fileName;
     const path = this.session.isUntitled ? null : snapshot.docId;
     const key = JSON.stringify([text, anchor, head, title, path]);
-    if (key === this.lastWrittenKey) {
+    if (!force && key === this.lastWrittenKey) {
       // Already on disk from this session; the snapshot is preserved.
       return { ok: true, meta: null };
     }

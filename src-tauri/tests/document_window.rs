@@ -92,6 +92,32 @@ fn a_failed_last_window_falls_back_to_the_main_window() {
 }
 
 #[test]
+fn the_fallback_main_build_finishes_the_boot_claim() {
+    let app = mock_app();
+    let handle = app.handle().clone();
+    let startup = app.state::<StartupWindow>();
+    assert!(startup.claim_main_if_undecided());
+    let _about = tauri::WebviewWindowBuilder::new(&app, "about", Default::default())
+        .build()
+        .expect("about window");
+
+    assert!(create_document_window(
+        &handle,
+        "doc-new".to_string(),
+        "title".to_string(),
+        failing_build,
+        || {},
+    )
+    .is_err());
+
+    assert!(handle.get_webview_window("main").is_some());
+    assert!(
+        !startup.is_main_claimed(),
+        "the finished build must clear the boot claim"
+    );
+}
+
+#[test]
 fn create_untitled_window_marks_the_window_and_has_no_payload() {
     let app = mock_app();
     let handle = app.handle().clone();
@@ -112,6 +138,8 @@ fn create_untitled_window_marks_the_window_and_has_no_payload() {
         window.url().expect("mock URL is readable").query(),
         Some("window=document")
     );
+    // `MockRuntime` does not persist window titles, so only URL/state are
+    // asserted here; the title projection is covered by the pure helpers.
 
     let sessions = app.state::<WindowSessions>();
     assert!(sessions.is_untitled(label));
@@ -167,6 +195,7 @@ fn new_builds_its_own_window_once_the_main_window_is_ready() {
     assert!(windows.contains_key("main"));
     assert!(windows.keys().any(|label| label.starts_with("doc-")));
     assert!(!app.state::<StartupWindow>().is_main_claimed());
+    assert!(app.state::<StartupWindow>().was_opened());
 }
 
 #[test]
