@@ -68,6 +68,7 @@ function fileIpc(
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   commandRegistry.unregister("file.new");
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
@@ -278,9 +279,36 @@ describe("blank editor -> editor open flow", () => {
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
     expect(saveAsSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
-    expect(
-      screen.queryByText("请先处理当前文档的冲突或保存错误，再打开其他文件。"),
-    ).not.toBeInTheDocument();
+  });
+
+  it("does not preserve or block Open in the native shell", async () => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    const ipc = fileIpc();
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockResolvedValue(null as unknown as FilePayload);
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "precious" } });
+    });
+    await waitFor(() => expect(captured.current?.getSnapshot().dirty).toBe(true));
+    // A failed draft must not stop the native dialog from opening.
+    ipc.failNext(COMMANDS.sessionDraftWrite, "IO", "draft storage unavailable");
+
+    platform.emitMenuAction("file.open");
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    expect(ipc.draftWrites).toHaveLength(0);
+    expect(captured.current?.readText()).toBe("precious");
   });
 
   it("keeps the same EditorView when the outline is toggled", async () => {
