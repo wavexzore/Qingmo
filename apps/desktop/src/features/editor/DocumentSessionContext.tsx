@@ -54,6 +54,12 @@ interface DocumentSessionContextValue {
   setSession(next: EditorSession | null, extras?: SetSessionExtras): void;
   /** Replaces the current document with a fresh empty untitled session. */
   startUntitled(): void;
+  /** Live bundle from the provider refs (not a render snapshot). */
+  getCurrentBundle(): {
+    session: EditorSession | null;
+    coordinator: SaveCoordinator | null;
+    journal: DraftJournal | null;
+  };
   restoreDraft(id: string): Promise<Result<void, AppError>>;
   discardDraft(id: string): Promise<Result<void, AppError>>;
 }
@@ -166,6 +172,15 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
       }),
     );
   }, [ipc, setSession]);
+
+  const getCurrentBundle = useCallback(
+    () => ({
+      session: currentRef.current,
+      coordinator: coordinatorRef.current,
+      journal: journalRef.current,
+    }),
+    [],
+  );
 
   // The startup document is a resource with a subscription. Creating it in a
   // layout effect keeps StrictMode's setup/cleanup/setup sequence correct: a
@@ -300,7 +315,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: normalizeError(error) };
       }
     },
-    [ipc, removeDraftLocally, setSession],
+    [ipc, refreshDrafts, removeDraftLocally, setSession],
   );
 
   const discardDraft = useCallback(
@@ -330,6 +345,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         refreshDrafts,
         setSession,
         startUntitled,
+        getCurrentBundle,
         restoreDraft,
         discardDraft,
       }}

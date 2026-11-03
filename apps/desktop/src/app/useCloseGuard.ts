@@ -68,7 +68,7 @@ export function useCloseGuard({
         // Flush the latest draft and scroll/selection before Rust destroys
         // the webview. A storage failure must not block the close.
         try {
-          await journalRef.current?.flushNow();
+          await journalRef.current?.flushNow({ force: true });
         } catch (error) {
           console.warn("failed to flush the crash draft before closing", error);
         }
@@ -99,7 +99,7 @@ export function useCloseGuard({
         // Preserve a crash draft for the conflict/error prompt: the user may
         // still choose to close without resolving it.
         try {
-          await journalRef.current?.flushNow();
+          await journalRef.current?.flushNow({ force: true });
         } catch (error) {
           console.warn("failed to flush the crash draft before prompting", error);
         }
@@ -132,7 +132,7 @@ export function useCloseGuard({
         // to discard it. Saving stays an explicit user action.
         if (unsavedUntitled) {
           try {
-            await journalRef.current?.flushNow();
+            await journalRef.current?.flushNow({ force: true });
           } catch (error) {
             console.warn("failed to flush the crash draft before prompting", error);
           }
