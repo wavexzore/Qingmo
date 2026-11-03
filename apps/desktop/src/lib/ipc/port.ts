@@ -49,7 +49,9 @@ export interface IpcPort {
    *
    * Browser adapters keep one active token and switch it on open; a caller
    * that aborts (failed late write) can activate its previous token again.
-   * The native adapter is a no-op because Open creates a new window.
+   * The `untitled` sentinel clears the active record (no writable path), and
+   * an unknown token is rejected with `INVALID_PATH`. The native adapter is a
+   * no-op because Open creates a new window.
    */
   documentActivate(docToken: string): Promise<void>;
   /**
