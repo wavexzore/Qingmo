@@ -230,36 +230,61 @@ export function WorkspaceLayout() {
       }
       // Browser harness fallback: no native window exists, adopt in place.
       const uiCopy = buildEditorUiCopy(normalizeLanguage(i18n.language));
-      let created: Awaited<ReturnType<typeof createDocumentSession>>;
+      let created: Awaited<ReturnType<typeof createDocumentSession>> | undefined;
       if (replacesInPlace) {
         const live = getCurrentBundle().session;
+        const samePath = live !== null && live.getSnapshot().docId === result.value.path;
         const late = live !== null && live.readText() !== baseline;
-        if (late) {
-          // Text typed while the dialog was open is not in the payload. Save
-          // it through the token that was active before this Open; activation
-          // only moves to the new payload once the save succeeded.
+        // From here every write must go through the session being replaced,
+        // so restore its token before any await lets an auto-save fire.
+        if (previousToken) {
+          await ipc.documentActivate(previousToken);
+        }
+        if (late && !(await preserveCurrentSession())) {
+          return;
+        }
+        const preserved = live?.readText() ?? null;
+        // The payload can predate a late save when the same file is reopened;
+        // adopting it verbatim would let the next save overwrite that text.
+        const rebuildFromDisk = async (
+          current: Awaited<ReturnType<typeof createDocumentSession>>,
+        ): Promise<Awaited<ReturnType<typeof createDocumentSession>>> => {
+          const fresh = await ipc.documentReload(current.session.docToken);
+          const rebuilt = await createDocumentSession(ipc, fresh, uiCopy);
+          current.session.dispose();
+          return rebuilt;
+        };
+        try {
+          created = await createDocumentSession(ipc, result.value, uiCopy);
+          await ipc.documentActivate(created.session.docToken);
+          if (late && samePath) {
+            created = await rebuildFromDisk(created);
+          }
+          if (live !== null && live.readText() !== preserved) {
+            // Text typed during the adoption handoff has no carrier yet.
+            if (previousToken) {
+              await ipc.documentActivate(previousToken);
+            }
+            if (!(await preserveCurrentSession())) {
+              created.session.dispose();
+              return;
+            }
+            await ipc.documentActivate(created.session.docToken);
+            if (samePath) {
+              created = await rebuildFromDisk(created);
+            }
+          }
+        } catch (error) {
+          // A failed re-read must not adopt a stale payload, and a failed
+          // tail save must not drop the text: keep the current session,
+          // whose latest snapshot is already preserved on disk or as a draft.
+          console.warn("failed to finish the in-place adoption", normalizeError(error));
+          created?.session.dispose();
           if (previousToken) {
             await ipc.documentActivate(previousToken);
           }
-          if (!(await preserveCurrentSession())) {
-            return;
-          }
-        }
-        const opened = await createDocumentSession(ipc, result.value, uiCopy);
-        created = opened;
-        await ipc.documentActivate(opened.session.docToken);
-        if (late && live && live.getSnapshot().docId === result.value.path) {
-          // Opening the same file: the payload predates the late save. Re-read
-          // so the adopted text and hash match what is now on disk. Rebuild
-          // before disposing so a failed rebuild still has a usable session.
-          try {
-            const fresh = await ipc.documentReload(opened.session.docToken);
-            created = await createDocumentSession(ipc, fresh, uiCopy);
-            opened.session.dispose();
-          } catch (error) {
-            console.warn("failed to reload the reopened document", normalizeError(error));
-            toast.push(t("errors:IO"));
-          }
+          toast.push(t("errors:IO"));
+          return;
         }
       } else {
         created = await createDocumentSession(ipc, result.value, uiCopy);
