@@ -108,9 +108,10 @@ export function WorkspaceLayout() {
    * Preserves the current session before a harness Open/New replaces it.
    *
    * Named documents flush to disk; untitled ones force a crash draft (the
-   * store may have pruned an earlier copy). Retries when text arrives while a
-   * write is in flight. Returns false after surfacing the error, in which case
-   * the caller must keep the current session.
+   * store may have pruned an earlier copy). Every pass also refreshes the
+   * draft list before comparing, and text that arrives meanwhile triggers
+   * another pass (three times, then one final attempt). Returns false after
+   * surfacing the error, in which case the caller must keep the session.
    */
   const preserveCurrentSession = useCallback(async (): Promise<boolean> => {
     const { session: current, coordinator, journal: liveJournal } = getCurrentBundle();
@@ -161,8 +162,9 @@ export function WorkspaceLayout() {
         return true;
       }
     }
-    // The user out-typed every retry; write the latest snapshot once more
-    // rather than dropping the tail.
+    // The user out-typed every retry; this is the last chance to capture the
+    // tail. A change during this final write is still caught for Open by the
+    // pre-adoption comparison below.
     return (await attempt()) !== "failed";
   }, [getCurrentBundle, handleCommandError, refreshDrafts]);
   useCommandKeybindings({
@@ -206,8 +208,12 @@ export function WorkspaceLayout() {
       // native Open creates a new window and must stay usable even when the
       // current document cannot be saved.
       const replacesInPlace = !isTauriRuntime() || isE2eMode();
-      if (replacesInPlace && !(await preserveCurrentSession())) {
-        return;
+      let preservedText: string | null = null;
+      if (replacesInPlace) {
+        if (!(await preserveCurrentSession())) {
+          return;
+        }
+        preservedText = getCurrentBundle().session?.readText() ?? null;
       }
       const result = await openFile(ipc);
       if (!result.ok) {
@@ -227,6 +233,27 @@ export function WorkspaceLayout() {
         result.value,
         buildEditorUiCopy(normalizeLanguage(i18n.language)),
       );
+      if (preservedText !== null) {
+        const { session: live, journal: liveJournal } = getCurrentBundle();
+        if (live && live.readText() !== preservedText) {
+          // Text typed while the dialog/payload was in flight has no other
+          // carrier; journal it before the old session is disposed.
+          const draft = await liveJournal?.flushNow({
+            force: true,
+            preserveNamedDirty: true,
+          });
+          if (!draft?.ok) {
+            created.session.dispose();
+            handleCommandError(
+              draft && !draft.ok
+                ? normalizeError(draft.error)
+                : new AppErrorClass("IO", "the crash draft could not be written"),
+            );
+            return;
+          }
+          await refreshDrafts();
+        }
+      }
       setSession(created.session, { viewState: created.viewState });
       navigate("/editor");
     } finally {
@@ -235,10 +262,13 @@ export function WorkspaceLayout() {
     }
   }, [
     beginReplacement,
+    getCurrentBundle,
+    handleCommandError,
     i18n.language,
     ipc,
     navigate,
     preserveCurrentSession,
+    refreshDrafts,
     setSession,
     t,
     toast,

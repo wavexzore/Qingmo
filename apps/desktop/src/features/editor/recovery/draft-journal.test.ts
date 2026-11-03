@@ -157,6 +157,24 @@ describe("DraftJournal", () => {
     expect((await ipc.sessionDraftList())[0]?.id).toBe(id);
   });
 
+  it("journals a dirty named document only when explicitly preserving it", async () => {
+    const ipc = new FakeIpc({ files: [{ path: PATH, text: "hello\n" }] });
+    const session = EditorSession.create(payload(), { initialDirty: true });
+    const coordinator = new StubCoordinator(session, "clean");
+    const journal = new DraftJournal({ session, coordinator, ipc });
+    cleanups.push(() => {
+      journal.dispose();
+      session.dispose();
+    });
+
+    expect(await journal.flushNow()).toEqual({ ok: true, meta: null });
+    expect(ipc.draftWrites).toHaveLength(0);
+
+    expect((await journal.flushNow({ preserveNamedDirty: true })).ok).toBe(true);
+    expect(ipc.draftWrites).toHaveLength(1);
+    expect(ipc.draftWrites[0]).toMatchObject({ kind: "named", path: PATH, text: "hello\n" });
+  });
+
   it("reports a failed flush with the write error and can retry", async () => {
     const { ipc, journal } = untitledJournal();
     const failure = new Error("disk full");
