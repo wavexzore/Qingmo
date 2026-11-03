@@ -138,6 +138,24 @@ describe("DraftJournal", () => {
     expect((await ipc.sessionDraftList()).length).toBe(1);
   });
 
+  it("reports a repeated flush as preserved without writing again", async () => {
+    const { ipc, journal } = untitledJournal();
+
+    expect((await journal.flushNow()).ok).toBe(true);
+    expect(await journal.flushNow()).toEqual({ ok: true, meta: null });
+    expect(ipc.draftWrites).toHaveLength(1);
+  });
+
+  it("reports a failed flush with the write error and can retry", async () => {
+    const { ipc, journal } = untitledJournal();
+    const failure = new Error("disk full");
+    vi.spyOn(ipc, "sessionDraftWrite").mockRejectedValueOnce(failure);
+
+    expect(await journal.flushNow()).toEqual({ ok: false, error: failure });
+    expect((await journal.flushNow()).ok).toBe(true);
+    expect(ipc.draftWrites).toHaveLength(1);
+  });
+
   it("does not write a named document for dirty or scheduled saves", async () => {
     vi.useFakeTimers();
     const { ipc, coordinator, journal } = namedJournal();

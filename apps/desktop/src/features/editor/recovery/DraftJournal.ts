@@ -10,6 +10,15 @@ export type DraftJournalCoordinator = Pick<SaveCoordinator, "subscribe" | "getSn
 export const DRAFT_DEBOUNCE_MS = 1_500;
 export const DRAFT_MAX_WAIT_MS = 5_000;
 
+/**
+ * Outcome of an explicit flush.
+ *
+ * `ok` with `meta: null` means the current snapshot is already preserved (or
+ * nothing needs preserving); callers replacing the session may proceed.
+ * `ok: false` carries the write error so they can keep the session instead.
+ */
+export type DraftFlushResult = { ok: true; meta: DraftMeta | null } | { ok: false; error: unknown };
+
 const defaultTimers: SaveTimerApi = {
   setTimeout: (callback, milliseconds) => setTimeout(callback, milliseconds),
   clearTimeout: (handle) => clearTimeout(handle),
@@ -55,7 +64,7 @@ export class DraftJournal {
   private ownedDraftId: string | null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
-  private inFlight: Promise<DraftMeta | null> | null = null;
+  private inFlight: Promise<DraftFlushResult> | null = null;
   private lastWrittenKey: string | null = null;
   private lastSaveState: string | null = null;
   private warned = false;
@@ -144,18 +153,18 @@ export class DraftJournal {
   /**
    * Writes now when a draft is still warranted; safe to call while closing.
    *
-   * Returns the written draft, or `null` when nothing was needed or the write
-   * failed. Callers that are about to replace the session use the result to
-   * distinguish “nothing to preserve” from “preservation failed”.
+   * Returns whether the snapshot is preserved, not whether this call had to
+   * write: a snapshot already written earlier is a success. Callers that are
+   * about to replace the session must keep it on `ok: false`.
    */
-  async flushNow(): Promise<DraftMeta | null> {
+  async flushNow(): Promise<DraftFlushResult> {
     if (this.disposed || this.discarding) {
-      return null;
+      return { ok: true, meta: null };
     }
     this.cancelTimers();
     if (!this.shouldWrite()) {
       this.releaseWhenClean();
-      return null;
+      return { ok: true, meta: null };
     }
     return this.writeOnce();
   }
@@ -203,8 +212,10 @@ export class DraftJournal {
     );
   }
 
-  private writeOnce(): Promise<DraftMeta | null> {
-    const run = (this.inFlight ?? Promise.resolve(null)).then(() => this.writeLatest());
+  private writeOnce(): Promise<DraftFlushResult> {
+    const run = (this.inFlight ?? Promise.resolve({ ok: true, meta: null })).then(() =>
+      this.writeLatest(),
+    );
     this.inFlight = run;
     void run.finally(() => {
       if (this.inFlight === run) {
@@ -214,9 +225,9 @@ export class DraftJournal {
     return run;
   }
 
-  private async writeLatest(): Promise<DraftMeta | null> {
+  private async writeLatest(): Promise<DraftFlushResult> {
     if (this.disposed || this.discarding || !this.shouldWrite()) {
-      return null;
+      return { ok: true, meta: null };
     }
     const snapshot = this.session.getSnapshot();
     const text = this.session.readText();
@@ -226,7 +237,8 @@ export class DraftJournal {
     const path = this.session.isUntitled ? null : snapshot.docId;
     const key = JSON.stringify([text, anchor, head, title, path]);
     if (key === this.lastWrittenKey) {
-      return null;
+      // Already on disk from this session; the snapshot is preserved.
+      return { ok: true, meta: null };
     }
 
     const request: DraftWriteRequest = {
@@ -241,18 +253,18 @@ export class DraftJournal {
     try {
       const meta = await this.ipc.sessionDraftWrite(request);
       if (this.disposed) {
-        return meta;
+        return { ok: true, meta };
       }
       this.ownedDraftId = meta.id;
       this.lastWrittenKey = key;
       this.releaseIfNoLongerNeeded();
-      return meta;
+      return { ok: true, meta };
     } catch (error) {
       if (!this.warned) {
         this.warned = true;
         console.warn("failed to write the crash draft", error);
       }
-      return null;
+      return { ok: false, error };
     }
   }
 

@@ -183,7 +183,7 @@ export function WorkspaceLayout() {
             }
             if (current.isUntitled && before.length > 0) {
               const draft = await journalRef.current?.flushNow();
-              if (!draft) {
+              if (!draft?.ok) {
                 await refreshDrafts();
                 toast.push(t("errors:IO"));
                 return;

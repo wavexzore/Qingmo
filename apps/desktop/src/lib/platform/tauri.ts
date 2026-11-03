@@ -114,11 +114,16 @@ export function createTauriPlatform(): PlatformPort {
     onDocumentNewFailed(callback) {
       let disposed = false;
       let unlisten: UnlistenFn | undefined;
-      void listen<AppError>(EVENTS.documentNewFailed, (event) => {
-        if (!disposed) {
-          callback(event.payload);
-        }
-      })
+      const { options: listenOptions } = currentTarget();
+      void listen<AppError>(
+        EVENTS.documentNewFailed,
+        (event) => {
+          if (!disposed) {
+            callback(event.payload);
+          }
+        },
+        listenOptions,
+      )
         .then((stop) => {
           if (disposed) {
             stop();

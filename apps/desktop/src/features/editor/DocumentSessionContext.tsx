@@ -94,6 +94,14 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
   const coordinatorRef = useRef<SaveCoordinator | null>(null);
   const recorderRef = useRef<ViewStateRecorder | null>(null);
   const journalRef = useRef<DraftJournal | null>(null);
+  const draftRefreshGeneration = useRef(0);
+
+  const removeDraftLocally = useCallback((id: string) => {
+    // Invalidate a list request that started before this removal, or its
+    // stale answer would put the draft back into the UI.
+    draftRefreshGeneration.current += 1;
+    setDrafts((previous) => previous.filter((draft) => draft.id !== id));
+  }, []);
 
   const startSession = useCallback(
     (
@@ -109,7 +117,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         ipc,
         ...(draftId ? { initialDraftId: draftId } : {}),
         onDiscarded: (id) => {
-          setDrafts((previous) => previous.filter((draft) => draft.id !== id));
+          removeDraftLocally(id);
         },
       });
       currentRef.current = session;
@@ -121,7 +129,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
       // waiting for the first edit.
       journal.evaluate();
     },
-    [ipc],
+    [ipc, removeDraftLocally],
   );
 
   const setSession = useCallback(
@@ -219,8 +227,13 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
   }, [documentWindow, ipc, startSession, startUntitled]);
 
   const refreshDrafts = useCallback(async () => {
+    const generation = draftRefreshGeneration.current + 1;
+    draftRefreshGeneration.current = generation;
     try {
-      setDrafts(await ipc.sessionDraftList());
+      const next = await ipc.sessionDraftList();
+      if (generation === draftRefreshGeneration.current) {
+        setDrafts(next);
+      }
     } catch (error) {
       console.warn("failed to list crash drafts", normalizeError(error));
     }
@@ -265,19 +278,25 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         // draft, so owning the original would let the two sessions overwrite
         // and discard each other.
         setSession(session);
-        const owned = await journalRef.current?.flushNow();
-        if (owned) {
-          await ipc.sessionDraftDiscard(id);
+        const copy = await journalRef.current?.flushNow();
+        if (copy?.ok) {
+          try {
+            await ipc.sessionDraftDiscard(id);
+          } catch (error) {
+            // The recovered copy is safe in this session; a failed release
+            // only leaves a duplicate in the recovery list.
+            console.warn("failed to release the restored draft", normalizeError(error));
+          }
         }
         // Keep the banner hidden while this window edits its own copy; the
         // dialog refreshes the list if it is reopened.
-        setDrafts((previous) => previous.filter((draft) => draft.id !== id));
+        removeDraftLocally(id);
         return { ok: true, value: undefined };
       } catch (error) {
         return { ok: false, error: normalizeError(error) };
       }
     },
-    [ipc, setSession],
+    [ipc, removeDraftLocally, setSession],
   );
 
   const discardDraft = useCallback(
@@ -285,14 +304,14 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
       try {
         const removed = await ipc.sessionDraftDiscard(id);
         if (removed) {
-          setDrafts((previous) => previous.filter((draft) => draft.id !== id));
+          removeDraftLocally(id);
         }
         return { ok: true, value: undefined };
       } catch (error) {
         return { ok: false, error: normalizeError(error) };
       }
     },
-    [ipc],
+    [ipc, removeDraftLocally],
   );
 
   return (
