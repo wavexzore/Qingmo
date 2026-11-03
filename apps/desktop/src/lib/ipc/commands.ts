@@ -113,7 +113,11 @@ export const EVENT_NAMES = [
 ] as const satisfies readonly EventName[];
 
 /**
- * Native menu item ids forwarded by `app://menu-action`.
+ * Native menu item ids mirrored from Rust.
+ *
+ * `app://menu-action` forwards these ids except `file.new`, which Rust builds
+ * directly; the `fileNew` entry still names the command used by the palette and
+ * keyboard.
  *
  * Predefined AppKit items (undo/copy/paste/close/fullscreen) never appear
  * here: they are handled by the first responder inside the webview.

@@ -278,19 +278,23 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         // draft, so owning the original would let the two sessions overwrite
         // and discard each other.
         setSession(session);
-        const copy = await journalRef.current?.flushNow();
+        const copy = await journalRef.current?.flushNow({ force: true });
         if (copy?.ok) {
           try {
             await ipc.sessionDraftDiscard(id);
+            // Keep the banner hidden while this window edits its own copy;
+            // the dialog refreshes the list if it is reopened.
+            removeDraftLocally(id);
           } catch (error) {
             // The recovered copy is safe in this session; a failed release
             // only leaves a duplicate in the recovery list.
             console.warn("failed to release the restored draft", normalizeError(error));
           }
+        } else {
+          // The copy is not on disk yet; keep the original visible as the
+          // durable fallback until the journal retries.
+          await refreshDrafts();
         }
-        // Keep the banner hidden while this window edits its own copy; the
-        // dialog refreshes the list if it is reopened.
-        removeDraftLocally(id);
         return { ok: true, value: undefined };
       } catch (error) {
         return { ok: false, error: normalizeError(error) };
@@ -302,10 +306,10 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
   const discardDraft = useCallback(
     async (id: string): Promise<Result<void, AppError>> => {
       try {
-        const removed = await ipc.sessionDraftDiscard(id);
-        if (removed) {
-          removeDraftLocally(id);
-        }
+        // `false` means another window already removed it; the service truth
+        // is still "gone", so drop the row locally either way.
+        await ipc.sessionDraftDiscard(id);
+        removeDraftLocally(id);
         return { ok: true, value: undefined };
       } catch (error) {
         return { ok: false, error: normalizeError(error) };

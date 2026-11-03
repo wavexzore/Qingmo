@@ -1,12 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { DraftRecord } from "@qingmo/shared";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppServicesProvider } from "../../../app/AppServices";
 import { routes } from "../../../app/routes";
 import { AppErrorBoundary } from "../../../components/AppErrorBoundary";
 import { ToastProvider } from "../../../components/ToastHost";
+import { COMMANDS } from "../../../lib/ipc/commands";
 import { FakeIpc } from "../../../lib/ipc/fake";
 import { FakeLogPort } from "../../../lib/log/fake";
 import { FakePlatform } from "../../../lib/platform/fake";
@@ -112,6 +113,55 @@ describe("recovery UI", () => {
     expect(remaining[0]?.id).not.toBe(record.id);
     const copy = await ipc.sessionDraftRead(remaining[0]!.id);
     expect(copy.text).toBe(record.text);
+  });
+
+  it("keeps the original draft visible when the copy write fails", async () => {
+    const record = draft();
+    const ipc = new FakeIpc();
+    ipc.seedDraft(record);
+    const latest: { current: EditorSession | null } = { current: null };
+    renderApp(ipc, (next) => {
+      latest.current = next;
+    });
+
+    expect(await screen.findByTestId("recovery-banner")).toHaveTextContent("1");
+    fireEvent.click(screen.getByTestId("recovery-open"));
+    await screen.findByTestId("recovery-list");
+    ipc.failNext(COMMANDS.sessionDraftWrite, "IO", "draft storage unavailable");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`recovery-restore-${record.id}`));
+    });
+
+    await waitFor(() => expect(latest.current?.readText()).toBe(record.text));
+    const stored = await ipc.sessionDraftList();
+    expect(stored.map((item) => item.id)).toContain(record.id);
+    expect(await screen.findByTestId("recovery-banner")).toBeInTheDocument();
+  });
+
+  it("drops a draft from the list when another window already discarded it", async () => {
+    const record = draft();
+    const ipc = new FakeIpc();
+    ipc.seedDraft(record);
+    renderApp(ipc);
+
+    expect(await screen.findByTestId("recovery-banner")).toHaveTextContent("1");
+    fireEvent.click(screen.getByTestId("recovery-open"));
+    await screen.findByTestId("recovery-list");
+    // Another window removed it; this window's list is still stale.
+    await ipc.sessionDraftDiscard(record.id);
+    vi.spyOn(ipc, "sessionDraftDiscard").mockResolvedValueOnce(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`recovery-discard-${record.id}`));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(`recovery-item-${record.id}`)).not.toBeInTheDocument();
+    });
+    // The only draft is gone, so the banner entry point disappears with it.
+    expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
+    expect(await ipc.sessionDraftList()).toHaveLength(0);
   });
 
   it("blocks restore while the current untitled document has content", async () => {

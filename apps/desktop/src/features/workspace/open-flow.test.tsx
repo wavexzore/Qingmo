@@ -578,7 +578,85 @@ describe("blank editor -> editor open flow", () => {
     await waitFor(() => expect(captured.current?.isUntitled).toBe(true));
     expect(captured.current?.readText()).toBe("");
     expect(screen.queryByText("读写文件时发生错误。")).not.toBeInTheDocument();
-    expect(ipc.draftWrites).toHaveLength(1);
+    // The forced flush rewrites the same draft id even though the snapshot
+    // itself did not change.
+    expect(ipc.draftWrites).toHaveLength(2);
+    expect(ipc.draftWrites[1]?.id).toBeDefined();
+  });
+
+  it("rewrites an auto-written draft that the global cap already evicted", async () => {
+    const ipc = fileIpc();
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "# draft" } });
+    });
+    await waitFor(() => expect(ipc.draftWrites).toHaveLength(1), { timeout: 3_000 });
+    const original = (await ipc.sessionDraftList())[0]?.id;
+    expect(original).toBeDefined();
+    // The store keeps at most 20 drafts; 21 newer ones evict ours while the
+    // editor still believes its own id is valid.
+    for (let index = 0; index < 21; index += 1) {
+      await ipc.sessionDraftWrite({
+        kind: "untitled",
+        title: `filler ${index}`,
+        text: "x",
+        anchor: 0,
+        head: 0,
+      });
+    }
+    expect((await ipc.sessionDraftList()).some((draft) => draft.id === original)).toBe(false);
+
+    platform.emitMenuAction("file.new");
+
+    await waitFor(() => expect(captured.current?.readText()).toBe(""));
+    const restored = await ipc.sessionDraftList();
+    expect(restored.some((draft) => draft.id === original)).toBe(true);
+    expect((await ipc.sessionDraftRead(original!)).text).toBe("# draft");
+    expect(screen.queryByText("读写文件时发生错误。")).not.toBeInTheDocument();
+  });
+
+  it("serializes an Open that arrives while New is still flushing", async () => {
+    const ipc = fileIpc("# Note\n");
+    ipc.setCommandDelay(COMMANDS.documentWriteAtomic, 200);
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\ndirty" } });
+    });
+
+    platform.emitMenuAction("file.new");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    platform.emitMenuAction("file.open");
+
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text).toContain("dirty"), {
+      timeout: 3_000,
+    });
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    expect(captured.current?.readText()).toContain("dirty");
   });
 
   it("keeps a dirty untitled document when the draft write fails", async () => {

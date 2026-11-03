@@ -56,6 +56,19 @@ export function WorkspaceLayout() {
   const [logsOpen, setLogsOpen] = useState(false);
   const openingRef = useRef(false);
   const creatingRef = useRef(false);
+  // Open and New both replace (or retire) this window's session in the
+  // browser harness. Serializing them keeps a flush from racing the token
+  // swap of an Open started a moment later.
+  const replacementQueue = useRef<Promise<void>>(Promise.resolve());
+  const beginReplacement = useCallback(async (): Promise<() => void> => {
+    const previous = replacementQueue.current;
+    let release!: () => void;
+    replacementQueue.current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    return release;
+  }, []);
   const sessionRef = useRef(session);
   const coordinatorRef = useRef(coordinator);
   const journalRef = useRef(journal);
@@ -115,7 +128,9 @@ export function WorkspaceLayout() {
       return;
     }
     openingRef.current = true;
+    let release: (() => void) | null = null;
     try {
+      release = await beginReplacement();
       // Opening never replaces this window: Tauri creates a new document
       // window, so there is nothing to flush and a dirty untitled buffer must
       // not be forced through Save As first.
@@ -140,16 +155,19 @@ export function WorkspaceLayout() {
       setSession(created.session, { viewState: created.viewState });
       navigate("/editor");
     } finally {
+      release?.();
       openingRef.current = false;
     }
-  }, [i18n.language, ipc, navigate, setSession, t, toast]);
+  }, [beginReplacement, i18n.language, ipc, navigate, setSession, t, toast]);
 
   const createDocument = useCallback(async () => {
     if (creatingRef.current) {
       return;
     }
     creatingRef.current = true;
+    let release: (() => void) | null = null;
     try {
+      release = await beginReplacement();
       // New never saves or replaces the current document in Tauri: a new
       // window is created. Browser harnesses cannot, so they report `current`
       // and this window is reset. Flush a named document before replacing it;
@@ -182,7 +200,7 @@ export function WorkspaceLayout() {
               return;
             }
             if (current.isUntitled && before.length > 0) {
-              const draft = await journalRef.current?.flushNow();
+              const draft = await journalRef.current?.flushNow({ force: true });
               if (!draft?.ok) {
                 await refreshDrafts();
                 toast.push(t("errors:IO"));
@@ -201,9 +219,10 @@ export function WorkspaceLayout() {
         }
       }
     } finally {
+      release?.();
       creatingRef.current = false;
     }
-  }, [handleCommandError, ipc, navigate, refreshDrafts, startUntitled, t, toast]);
+  }, [beginReplacement, handleCommandError, ipc, navigate, refreshDrafts, startUntitled, t, toast]);
 
   const runMenuCommand = useCallback(
     async (id: string) => {

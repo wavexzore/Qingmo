@@ -17,8 +17,10 @@ enum LaunchState {
 /// The main window is declared with `create: false`; a short bootstrap delay
 /// creates it only when launch was not caused by opening a document or by a
 /// New request. Both sides claim the launch exactly once, so a New landing on
-/// the 300ms boundary cannot add a second empty window: if the timer already
-/// claimed the main window, New waits for it and reuses it.
+/// the 300ms boundary cannot add a second empty window: while the timer's
+/// window is still building (`Main`), New waits for it and reuses it. Once the
+/// build ends (`MainReady`, success or failure), New is a normal new-window
+/// request again.
 #[derive(Debug, Default)]
 pub struct StartupWindow {
     state: Mutex<LaunchState>,

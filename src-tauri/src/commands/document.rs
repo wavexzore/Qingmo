@@ -163,7 +163,8 @@ pub async fn create_untitled_window<R: tauri::Runtime>(app: AppHandle<R>) -> Res
             tracing::info!(window = "main", "New reused the boot main window");
             return Ok(());
         }
-        // The timer's build failed; this New still needs a window.
+        // The boot build ended without a window (it failed, or another launch
+        // path took over); this New still needs a window.
         startup.mark_opened();
     }
     // If a document already owned the launch (OS open or an earlier New),
@@ -183,6 +184,9 @@ pub async fn create_untitled_window<R: tauri::Runtime>(app: AppHandle<R>) -> Res
     create_document_window(&app, label, title, build_document_window, || {
         sessions.clear_untitled(&rollback_label);
     })?;
+    // From here on a document owns the launch, even if the boot main window
+    // exists; `was_opened` stays truthful for the rest of the process.
+    startup.mark_opened();
     tracing::info!(window = %rollback_label, "opened an untitled document window");
     Ok(())
 }

@@ -618,7 +618,9 @@ const MAIN_WINDOW_BOOT_DELAY: Duration = Duration::from_millis(300);
 /// the configured `main` window (different role and URL) and is itself the
 /// fallback target, so routing it through the shared primitive would recurse.
 pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
+    let startup = app.state::<state::StartupWindow>();
     if app.get_webview_window("main").is_some() {
+        startup.mark_main_ready();
         return;
     }
 
@@ -631,6 +633,7 @@ pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
         .cloned()
     else {
         tracing::error!("the main window config is missing");
+        startup.mark_main_ready();
         return;
     };
 
@@ -652,6 +655,9 @@ pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
     } else {
         app.state::<state::WindowSessions>().mark_untitled("main");
     }
+    // The build is over, success or failure. `Main` may now advance so later
+    // New requests stop waiting for a build that already finished.
+    startup.mark_main_ready();
 }
 
 fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
@@ -729,10 +735,12 @@ pub fn run() {
             }
 
             if id == MENU_FILE_NEW {
-                // New is always a separate native window, so Rust owns it
-                // directly. That also works during the startup delay, when no
-                // webview exists to receive an action event, and keeps New
-                // available while Settings owns the last focus.
+                // New is a separate native window. While the boot main window
+                // is still building, the shared helper reuses that one instead
+                // of adding a second empty window; afterwards it always builds
+                // a new one. Doing it in Rust also works during the startup
+                // delay, when no webview exists to receive an action event, and
+                // keeps New available while Settings owns the last focus.
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(error) = commands::document::create_untitled_window(app.clone()).await
@@ -856,11 +864,10 @@ pub fn run() {
                 tokio::time::sleep(MAIN_WINDOW_BOOT_DELAY).await;
                 let startup = handle.state::<state::StartupWindow>();
                 if startup.claim_main_if_undecided() {
+                    // `ensure_main_window` also advances `Main` to `MainReady`
+                    // when the build ends, so later New requests build their
+                    // own window instead of waiting for `main`.
                     ensure_main_window(&handle);
-                    // Success or failure, the boot claim is over: later New
-                    // requests must build their own window instead of waiting
-                    // for a `main` that will never appear.
-                    startup.mark_main_ready();
                 }
             });
             Ok(())
