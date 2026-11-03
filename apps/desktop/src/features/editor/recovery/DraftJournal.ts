@@ -27,6 +27,13 @@ export interface DraftFlushOptions {
    * proof the rows still exist. Callers replacing the session must force.
    */
   force?: boolean;
+  /**
+   * Also journal a dirty named document in its normal `dirty` state.
+   *
+   * Named documents usually rely on the save path, but a late edit between a
+   * save and the session replacement has no other durable carrier.
+   */
+  preserveNamedDirty?: boolean;
 }
 
 const defaultTimers: SaveTimerApi = {
@@ -167,16 +174,19 @@ export class DraftJournal {
    * write: a snapshot already written earlier is a success. Callers that are
    * about to replace the session must keep it on `ok: false`.
    */
-  async flushNow({ force = false }: DraftFlushOptions = {}): Promise<DraftFlushResult> {
+  async flushNow({
+    force = false,
+    preserveNamedDirty = false,
+  }: DraftFlushOptions = {}): Promise<DraftFlushResult> {
     if (this.disposed || this.discarding) {
       return { ok: true, meta: null };
     }
     this.cancelTimers();
-    if (!this.shouldWrite()) {
+    if (!this.shouldWrite(preserveNamedDirty)) {
       this.releaseWhenClean();
       return { ok: true, meta: null };
     }
-    return this.writeOnce(force);
+    return this.writeOnce(force, preserveNamedDirty);
   }
 
   /**
@@ -206,13 +216,16 @@ export class DraftJournal {
     this.unsubscribeCoordinator();
   }
 
-  private shouldWrite(): boolean {
+  private shouldWrite(preserveNamedDirty = false): boolean {
     const session = this.session.getSnapshot();
     if (session.readOnly || !session.dirty) {
       return false;
     }
     if (this.session.isUntitled) {
       return this.session.editorState.doc.length > 0;
+    }
+    if (preserveNamedDirty) {
+      return true;
     }
     const save = this.coordinator.getSnapshot();
     return (
@@ -222,9 +235,9 @@ export class DraftJournal {
     );
   }
 
-  private writeOnce(force: boolean): Promise<DraftFlushResult> {
+  private writeOnce(force: boolean, preserveNamedDirty: boolean): Promise<DraftFlushResult> {
     const run = (this.inFlight ?? Promise.resolve({ ok: true, meta: null })).then(() =>
-      this.writeLatest(force),
+      this.writeLatest(force, preserveNamedDirty),
     );
     this.inFlight = run;
     void run.finally(() => {
@@ -235,8 +248,11 @@ export class DraftJournal {
     return run;
   }
 
-  private async writeLatest(force: boolean): Promise<DraftFlushResult> {
-    if (this.disposed || this.discarding || !this.shouldWrite()) {
+  private async writeLatest(
+    force: boolean,
+    preserveNamedDirty: boolean,
+  ): Promise<DraftFlushResult> {
+    if (this.disposed || this.discarding || !this.shouldWrite(preserveNamedDirty)) {
       return { ok: true, meta: null };
     }
     const snapshot = this.session.getSnapshot();

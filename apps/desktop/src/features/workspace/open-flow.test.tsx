@@ -774,6 +774,74 @@ describe("blank editor -> editor open flow", () => {
     expect(captured.current?.readText()).toContain("dirty");
   });
 
+  it("journals input typed while an untitled Open is in flight", async () => {
+    const ipc = fileIpc("# Note\n");
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    const openSpy = vi.spyOn(ipc, "documentOpen");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "A" } });
+    });
+
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+    });
+
+    await waitFor(() => expect(captured.current?.readText()).toBe("# Note\n"));
+    const drafts = await ipc.sessionDraftList();
+    expect((await ipc.sessionDraftRead(drafts[0]!.id)).text).toBe("AB");
+  });
+
+  it("journals late input on a named document before adopting", async () => {
+    const ipc = fileIpc("# Note\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
+    });
+
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    const openSpy = vi.spyOn(ipc, "documentOpen");
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+    });
+
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    await waitFor(async () => {
+      const drafts = await ipc.sessionDraftList();
+      const latest = drafts[0];
+      expect(latest).toBeDefined();
+      expect((await ipc.sessionDraftRead(latest!.id)).text).toContain("B");
+    });
+  });
+
   it("keeps a dirty untitled document when the draft write fails", async () => {
     const ipc = fileIpc();
     const captured: { current: EditorSession | null } = { current: null };
