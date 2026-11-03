@@ -130,6 +130,8 @@ export class FakeIpc implements IpcPort {
   private readonly viewStates = new Map<string, EditorViewState>();
   private readonly drafts = new Map<string, DraftRecord>();
   private active: { token: string; path: string } | null = null;
+  /** Every token this fake issued, so a failed adoption can reactivate. */
+  private readonly issuedTokens = new Map<string, string>();
   private pending: FilePayload | null = null;
   private openFile: string | null;
   private saveAsFile: string | null;
@@ -295,12 +297,27 @@ export class FakeIpc implements IpcPort {
     }
 
     // The browser harness adopts in place, so opening establishes a new base
-    // version and replaces the fake's single active token.
+    // version and switches the active token. A caller that aborts still knows
+    // its previous token and can `documentActivate` it back.
     record.baseHash = record.diskHash;
     const token = `fake-doc-${this.nextToken}`;
     this.nextToken += 1;
+    this.issuedTokens.set(token, path);
     this.active = { token, path };
     return this.toPayload(record, token);
+  }
+
+  async documentActivate(docToken: string): Promise<void> {
+    // Untitled sessions use a constant token and have no writable path.
+    if (docToken === "untitled") {
+      this.active = null;
+      return;
+    }
+    const path = this.issuedTokens.get(docToken);
+    if (!path) {
+      throw new AppError("INVALID_PATH", `unknown docToken: ${docToken}`);
+    }
+    this.active = { token: docToken, path };
   }
 
   /** Seeds a payload for a simulated document window boot. */
@@ -330,6 +347,7 @@ export class FakeIpc implements IpcPort {
     }
     const token = `fake-doc-${this.nextToken}`;
     this.nextToken += 1;
+    this.issuedTokens.set(token, path);
     this.stagePending(this.toPayload(record, token));
   }
 
@@ -339,6 +357,7 @@ export class FakeIpc implements IpcPort {
     if (!payload) {
       return null;
     }
+    this.issuedTokens.set(payload.docToken, payload.path);
     this.active = { token: payload.docToken, path: payload.path };
     return payload;
   }
@@ -373,6 +392,7 @@ export class FakeIpc implements IpcPort {
 
     const token = `fake-doc-${this.nextToken}`;
     this.nextToken += 1;
+    this.issuedTokens.set(token, target);
     this.active = { token, path: target };
     return this.toPayload(next, token);
   }

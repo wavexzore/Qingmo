@@ -60,6 +60,8 @@ export interface DraftJournalOptions {
  * - Untitled dirty documents always need a draft (there is no path to save).
  * - Named documents only draft while `error`/`conflict`, or during a retrying
  *   `scheduled` state; normal dirty/saving states are the save path's job.
+ * - An explicit `flushNow({preserveNamedDirty:true})` also journals a merely
+ *   dirty named document (session replacement with no save opportunity).
  * - A draft this session owns is deleted only after the coordinator reports
  *   `clean` with no pending edit. Drafts owned by an earlier session are never
  *   touched.

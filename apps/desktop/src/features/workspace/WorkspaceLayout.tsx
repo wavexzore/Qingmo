@@ -208,13 +208,14 @@ export function WorkspaceLayout() {
       // native Open creates a new window and must stay usable even when the
       // current document cannot be saved.
       const replacesInPlace = !isTauriRuntime() || isE2eMode();
-      let preservedText: string | null = null;
+      let baseline: string | null = null;
       if (replacesInPlace) {
         if (!(await preserveCurrentSession())) {
           return;
         }
-        preservedText = getCurrentBundle().session?.readText() ?? null;
+        baseline = getCurrentBundle().session?.readText() ?? null;
       }
+      const previousToken = getCurrentBundle().session?.docToken ?? null;
       const result = await openFile(ipc);
       if (!result.ok) {
         if (result.error.code !== "CANCELLED") {
@@ -228,30 +229,34 @@ export function WorkspaceLayout() {
         return;
       }
       // Browser harness fallback: no native window exists, adopt in place.
-      const created = await createDocumentSession(
-        ipc,
-        result.value,
-        buildEditorUiCopy(normalizeLanguage(i18n.language)),
-      );
-      if (preservedText !== null) {
-        const { session: live, journal: liveJournal } = getCurrentBundle();
-        if (live && live.readText() !== preservedText) {
-          // Text typed while the dialog/payload was in flight has no other
-          // carrier; journal it before the old session is disposed.
-          const draft = await liveJournal?.flushNow({
-            force: true,
-            preserveNamedDirty: true,
-          });
-          if (!draft?.ok) {
+      const uiCopy = buildEditorUiCopy(normalizeLanguage(i18n.language));
+      let created = await createDocumentSession(ipc, result.value, uiCopy);
+      if (replacesInPlace) {
+        const live = getCurrentBundle().session;
+        const late = live !== null && live.readText() !== baseline;
+        if (late) {
+          // Text typed while the dialog was open is not in the payload. Save
+          // it through the token that was active before this Open; activation
+          // only moves to the new payload once the save succeeded.
+          if (previousToken) {
+            await ipc.documentActivate(previousToken);
+          }
+          if (!(await preserveCurrentSession())) {
             created.session.dispose();
-            handleCommandError(
-              draft && !draft.ok
-                ? normalizeError(draft.error)
-                : new AppErrorClass("IO", "the crash draft could not be written"),
-            );
             return;
           }
-          await refreshDrafts();
+        }
+        await ipc.documentActivate(created.session.docToken);
+        if (late && live && live.getSnapshot().docId === result.value.path) {
+          // Opening the same file: the payload predates the late save. Re-read
+          // so the adopted text and hash match what is now on disk.
+          try {
+            const fresh = await ipc.documentReload(created.session.docToken);
+            created.session.dispose();
+            created = await createDocumentSession(ipc, fresh, uiCopy);
+          } catch (error) {
+            console.warn("failed to reload the reopened document", normalizeError(error));
+          }
         }
       }
       setSession(created.session, { viewState: created.viewState });
@@ -263,12 +268,10 @@ export function WorkspaceLayout() {
   }, [
     beginReplacement,
     getCurrentBundle,
-    handleCommandError,
     i18n.language,
     ipc,
     navigate,
     preserveCurrentSession,
-    refreshDrafts,
     setSession,
     t,
     toast,

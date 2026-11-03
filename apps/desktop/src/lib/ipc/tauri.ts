@@ -32,6 +32,9 @@ export function createTauriIpc(): IpcPort {
     documentOpen() {
       return invokeCommand(COMMANDS.documentOpen, {});
     },
+    async documentActivate() {
+      // Native Open created another window; this window's token is unchanged.
+    },
     async documentNew() {
       await invokeCommand(COMMANDS.documentNew, {});
       return "window";
