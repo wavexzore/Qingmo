@@ -68,12 +68,14 @@ describe("IPC contract mirror", () => {
       "app://update-progress",
       "app://menu-action",
       "app://document-changed",
+      "app://document-new-failed",
     ]);
     expect(EVENTS.closeRequested).toBe("app://close-requested");
     expect(EVENTS.updateState).toBe("app://update-state");
     expect(EVENTS.updateProgress).toBe("app://update-progress");
     expect(EVENTS.menuAction).toBe("app://menu-action");
     expect(EVENTS.documentChanged).toBe("app://document-changed");
+    expect(EVENTS.documentNewFailed).toBe("app://document-new-failed");
   });
 
   it("exposes every native menu action once", () => {

@@ -23,9 +23,9 @@ pub mod state;
 use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
-    EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN, MENU_FILE_SAVE,
-    MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT,
-    MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE,
+    EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN,
+    MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK,
+    MENU_THEME_LIGHT, MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE,
     MENU_VIEW_TOGGLE_THEME,
 };
 use ipc::dto::{AppLanguage, MenuActionPayload, NativeShellLabels};
@@ -156,9 +156,9 @@ fn action<'a>(id: &'static str, label: &'a str, accelerator: Option<&'a str>) ->
 /// Help entries that do not match Qingmo's command surface, so this layout
 /// keeps only working items: file operations, native editing actions,
 /// view/theme/language toggles and window controls. Custom items are forwarded
-/// to the webview through `app://menu-action`; native predefined items
-/// (undo/copy/paste) stay in the platform so the first responder keeps handling
-/// text editing.
+/// to the webview through `app://menu-action`, except New, which Rust creates
+/// directly; native predefined items (undo/copy/paste) stay in the platform so
+/// the first responder keeps handling text editing.
 ///
 /// Platform differences:
 /// - macOS keeps the standard application submenu and Window's "Bring All to
@@ -613,6 +613,10 @@ const MAIN_WINDOW_BOOT_DELAY: Duration = Duration::from_millis(300);
 /// The window is declared with `create: false` so a launch caused by opening a
 /// document can skip it. A failed open falls back to it instead of ending the
 /// launch with no window at all.
+///
+/// This is the one intentional exception to `create_document_window`: it uses
+/// the configured `main` window (different role and URL) and is itself the
+/// fallback target, so routing it through the shared primitive would recurse.
 pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
     if app.get_webview_window("main").is_some() {
         return;
@@ -731,8 +735,23 @@ pub fn run() {
                 // available while Settings owns the last focus.
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = commands::document::create_untitled_window(app).await {
+                    if let Err(error) = commands::document::create_untitled_window(app.clone()).await
+                    {
                         tracing::error!(%error, "failed to create a document window");
+                        // The menu path has no invoke promise to reject, so
+                        // report to an editable window for the same toast.
+                        if let Some(window) = command_window(&app) {
+                            if let Err(emit_error) = window.emit_to(
+                                window.label(),
+                                EVENT_DOCUMENT_NEW_FAILED,
+                                error,
+                            ) {
+                                tracing::error!(
+                                    %emit_error,
+                                    "failed to emit the document-new failure"
+                                );
+                            }
+                        }
                     }
                 });
                 return;
@@ -835,7 +854,10 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(MAIN_WINDOW_BOOT_DELAY).await;
-                if handle.state::<state::StartupWindow>().claim_if_unopened() {
+                if handle
+                    .state::<state::StartupWindow>()
+                    .claim_main_if_undecided()
+                {
                     ensure_main_window(&handle);
                 }
             });

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { DraftRecord } from "@qingmo/shared";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { AppServicesProvider } from "../../../app/AppServices";
 import { routes } from "../../../app/routes";
@@ -65,6 +65,10 @@ function renderApp(ipc: FakeIpc, onSession?: (session: EditorSession | null) => 
   return router;
 }
 
+afterEach(() => {
+  window.history.replaceState({}, "", "/");
+});
+
 describe("recovery UI", () => {
   it("lists a draft, restores it as a new untitled session, and never writes the original path", async () => {
     const record = draft({
@@ -101,10 +105,13 @@ describe("recovery UI", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
     });
-    // The restored session now owns the draft, so a crash after restore still
-    // has a copy; only the banner entry disappears.
+    // The restored session forks the draft: another window may list the same
+    // original id, so the copy owns a new id and the original is released.
     const remaining = await ipc.sessionDraftList();
-    expect(remaining.map((entry) => entry.id)).toEqual([record.id]);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.id).not.toBe(record.id);
+    const copy = await ipc.sessionDraftRead(remaining[0]!.id);
+    expect(copy.text).toBe(record.text);
   });
 
   it("blocks restore while the current untitled document has content", async () => {
@@ -142,5 +149,22 @@ describe("recovery UI", () => {
       expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
     });
     expect(await ipc.sessionDraftList()).toHaveLength(0);
+  });
+
+  it("hides the banner in a named document window", async () => {
+    window.history.replaceState({}, "", "/?window=document");
+    const record = draft();
+    const ipc = new FakeIpc({ files: [{ path: "/docs/note.md", text: "note\n" }] });
+    ipc.seedDraft(record);
+    const payload = await ipc.documentOpen();
+    if (!payload) {
+      throw new Error("fake open must return a payload");
+    }
+    ipc.stagePending(payload);
+
+    renderApp(ipc);
+
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
   });
 });

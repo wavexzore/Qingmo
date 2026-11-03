@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 
 import type { DraftMeta } from "@qingmo/shared";
 
-/** Top-of-editor entry point for the main window's crash drafts. */
+/** Top-of-editor entry point for crash drafts in an untitled window. */
 export function RecoveryBanner({ drafts, onOpen }: { drafts: DraftMeta[]; onOpen(): void }) {
   const { t } = useTranslation(["editor"]);
 

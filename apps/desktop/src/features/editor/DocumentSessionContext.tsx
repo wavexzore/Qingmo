@@ -49,6 +49,8 @@ interface DocumentSessionContextValue {
   viewState: EditorViewState | null;
   /** Crash drafts available for recovery in this window. */
   drafts: DraftMeta[];
+  /** Re-reads the global draft list, e.g. when the dialog opens. */
+  refreshDrafts(): Promise<void>;
   setSession(next: EditorSession | null, extras?: SetSessionExtras): void;
   /** Replaces the current document with a fresh empty untitled session. */
   startUntitled(): void;
@@ -216,24 +218,19 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
     };
   }, [documentWindow, ipc, startSession, startUntitled]);
 
+  const refreshDrafts = useCallback(async () => {
+    try {
+      setDrafts(await ipc.sessionDraftList());
+    } catch (error) {
+      console.warn("failed to list crash drafts", normalizeError(error));
+    }
+  }, [ipc]);
+
   useLayoutEffect(() => {
     // Every window may recover: a New-only launch has no main window, and the
     // capability now grants draft list/read to document windows too.
-    let cancelled = false;
-    ipc
-      .sessionDraftList()
-      .then((list) => {
-        if (!cancelled) {
-          setDrafts(list);
-        }
-      })
-      .catch((error: unknown) => {
-        console.warn("failed to list crash drafts", normalizeError(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [ipc]);
+    void refreshDrafts();
+  }, [refreshDrafts]);
 
   const restoreDraft = useCallback(
     async (id: string): Promise<Result<void, AppError>> => {
@@ -263,7 +260,17 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
           uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
           openExternal: createOpenExternal(ipc),
         });
-        setSession(session, { draftId: id });
+        // Copy the recovered draft into this window's own journal before
+        // releasing the original id. Another window may list the same global
+        // draft, so owning the original would let the two sessions overwrite
+        // and discard each other.
+        setSession(session);
+        const owned = await journalRef.current?.flushNow();
+        if (owned) {
+          await ipc.sessionDraftDiscard(id);
+        }
+        // Keep the banner hidden while this window edits its own copy; the
+        // dialog refreshes the list if it is reopened.
         setDrafts((previous) => previous.filter((draft) => draft.id !== id));
         return { ok: true, value: undefined };
       } catch (error) {
@@ -297,6 +304,7 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
         journal: bundle?.journal ?? null,
         viewState: bundle?.viewState ?? null,
         drafts,
+        refreshDrafts,
         setSession,
         startUntitled,
         restoreDraft,

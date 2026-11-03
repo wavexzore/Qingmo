@@ -43,6 +43,8 @@ pub const EVENT_UPDATE_PROGRESS: &str = "app://update-progress";
 pub const EVENT_MENU_ACTION: &str = "app://menu-action";
 /// The watcher found a different (or missing) disk version for an open document.
 pub const EVENT_DOCUMENT_CHANGED: &str = "app://document-changed";
+/// Native New failed after the menu handled it without a webview hop.
+pub const EVENT_DOCUMENT_NEW_FAILED: &str = "app://document-new-failed";
 
 pub const EVENTS: &[&str] = &[
     EVENT_CLOSE_REQUESTED,
@@ -50,12 +52,15 @@ pub const EVENTS: &[&str] = &[
     EVENT_UPDATE_PROGRESS,
     EVENT_MENU_ACTION,
     EVENT_DOCUMENT_CHANGED,
+    EVENT_DOCUMENT_NEW_FAILED,
 ];
 
-/// Menu item ids that the native menu forwards to the webview.
+/// Menu item ids forwarded to the webview, except `file.new`.
 ///
-/// Predefined AppKit items (undo/copy/paste/close/fullscreen) stay native and
-/// are intentionally absent: they must be handled by the first responder.
+/// New is created in Rust so it works with no webview (startup) or only an
+/// auxiliary window focused. Predefined AppKit items
+/// (undo/copy/paste/close/fullscreen) stay native and are intentionally
+/// absent: they must be handled by the first responder.
 pub const MENU_FILE_NEW: &str = "file.new";
 pub const MENU_FILE_OPEN: &str = "file.open";
 pub const MENU_FILE_SAVE: &str = "file.save";

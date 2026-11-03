@@ -20,6 +20,7 @@ test("New flushes unsaved harness edits and leaves an empty untitled editor", as
   await openApp(page);
   await openSeededFile(page, "note.md");
   await typeInEditor(page, "\nchanged before New");
+  await expect(page.getByTestId("status-bar")).not.toContainText("已同步");
 
   // Press New inside the 800ms save debounce: the browser harness must
   // flush the named document because it reuses this window instead of
@@ -36,6 +37,7 @@ test("the palette exposes and runs New File", async ({ page }) => {
   await openApp(page);
   await openSeededFile(page, "note.md");
   await typeInEditor(page, "\nfrom palette");
+  await expect(page.getByTestId("status-bar")).not.toContainText("已同步");
 
   await page.keyboard.press(`${modifier()}+k`);
   const palette = page.getByRole("dialog", { name: "命令面板" });
