@@ -44,6 +44,15 @@ export interface IpcPort {
    */
   documentOpen(): Promise<FilePayload | null>;
   /**
+   * Makes a payload returned by `documentOpen` the active document token, or
+   * restores an earlier token after an abandoned open.
+   *
+   * Browser adapters keep one active token and switch it on open; a caller
+   * that aborts (failed late write) can activate its previous token again.
+   * The native adapter is a no-op because Open creates a new window.
+   */
+  documentActivate(docToken: string): Promise<void>;
+  /**
    * Creates a new empty document. A native window receives an untitled
    * session on boot and this window keeps its document untouched. Browser
    * adapters return `current`; the caller flushes (or journals) the current

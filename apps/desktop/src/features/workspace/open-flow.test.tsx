@@ -141,6 +141,7 @@ describe("openFile", () => {
 
     const broken: IpcPort = {
       documentOpen: vi.fn().mockRejectedValue("bridge unavailable"),
+      documentActivate: vi.fn(),
       documentNew: vi.fn(),
       documentTakePending: vi.fn(),
       documentReload: vi.fn(),
@@ -776,7 +777,7 @@ describe("blank editor -> editor open flow", () => {
 
   it("journals input typed while an untitled Open is in flight", async () => {
     const ipc = fileIpc("# Note\n");
-    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    ipc.setCommandDelay(COMMANDS.documentOpen, 400);
     const openSpy = vi.spyOn(ipc, "documentOpen");
     const captured: { current: EditorSession | null } = { current: null };
     const { platform } = renderApp(ipc, {
@@ -805,7 +806,7 @@ describe("blank editor -> editor open flow", () => {
     expect((await ipc.sessionDraftRead(drafts[0]!.id)).text).toBe("AB");
   });
 
-  it("journals late input on a named document before adopting", async () => {
+  it("saves late input on a named document before adopting", async () => {
     const ipc = fileIpc("# Note\n");
     const captured: { current: EditorSession | null } = { current: null };
     const { platform } = renderApp(ipc, {
@@ -825,7 +826,44 @@ describe("blank editor -> editor open flow", () => {
       view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
     });
 
-    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    ipc.setCommandDelay(COMMANDS.documentOpen, 400);
+    const openSpy = vi.spyOn(ipc, "documentOpen");
+    const before = captured.current;
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+    });
+
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text).toContain("B"), {
+      timeout: 3_000,
+    });
+    expect(captured.current?.isUntitled).toBe(false);
+    expect(captured.current).not.toBe(before);
+  });
+
+  it("saves a late edit on a document above the draft cap to disk", async () => {
+    const prefix = "# Note\n";
+    const ipc = fileIpc(`${prefix}${"x".repeat(2 * 1024 * 1024)}`);
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "A" } });
+    });
+
+    ipc.setCommandDelay(COMMANDS.documentOpen, 200);
     const openSpy = vi.spyOn(ipc, "documentOpen");
     platform.emitMenuAction("file.open");
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
@@ -833,13 +871,52 @@ describe("blank editor -> editor open flow", () => {
       view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
     });
 
-    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
-    await waitFor(async () => {
-      const drafts = await ipc.sessionDraftList();
-      const latest = drafts[0];
-      expect(latest).toBeDefined();
-      expect((await ipc.sessionDraftRead(latest!.id)).text).toContain("B");
+    // A crash draft would fail above 2 MiB; the late edit must reach the file.
+    // Hashing a 2 MiB fixture several times is slow under a loaded suite.
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text.endsWith("AB")).toBe(true), {
+      timeout: 10_000,
     });
+    expect(screen.queryByText("读写文件时发生错误。")).not.toBeInTheDocument();
+  });
+
+  it("keeps the session usable when the late draft write fails", async () => {
+    const ipc = fileIpc();
+    const openSpy = vi.spyOn(ipc, "documentOpen");
+    ipc.setCommandDelay(COMMANDS.documentOpen, 200);
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() => expect(captured.current?.attachedView).not.toBeNull());
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("untitled editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: 0, insert: "A" } });
+    });
+
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    ipc.failNext(COMMANDS.sessionDraftWrite, "IO", "draft storage unavailable");
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+    });
+
+    // The adoption is abandoned but the session, its text and its token stay.
+    await waitFor(() => expect(captured.current?.readText()).toBe("AB"));
+    expect(captured.current?.isUntitled).toBe(true);
+    expect(await screen.findByText("读写文件时发生错误。")).toBeInTheDocument();
+
+    // A second Open must still reach the dialog and adopt.
+    ipc.setCommandDelay(COMMANDS.documentOpen, 0);
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    expect(captured.current?.readText()).toBe("# Hello\n");
   });
 
   it("keeps a dirty untitled document when the draft write fails", async () => {

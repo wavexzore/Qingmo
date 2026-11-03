@@ -44,7 +44,7 @@ interface DocumentSessionContextValue {
   coordinator: SaveCoordinator | null;
   /** Records scroll/selection/preference for the attached view. */
   recorder: ViewStateRecorder | null;
-  /** Writes crash drafts for untitled/error/conflict documents. */
+  /** Writes crash drafts for untitled/error/conflict docs; explicit named flushes. */
   journal: DraftJournal | null;
   viewState: EditorViewState | null;
   /** Crash drafts available for recovery in this window. */
