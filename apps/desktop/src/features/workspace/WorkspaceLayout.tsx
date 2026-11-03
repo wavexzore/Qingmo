@@ -12,7 +12,8 @@ import { useToast } from "../../components/ToastHost";
 import { buildEditorUiCopy } from "../../i18n/editorCopy";
 import { normalizeLanguage } from "../../i18n/language";
 import { MENU_ACTIONS } from "../../lib/ipc/commands";
-import { AppError as AppErrorClass } from "../../lib/ipc/errors";
+import { AppError as AppErrorClass, normalizeError } from "../../lib/ipc/errors";
+import { isTauriRuntime } from "../../lib/platform/runtime";
 import { uiStore } from "../../stores/uiStore";
 import { CommandPalette } from "../commands/CommandPalette";
 import { commandRegistry } from "../commands/CommandRegistry";
@@ -119,7 +120,7 @@ export function WorkspaceLayout() {
       const before = current.readText();
       const flushed = await coordinator.flush("auto");
       if (!flushed.ok) {
-        await liveJournal?.flushNow();
+        await liveJournal?.flushNow({ force: true });
         await refreshDrafts();
         handleCommandError(
           flushed.error ??
@@ -134,7 +135,11 @@ export function WorkspaceLayout() {
         const draft = await liveJournal?.flushNow({ force: true });
         if (!draft?.ok) {
           await refreshDrafts();
-          toast.push(t("errors:IO"));
+          handleCommandError(
+            draft && !draft.ok
+              ? normalizeError(draft.error)
+              : new AppErrorClass("IO", "the crash draft could not be written"),
+          );
           return false;
         }
       }
@@ -144,7 +149,7 @@ export function WorkspaceLayout() {
     }
     await refreshDrafts();
     return true;
-  }, [getCurrentBundle, handleCommandError, refreshDrafts, t, toast]);
+  }, [getCurrentBundle, handleCommandError, refreshDrafts]);
   useCommandKeybindings({
     enabled:
       !paletteOpen &&
@@ -182,10 +187,10 @@ export function WorkspaceLayout() {
     let release: (() => void) | null = null;
     try {
       release = await beginReplacement();
-      // Preserve before touching the harness's single active token. In Tauri
-      // this is a harmless save of the current window; in the browser harness
-      // it is the only chance before the session is replaced.
-      if (!(await preserveCurrentSession())) {
+      // Only the browser harness replaces this window; native Open creates a
+      // new window and must stay usable even when the current document cannot
+      // be saved. Harness adoption needs the current session preserved first.
+      if (!isTauriRuntime() && !(await preserveCurrentSession())) {
         return;
       }
       const result = await openFile(ipc);
