@@ -2,6 +2,28 @@
   "releaseNotesUrl": "https://github.com/wavexzore/Qingmo/releases/tag/v",
   "versions": [
     {
+      "version": "0.1.4",
+      "date": "2026-11-04",
+      "notes": {
+        "zh-CN": [
+          "新增「新建文档」：File > New / Cmd+N 打开独立的未命名窗口，可同时开多个窗口分别编辑，首次保存自动转入「另存为」。",
+          "启动体验更稳：通过 Finder 或 open 命令打开文件不再多出一个空白主窗口；启动瞬间连按 Cmd+N 也不会产生重复窗口。",
+          "崩溃恢复更可靠：替换或关闭文档前强制重写崩溃草稿，即使草稿已被数量上限清理也能恢复；并发的保存请求会合并为一次写入。",
+          "修复打开与保存的边界问题：打开对话框期间输入的内容不再丢失，重新打开同一文件时始终显示磁盘上的最新内容，窗口异常销毁后不再残留内部记录。",
+          "「文件过大」提示现在同时标明文件 10 MiB 与崩溃草稿 2 MiB 两个上限。",
+          "本版本提供 macOS universal DMG 与 Windows NSIS 安装包；Windows 安装器仍未做 Authenticode 签名，SmartScreen 可能提示。"
+        ],
+        "en-US": [
+          "Added \"New Document\": File > New / Cmd+N opens a separate untitled window, so several documents can be edited side by side; the first save turns into Save As automatically.",
+          "More reliable startup: opening files from Finder or via open(1) no longer leaves an extra blank window behind, and rapid Cmd+N presses during launch no longer create duplicate windows.",
+          "Stronger crash recovery: crash drafts are force-rewritten before a session is replaced or closed, so they survive the retention cap, and concurrent save requests collapse into a single write.",
+          "Fixed open/save edge cases: typing while the open dialog is shown is no longer lost, reopening the same file always shows the latest on-disk content, and abruptly destroyed windows no longer leave internal records behind.",
+          "The \"file too large\" message now names both limits: 10 MiB for files and 2 MiB for crash drafts.",
+          "This release ships a macOS universal DMG and a Windows NSIS installer; the Windows installer is still not Authenticode-signed, so SmartScreen may warn."
+        ]
+      }
+    },
+    {
       "version": "0.1.3",
       "date": "2026-10-30",
       "notes": {
