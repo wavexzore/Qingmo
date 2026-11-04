@@ -1225,6 +1225,67 @@ describe("blank editor -> editor open flow", () => {
     expect(ipc.getFile("/docs/note.md")?.text.endsWith("AB")).toBe(true);
   });
 
+  it("abandons the adoption instead of dropping input when typing never settles", async () => {
+    const ipc = fileIpc("# Note\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
+    });
+
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    ipc.setCommandDelay(COMMANDS.sessionViewStateGet, 100);
+    const original = ipc.documentOpen.bind(ipc);
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      return original();
+    });
+    // Keep typing through both tail passes: C during the payload build, D
+    // during the first rebuild, E inside the second (final) rebuild.
+    let reads = 0;
+    const viewStateOriginal = ipc.sessionViewStateGet.bind(ipc);
+    vi.spyOn(ipc, "sessionViewStateGet").mockImplementation(async (path: string) => {
+      reads += 1;
+      if (reads === 1 || reads === 3 || reads === 4) {
+        const key = reads === 1 ? "C" : reads === 3 ? "D" : "E";
+        act(() => {
+          view.dispatch({ changes: { from: view.state.doc.length, insert: key } });
+        });
+      }
+      return viewStateOriginal(path);
+    });
+
+    const before = captured.current;
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+
+    // The bounded passes were out-typed: keep the session and its newest
+    // keystrokes instead of adopting and silently dropping them.
+    await waitFor(() =>
+      expect(screen.getByText("上一个操作尚未完成，请稍后再试。")).toBeInTheDocument(),
+    );
+    expect(captured.current).toBe(before);
+    expect(captured.current?.readText()).toBe("# Note\n\nABCDE");
+    expect(ipc.getFile("/docs/note.md")?.text.endsWith("ABCD")).toBe(true);
+
+    platform.emitMenuAction("file.save");
+    await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text.endsWith("ABCDE")).toBe(true));
+  });
+
   it("keeps a dirty untitled document when the draft write fails", async () => {
     const ipc = fileIpc();
     const captured: { current: EditorSession | null } = { current: null };

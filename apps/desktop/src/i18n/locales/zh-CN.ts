@@ -290,7 +290,7 @@ export const errors = {
   NOT_FOUND: "文件不存在或已被移动。",
   NOT_A_FILE: "所选路径不是普通文件。",
   UNSUPPORTED_EXTENSION: "只支持 .md 与 .markdown 文件。",
-  FILE_TOO_LARGE: "内容过大，超出大小限制。",
+  FILE_TOO_LARGE: "内容过大：文件上限 10 MiB，崩溃草稿上限 2 MiB。",
   UNSUPPORTED_ENCODING: "仅支持 UTF-8 或带 BOM 的 UTF-16。",
   CONFLICT: "文件已被外部修改，请先确认版本。",
   PERMISSION_DENIED: "没有读取或写入该文件的权限。",
