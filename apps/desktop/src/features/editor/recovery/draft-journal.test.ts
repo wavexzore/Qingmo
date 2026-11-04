@@ -213,6 +213,22 @@ describe("DraftJournal", () => {
     session.detach(view);
     view.destroy();
     parent.remove();
+    // A forced caller never shares an in-flight run that would skip: after
+    // this snapshot is already on disk, a plain flush is a no-op while the
+    // forced contract is to rewrite the row (it may have been evicted).
+    const skip = journal.flushNow();
+    const rewrite = journal.flushNow({ force: true });
+    expect(await skip).toMatchObject({ ok: true });
+    expect(await rewrite).toMatchObject({ ok: true });
+    expect(ipc.draftWrites).toHaveLength(3);
+
+    // A weaker caller still shares a forced in-flight write.
+    const forcedFirst = journal.flushNow({ force: true });
+    const plainAfter = journal.flushNow();
+    expect(await forcedFirst).toMatchObject({ ok: true });
+    expect(await plainAfter).toMatchObject({ ok: true });
+    expect(ipc.draftWrites).toHaveLength(4);
+    expect(ipc.draftWrites[3]?.text).toBe("body+");
   });
 
   it("reports a failed flush with the write error and can retry", async () => {

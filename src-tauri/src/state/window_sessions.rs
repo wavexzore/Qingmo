@@ -87,13 +87,16 @@ impl WindowSessions {
     ///
     /// Returns the token the registry must release: the one the window had
     /// adopted, or — for a window destroyed before its boot payload was
-    /// consumed — the one the staged payload was opened against.
+    /// consumed — the one the staged payload was opened against. A staged
+    /// payload is always dropped here, even alongside an adopted token
+    /// (production never stages twice for one label; this is defensive).
     pub fn release(&self, label: &str) -> Option<String> {
         let mut inner = self.lock();
         let token = inner
             .tokens
             .remove(label)
             .or_else(|| inner.pending.remove(label).map(|payload| payload.doc_token));
+        inner.pending.remove(label);
         inner.untitled.remove(label);
         token
     }
@@ -189,6 +192,10 @@ mod tests {
         sessions.stage("doc-1", payload("token-2"));
 
         assert_eq!(sessions.release("doc-1").as_deref(), Some("token-1"));
+        // The leftover staged payload is gone even though the adopted token
+        // won; nothing may survive the window.
+        assert!(sessions.pending_path("doc-1").is_none());
+        assert!(sessions.take_pending("doc-1").is_none());
     }
 
     #[test]
