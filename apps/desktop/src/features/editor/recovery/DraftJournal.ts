@@ -84,6 +84,8 @@ export class DraftJournal {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<DraftFlushResult> | null = null;
+  /** Content key of the write currently in flight, for deduplication. */
+  private inFlightKey: string | null = null;
   private lastWrittenKey: string | null = null;
   private lastSaveState: string | null = null;
   private warned = false;
@@ -238,16 +240,39 @@ export class DraftJournal {
   }
 
   private writeOnce(force: boolean, preserveNamedDirty: boolean): Promise<DraftFlushResult> {
+    const queuedKey = this.snapshotKey();
+    if (this.inFlight !== null && this.inFlightKey === queuedKey) {
+      // An identical snapshot is already being written; sharing its result
+      // avoids a duplicate write to the same draft row (the close paths
+      // trigger an auto flush and an explicit flush at nearly the same time).
+      return this.inFlight;
+    }
     const run = (this.inFlight ?? Promise.resolve({ ok: true, meta: null })).then(() =>
       this.writeLatest(force, preserveNamedDirty),
     );
     this.inFlight = run;
+    // Claim the key synchronously so a same-tick flush deduplicates before
+    // the queued write has even started.
+    this.inFlightKey = queuedKey;
     void run.finally(() => {
       if (this.inFlight === run) {
         this.inFlight = null;
+        this.inFlightKey = null;
       }
     });
     return run;
+  }
+
+  /** Identifies the draft row content: text, selection, title, and path. */
+  private snapshotKey(): string {
+    const snapshot = this.session.getSnapshot();
+    return JSON.stringify([
+      this.session.readText(),
+      snapshot.selection.anchor,
+      snapshot.selection.head,
+      snapshot.fileName,
+      this.session.isUntitled ? null : snapshot.docId,
+    ]);
   }
 
   private async writeLatest(
@@ -268,6 +293,9 @@ export class DraftJournal {
       // Already on disk from this session; the snapshot is preserved.
       return { ok: true, meta: null };
     }
+    // Content may have drifted since the write was queued; later callers
+    // deduplicate against what is actually being written.
+    this.inFlightKey = key;
 
     const request: DraftWriteRequest = {
       ...(this.ownedDraftId ? { id: this.ownedDraftId } : {}),

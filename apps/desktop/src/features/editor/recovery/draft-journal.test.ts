@@ -3,6 +3,7 @@ import type { FilePayload } from "@qingmo/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FakeIpc } from "../../../lib/ipc/fake";
+import { COMMANDS } from "../../../lib/ipc/commands";
 import type { SaveState } from "../../../lib/save-state";
 import { EditorSession } from "../EditorSession";
 import type { SaveCoordinatorSnapshot } from "../save/SaveCoordinator";
@@ -173,6 +174,45 @@ describe("DraftJournal", () => {
     expect((await journal.flushNow({ preserveNamedDirty: true })).ok).toBe(true);
     expect(ipc.draftWrites).toHaveLength(1);
     expect(ipc.draftWrites[0]).toMatchObject({ kind: "named", path: PATH, text: "hello\n" });
+  });
+
+  it("shares the in-flight write for identical concurrent snapshots", async () => {
+    const ipc = new FakeIpc();
+    ipc.setCommandDelay(COMMANDS.sessionDraftWrite, 40);
+    const session = EditorSession.createUntitled("未命名", {
+      initialText: "body",
+      initialDirty: true,
+    });
+    const coordinator = new StubCoordinator(session);
+    const journal = new DraftJournal({ session, coordinator, ipc });
+    cleanups.push(() => {
+      journal.dispose();
+      session.dispose();
+    });
+
+    // The close paths issue an auto flush and explicit flushes at nearly the
+    // same moment; identical content must collapse into a single write.
+    const first = journal.flushNow();
+    const forced = journal.flushNow({ force: true });
+    const third = journal.flushNow();
+    expect(await first).toMatchObject({ ok: true });
+    expect(await forced).toMatchObject({ ok: true });
+    expect(await third).toMatchObject({ ok: true });
+    expect(ipc.draftWrites).toHaveLength(1);
+
+    // A changed snapshot still gets its own write.
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "+" } });
+    const changed = journal.flushNow();
+    expect(await changed).toMatchObject({ ok: true });
+    expect(ipc.draftWrites).toHaveLength(2);
+    expect(ipc.draftWrites[1]?.text).toBe("body+");
+    session.detach(view);
+    view.destroy();
+    parent.remove();
   });
 
   it("reports a failed flush with the write error and can retry", async () => {
