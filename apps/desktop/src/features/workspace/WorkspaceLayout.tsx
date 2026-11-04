@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Outlet, useNavigate } from "react-router-dom";
 
-import type { AppError } from "@qingmo/shared";
+import type { AppError, FilePayload } from "@qingmo/shared";
 
 import { useAppServices } from "../../app/AppServices";
 import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
@@ -22,7 +22,10 @@ import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
-import { createDocumentSession } from "../editor/session/createDocumentSession";
+import {
+  createDocumentSession,
+  type CreatedDocumentSession,
+} from "../editor/session/createDocumentSession";
 import { useEditorLocale } from "../editor/useEditorLocale";
 import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
 import { LogDialog } from "../logs/LogDialog";
@@ -164,9 +167,95 @@ export function WorkspaceLayout() {
     }
     // The user out-typed every retry; this is the last chance to capture the
     // tail. A change during this final write is still caught for Open by the
-    // pre-adoption comparison below.
+    // adoption tail passes below.
     return (await attempt()) !== "failed";
   }, [getCurrentBundle, handleCommandError, refreshDrafts]);
+
+  /**
+   * Adopts a harness Open payload in place (browser/E2E only).
+   *
+   * The session being replaced is preserved first (dialog input, then the
+   * tail passes that watch the adoption handoff itself), the same file is
+   * re-read from disk so a late save is never overwritten, and every failure
+   * abandons the adoption with the current session kept. Returns true only
+   * when the payload session was installed.
+   */
+  const adoptInPlace = useCallback(
+    async (
+      payload: FilePayload,
+      baseline: string | null,
+      previousToken: string | null,
+    ): Promise<boolean> => {
+      const uiCopy = buildEditorUiCopy(normalizeLanguage(i18n.language));
+      const live = getCurrentBundle().session;
+      const samePath = live !== null && live.getSnapshot().docId === payload.path;
+      const late = live !== null && live.readText() !== baseline;
+      // From here every write must go through the session being replaced, so
+      // restore its token before any await lets an auto-save fire.
+      if (previousToken) {
+        await ipc.documentActivate(previousToken);
+      }
+      if (late && !(await preserveCurrentSession())) {
+        return false;
+      }
+      // Snapshot the text the late preserve left behind; the tail passes
+      // compare against this to catch input typed during the handoff.
+      let preserved = live?.readText() ?? null;
+      // The payload can predate a late save when the same file is reopened;
+      // adopting it verbatim would let the next save overwrite that text.
+      const rebuildFromDisk = async (
+        current: CreatedDocumentSession,
+      ): Promise<CreatedDocumentSession> => {
+        const fresh = await ipc.documentReload(current.session.docToken);
+        const rebuilt = await createDocumentSession(ipc, fresh, uiCopy);
+        current.session.dispose();
+        return rebuilt;
+      };
+      let created: CreatedDocumentSession | undefined;
+      try {
+        created = await createDocumentSession(ipc, payload, uiCopy);
+        await ipc.documentActivate(created.session.docToken);
+        if (late && samePath) {
+          created = await rebuildFromDisk(created);
+        }
+        // Text typed while the adoption was being prepared has no carrier
+        // yet. Two bounded passes keep even a fast typist covered; whatever
+        // lands inside the second rebuild remains a known narrow window.
+        for (let pass = 0; pass < 2; pass += 1) {
+          if (live === null || live.readText() === preserved) {
+            break;
+          }
+          if (previousToken) {
+            await ipc.documentActivate(previousToken);
+          }
+          if (!(await preserveCurrentSession())) {
+            created.session.dispose();
+            return false;
+          }
+          preserved = live.readText();
+          await ipc.documentActivate(created.session.docToken);
+          if (samePath) {
+            created = await rebuildFromDisk(created);
+          }
+        }
+      } catch (error) {
+        // A failed re-read must not adopt a stale payload, and a failed tail
+        // save must not drop the text: keep the current session, whose latest
+        // snapshot is already preserved on disk or as a draft.
+        const normalized = normalizeError(error);
+        console.warn("failed to finish the in-place adoption", normalized);
+        created?.session.dispose();
+        if (previousToken) {
+          await ipc.documentActivate(previousToken);
+        }
+        toast.push(t(`errors:${normalized.code}`));
+        return false;
+      }
+      setSession(created.session, { viewState: created.viewState });
+      return true;
+    },
+    [getCurrentBundle, i18n.language, ipc, preserveCurrentSession, setSession, t, toast],
+  );
   useCommandKeybindings({
     enabled:
       !paletteOpen &&
@@ -228,74 +317,26 @@ export function WorkspaceLayout() {
         // stays exactly as it was.
         return;
       }
-      // Browser harness fallback: no native window exists, adopt in place.
-      const uiCopy = buildEditorUiCopy(normalizeLanguage(i18n.language));
-      let created: Awaited<ReturnType<typeof createDocumentSession>> | undefined;
       if (replacesInPlace) {
-        const live = getCurrentBundle().session;
-        const samePath = live !== null && live.getSnapshot().docId === result.value.path;
-        const late = live !== null && live.readText() !== baseline;
-        // From here every write must go through the session being replaced,
-        // so restore its token before any await lets an auto-save fire.
-        if (previousToken) {
-          await ipc.documentActivate(previousToken);
-        }
-        if (late && !(await preserveCurrentSession())) {
-          return;
-        }
-        const preserved = live?.readText() ?? null;
-        // The payload can predate a late save when the same file is reopened;
-        // adopting it verbatim would let the next save overwrite that text.
-        const rebuildFromDisk = async (
-          current: Awaited<ReturnType<typeof createDocumentSession>>,
-        ): Promise<Awaited<ReturnType<typeof createDocumentSession>>> => {
-          const fresh = await ipc.documentReload(current.session.docToken);
-          const rebuilt = await createDocumentSession(ipc, fresh, uiCopy);
-          current.session.dispose();
-          return rebuilt;
-        };
-        try {
-          created = await createDocumentSession(ipc, result.value, uiCopy);
-          await ipc.documentActivate(created.session.docToken);
-          if (late && samePath) {
-            created = await rebuildFromDisk(created);
-          }
-          if (live !== null && live.readText() !== preserved) {
-            // Text typed during the adoption handoff has no carrier yet.
-            if (previousToken) {
-              await ipc.documentActivate(previousToken);
-            }
-            if (!(await preserveCurrentSession())) {
-              created.session.dispose();
-              return;
-            }
-            await ipc.documentActivate(created.session.docToken);
-            if (samePath) {
-              created = await rebuildFromDisk(created);
-            }
-          }
-        } catch (error) {
-          // A failed re-read must not adopt a stale payload, and a failed
-          // tail save must not drop the text: keep the current session,
-          // whose latest snapshot is already preserved on disk or as a draft.
-          console.warn("failed to finish the in-place adoption", normalizeError(error));
-          created?.session.dispose();
-          if (previousToken) {
-            await ipc.documentActivate(previousToken);
-          }
-          toast.push(t("errors:IO"));
+        // Browser harness fallback: no native window exists, adopt in place.
+        if (!(await adoptInPlace(result.value, baseline, previousToken))) {
           return;
         }
       } else {
-        created = await createDocumentSession(ipc, result.value, uiCopy);
+        const created = await createDocumentSession(
+          ipc,
+          result.value,
+          buildEditorUiCopy(normalizeLanguage(i18n.language)),
+        );
+        setSession(created.session, { viewState: created.viewState });
       }
-      setSession(created.session, { viewState: created.viewState });
       navigate("/editor");
     } finally {
       release?.();
       openingRef.current = false;
     }
   }, [
+    adoptInPlace,
     beginReplacement,
     getCurrentBundle,
     i18n.language,

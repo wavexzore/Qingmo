@@ -1131,6 +1131,59 @@ describe("blank editor -> editor open flow", () => {
     expect(ipc.getFile("/docs/note.md")?.text).toBe("# Note\n\nABC");
   });
 
+  it("captures input typed through the whole adoption handoff", async () => {
+    const ipc = fileIpc("# Note\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
+    });
+
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    ipc.setCommandDelay(COMMANDS.sessionViewStateGet, 100);
+    const original = ipc.documentOpen.bind(ipc);
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      return original();
+    });
+    // Inject C while the payload session is built and D while the tail
+    // rebuild reads the disk: the second tail pass must still catch D.
+    let reads = 0;
+    const viewStateOriginal = ipc.sessionViewStateGet.bind(ipc);
+    vi.spyOn(ipc, "sessionViewStateGet").mockImplementation(async (path: string) => {
+      reads += 1;
+      if (reads === 1 || reads === 3) {
+        const key = reads === 1 ? "C" : "D";
+        act(() => {
+          view.dispatch({ changes: { from: view.state.doc.length, insert: key } });
+        });
+      }
+      return viewStateOriginal(path);
+    });
+
+    const before = captured.current;
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(captured.current).not.toBe(before), { timeout: 5_000 });
+    expect(captured.current?.readText()).toBe("# Note\n\nABCD");
+    expect(ipc.getFile("/docs/note.md")?.text).toBe("# Note\n\nABCD");
+  });
+
   it("keeps a dirty untitled document when the draft write fails", async () => {
     const ipc = fileIpc();
     const captured: { current: EditorSession | null } = { current: null };
