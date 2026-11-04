@@ -85,12 +85,17 @@ impl WindowSessions {
 
     /// Removes a window's token and any payload it never consumed.
     ///
-    /// Returns the token so the registry can release the document.
+    /// Returns the token the registry must release: the one the window had
+    /// adopted, or — for a window destroyed before its boot payload was
+    /// consumed — the one the staged payload was opened against.
     pub fn release(&self, label: &str) -> Option<String> {
         let mut inner = self.lock();
-        inner.pending.remove(label);
+        let token = inner
+            .tokens
+            .remove(label)
+            .or_else(|| inner.pending.remove(label).map(|payload| payload.doc_token));
         inner.untitled.remove(label);
-        inner.tokens.remove(label)
+        token
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -138,12 +143,13 @@ mod tests {
     }
 
     #[test]
-    fn closing_before_taking_the_payload_discards_it() {
+    fn closing_before_taking_the_payload_releases_its_token() {
         let sessions = WindowSessions::new();
         sessions.stage("doc-1", payload("token-1"));
 
-        assert_eq!(sessions.release("doc-1"), None);
+        assert_eq!(sessions.release("doc-1").as_deref(), Some("token-1"));
         assert!(sessions.take_pending("doc-1").is_none());
+        assert!(sessions.release("doc-1").is_none());
     }
 
     #[test]
@@ -173,6 +179,16 @@ mod tests {
 
         assert_eq!(sessions.release("doc-1"), None);
         assert!(!sessions.is_untitled("doc-1"));
+    }
+
+    #[test]
+    fn release_prefers_the_adopted_token_over_a_staged_one() {
+        let sessions = WindowSessions::new();
+        sessions.stage("doc-1", payload("token-1"));
+        sessions.take_pending("doc-1");
+        sessions.stage("doc-1", payload("token-2"));
+
+        assert_eq!(sessions.release("doc-1").as_deref(), Some("token-1"));
     }
 
     #[test]
