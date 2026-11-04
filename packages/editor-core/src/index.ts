@@ -12,7 +12,9 @@ export {
   setPlaceholderEffect,
   setReadOnlyEffect,
   setThemeEffect,
+  setTypographyEffect,
   themeCompartment,
+  typographyCompartment,
   uiCopyCompartment,
 } from "./createEditor";
 export type { CreateEditorStateOptions } from "./createEditor";
@@ -31,6 +33,7 @@ export { codeLanguages, languageForFilename } from "./extensions/languages";
 export { markdownExtensions, qingmoHighlightStyle } from "./extensions/markdown";
 export { codeBlockSelectAll, selectAllInCodeBlock } from "./extensions/select-all";
 export { qingmoEditorTheme, themeExtension, type EditorTheme } from "./extensions/theme";
+export { typographyExtension } from "./extensions/typography";
 export {
   PREVIEW_FULL_MAX_UNITS,
   PREVIEW_PARTIAL_MAX_UNITS,

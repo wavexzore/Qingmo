@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { EDITOR_LINE_HEIGHT } from "@qingmo/shared";
 
 /**
  * Lean Live Preview styling. All values come from the app's semantic tokens;
@@ -1306,7 +1307,7 @@ export const livePreviewTheme = EditorView.theme(
     },
     ".cm-md-code-block-widget .cm-scroller": {
       fontFamily: "var(--qm-font-mono)",
-      lineHeight: "1.75",
+      lineHeight: String(EDITOR_LINE_HEIGHT),
       overflow: "visible",
     },
     ".cm-md-code-block-widget .cm-content": {

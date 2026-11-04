@@ -1,10 +1,12 @@
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, placeholder as cmPlaceholder } from "@codemirror/view";
+import { DEFAULT_EDITOR_TYPOGRAPHY, type EditorTypography } from "@qingmo/shared";
 
 import { basicExtensions } from "./extensions/basic";
 import { markdownExtensions } from "./extensions/markdown";
 import { codeBlockSelectAll } from "./extensions/select-all";
 import { qingmoEditorTheme } from "./extensions/theme";
+import { typographyExtension } from "./extensions/typography";
 import { DEFAULT_EDITOR_UI_COPY, editorUiCopy, type EditorUiCopy } from "./i18n";
 import { previewTierFor } from "./limits";
 import { headingOutline, outlineParseDriver } from "./live-preview/outline";
@@ -19,6 +21,7 @@ import { imageSrcResolver, type ImageSrcResolver } from "./live-preview/image-sr
  *   T-013 installs Live Preview as the default mode.
  */
 export const themeCompartment = new Compartment();
+export const typographyCompartment = new Compartment();
 export const readOnlyCompartment = new Compartment();
 export const modeCompartment = new Compartment();
 export const placeholderCompartment = new Compartment();
@@ -35,6 +38,8 @@ export interface CreateEditorStateOptions {
   selection?: { anchor: number; head: number };
   /** MDX/mixed-EOL documents stay read-only until later phases. */
   readOnly?: boolean;
+  /** Base editor typography; defaults preserve 15px / mono / 1.75. */
+  typography?: EditorTypography;
   /** CommandRegistry keymap and feature extensions (T-015/T-013). */
   extraExtensions?: readonly Extension[];
   /** Shown only while the document is empty (untitled startup editor). */
@@ -72,6 +77,10 @@ export function setThemeEffect(theme: Extension) {
   return themeCompartment.reconfigure(theme);
 }
 
+export function setTypographyEffect(typography: EditorTypography) {
+  return typographyCompartment.reconfigure(typographyExtension(typography));
+}
+
 export function setModeEffect(mode: Extension) {
   return modeCompartment.reconfigure(mode);
 }
@@ -106,6 +115,7 @@ export function createEditorState({
   doc,
   selection,
   readOnly = false,
+  typography = DEFAULT_EDITOR_TYPOGRAPHY,
   extraExtensions = [],
   placeholder,
   uiCopy = DEFAULT_EDITOR_UI_COPY,
@@ -134,6 +144,7 @@ export function createEditorState({
       outlineParseDriver,
       codeBlockSelectAll,
       themeCompartment.of(qingmoEditorTheme),
+      typographyCompartment.of(typographyExtension(typography)),
       readOnlyCompartment.of(readOnlyExtensions(readOnly)),
       modeCompartment.of(previewOn ? livePreview() : []),
       placeholderCompartment.of(placeholder ? cmPlaceholder(placeholder) : []),

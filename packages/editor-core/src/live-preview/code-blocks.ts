@@ -16,6 +16,7 @@ import {
   keymap,
   type DecorationSet,
 } from "@codemirror/view";
+import { EDITOR_LINE_HEIGHT } from "@qingmo/shared";
 
 import { codeLanguages } from "../extensions/languages";
 import { qingmoHighlightStyle } from "../extensions/markdown";
@@ -185,7 +186,7 @@ const nestedCodeTheme = EditorView.theme({
   },
   ".cm-scroller": {
     fontFamily: "var(--qm-font-mono)",
-    lineHeight: "1.75",
+    lineHeight: String(EDITOR_LINE_HEIGHT),
     overflow: "visible",
   },
   ".cm-content": {

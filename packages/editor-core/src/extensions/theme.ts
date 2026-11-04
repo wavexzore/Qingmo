@@ -23,14 +23,9 @@ const editorThemeSpec = {
     height: "100%",
     color: "var(--qm-ink)",
     backgroundColor: "transparent",
-    fontSize: "15px",
   },
   "&.cm-focused": {
     outline: "none",
-  },
-  ".cm-scroller": {
-    fontFamily: "var(--qm-font-mono)",
-    lineHeight: "1.75",
   },
   ".cm-content": {
     // The page inset lives on the content, not on the host wrapper, so the

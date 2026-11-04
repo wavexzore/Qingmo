@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { DEFAULT_EDITOR_TYPOGRAPHY } from "@qingmo/shared";
 
 import { LocaleController } from "../app/LocaleController";
 import i18n from "../i18n";
 import { FakeSettings } from "../lib/settings/fake";
-import { LANGUAGE_STORAGE_KEY, uiStore } from "../stores/uiStore";
+import { EDITOR_TYPOGRAPHY_STORAGE_KEY, LANGUAGE_STORAGE_KEY, uiStore } from "../stores/uiStore";
 import { SettingsWindow } from "./SettingsWindow";
 
 const controllers: LocaleController[] = [];
@@ -20,7 +22,8 @@ function renderSettings(options: { settings?: FakeSettings } = {}) {
 
 async function resetLocale(): Promise<void> {
   window.localStorage.removeItem(LANGUAGE_STORAGE_KEY);
-  uiStore.syncFromStorage();
+  window.localStorage.removeItem(EDITOR_TYPOGRAPHY_STORAGE_KEY);
+  uiStore.syncFromStorage(null);
   await i18n.changeLanguage("zh-CN");
 }
 
@@ -32,13 +35,103 @@ afterEach(async () => {
 });
 
 describe("SettingsWindow", () => {
-  it("renders the single General section with the current language", async () => {
+  it("renders the General sections with the current language", async () => {
     renderSettings();
 
     expect(screen.getByTestId("settings-window")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "通用设置" })).toBeInTheDocument();
     expect(screen.getByTestId("settings-language")).toHaveTextContent("简体中文");
     await waitFor(() => expect(screen.getByText("版本 0.1.2")).toBeInTheDocument());
+  });
+
+  it("renders both General sections with the default typography", async () => {
+    renderSettings();
+
+    expect(screen.getByTestId("settings-window")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "通用设置" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "排版" })).toBeInTheDocument();
+    expect(screen.getByTestId("settings-language")).toHaveTextContent("简体中文");
+    expect(screen.getByTestId("settings-font-size")).toHaveValue("15");
+    expect(screen.getByTestId("settings-font-size-value")).toHaveTextContent("15px");
+    expect(screen.getByTestId("settings-font-mono")).toBeChecked();
+    expect(screen.getByTestId("settings-font-option-mono")).toHaveAttribute("data-checked", "true");
+    expect(screen.getByTestId("settings-typography-reset")).toBeDisabled();
+    await waitFor(() => expect(screen.getByText("版本 0.1.2")).toBeInTheDocument());
+  });
+
+  it("updates the font size, preview, and persisted JSON from the range", async () => {
+    renderSettings();
+
+    fireEvent.change(screen.getByTestId("settings-font-size"), { target: { value: "22" } });
+
+    await waitFor(() => expect(uiStore.getSnapshot().typography.fontSize).toBe(22));
+    expect(screen.getByTestId("settings-font-size-value")).toHaveTextContent("22px");
+    expect(screen.getByTestId("settings-typography-preview").querySelector("p")).toHaveStyle({
+      fontSize: "22px",
+    });
+    expect(JSON.parse(window.localStorage.getItem(EDITOR_TYPOGRAPHY_STORAGE_KEY) ?? "{}")).toEqual({
+      version: 1,
+      fontSize: 22,
+      fontFamily: "mono",
+    });
+    expect(screen.getByTestId("settings-typography-reset")).toBeEnabled();
+  });
+
+  it("selects a font family from the visible label", async () => {
+    renderSettings();
+
+    fireEvent.click(screen.getByTestId("settings-font-option-serif"));
+
+    await waitFor(() => expect(uiStore.getSnapshot().typography.fontFamily).toBe("serif"));
+    expect(screen.getByTestId("settings-font-serif")).toBeChecked();
+    expect(screen.getByTestId("settings-font-option-serif")).toHaveAttribute(
+      "data-checked",
+      "true",
+    );
+    expect(screen.getByTestId("settings-font-option-mono")).toHaveAttribute(
+      "data-checked",
+      "false",
+    );
+    expect(JSON.parse(window.localStorage.getItem(EDITOR_TYPOGRAPHY_STORAGE_KEY) ?? "{}")).toEqual({
+      version: 1,
+      fontSize: 15,
+      fontFamily: "serif",
+    });
+  });
+
+  it("restores the defaults and confirms with a toast", async () => {
+    renderSettings();
+
+    fireEvent.change(screen.getByTestId("settings-font-size"), { target: { value: "26" } });
+    fireEvent.click(screen.getByTestId("settings-font-option-sans"));
+    await waitFor(() => expect(uiStore.getSnapshot().typography.fontFamily).toBe("sans"));
+
+    fireEvent.click(screen.getByTestId("settings-typography-reset"));
+
+    await waitFor(() =>
+      expect(uiStore.getSnapshot().typography).toEqual(DEFAULT_EDITOR_TYPOGRAPHY),
+    );
+    expect(screen.getByTestId("settings-font-size")).toHaveValue("15");
+    expect(screen.getByTestId("settings-font-mono")).toBeChecked();
+    expect(screen.getByTestId("settings-typography-reset")).toBeDisabled();
+    expect(screen.getByText("编辑器排版已恢复默认。")).toBeInTheDocument();
+  });
+
+  it("keeps the session value and warns once when persistence fails", async () => {
+    renderSettings();
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+
+    fireEvent.change(screen.getByTestId("settings-font-size"), { target: { value: "18" } });
+    fireEvent.change(screen.getByTestId("settings-font-size"), { target: { value: "19" } });
+
+    await waitFor(() => expect(uiStore.getSnapshot().typography.fontSize).toBe(19));
+    expect(screen.getByTestId("settings-font-size")).toHaveValue("19");
+    expect(
+      screen.getAllByText("无法保存排版设置；本次会话仍生效，重启后会恢复默认。"),
+    ).toHaveLength(1);
+    expect(setItem).toHaveBeenCalled();
   });
 
   it("applies a language immediately and translates its own webview", async () => {

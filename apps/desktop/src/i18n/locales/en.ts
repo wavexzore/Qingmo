@@ -416,11 +416,11 @@ export const settings = {
     language: "Interface language",
   },
   title: "Settings",
-  lede: "Let Qingmo speak the language you think in.",
+  lede: "Language, type, and the quiet details of the page.",
   nav: {
     caption: "Preferences",
     general: "General",
-    generalNote: "Interface language",
+    generalNote: "Interface language and typography",
   },
   storageNote: "Every preference stays on this device.",
   localFirst: "LOCAL-FIRST",
@@ -429,10 +429,10 @@ export const settings = {
     general: "General",
   },
   heading: "General settings",
-  description:
-    "The language Qingmo uses across its interface. Changes apply immediately — no restart.",
+  description: "Interface language and editor typography. Changes apply immediately — no restart.",
   section: {
     interface: "Interface",
+    typography: "Typography",
   },
   language: {
     title: "Language",
@@ -445,10 +445,30 @@ export const settings = {
     enDetail: "English",
     enCode: "EN",
   },
+  typography: {
+    fontSize: "Font size",
+    fontSizeHint: "12–30 px. The default is 15 px.",
+    fontFamily: "Font family",
+    fontFamilyHint: "Prose only. Code blocks, tables and diagrams keep their own fonts.",
+    family: {
+      mono: "Mono",
+      monoDetail: "SF Mono · JetBrains Mono",
+      sans: "Sans",
+      sansDetail: "Avenir Next · PingFang SC",
+      serif: "Serif",
+      serifDetail: "Iowan Old Style · Songti SC",
+    },
+    preview: "Preview",
+    previewAria: "Typography preview",
+    previewText:
+      "The quick brown fox jumps over the lazy dog. 0123456789 — a quiet page, a clear mind.",
+    hint: "Applies to every open editor window.",
+    reset: "Restore defaults",
+  },
   hint: "Applied to every open window at once.",
   note: {
-    quote: "Language is how a tool speaks.",
-    body: "Qingmo translates only its interface. Your Markdown, file names, and metadata stay exactly as written.",
+    quote: "A tool should sound and look like yours.",
+    body: "Qingmo translates only its interface and never rewrites your Markdown. Typography changes the editor only; your files stay exactly as written.",
     ghost: "Aa",
   },
   footer: {
@@ -457,6 +477,9 @@ export const settings = {
   },
   toast: {
     languageChanged: "Interface language set to {{language}}.",
+    typographyReset: "Editor typography restored to defaults.",
+    typographyPersistenceFailed:
+      "Could not save the typography preference. It applies for this session and resets after restart.",
   },
   actions: {
     close: "Close settings",

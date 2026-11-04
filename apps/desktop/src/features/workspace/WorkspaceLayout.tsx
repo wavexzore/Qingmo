@@ -7,6 +7,7 @@ import type { AppError, FilePayload } from "@qingmo/shared";
 import { useAppServices } from "../../app/AppServices";
 import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
 import { useCloseGuard } from "../../app/useCloseGuard";
+import { useEditorTypography } from "../../app/useEditorTypography";
 import { useThemeService } from "../../app/useThemeService";
 import { useToast } from "../../components/ToastHost";
 import { buildEditorUiCopy } from "../../i18n/editorCopy";
@@ -90,6 +91,7 @@ export function WorkspaceLayout() {
 
   useThemeCommand();
   useThemeService(session);
+  useEditorTypography(session);
   useEditorLocale(session);
   useLivePreviewMenu(ipc, session);
 

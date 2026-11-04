@@ -1,4 +1,10 @@
 import { useSyncExternalStore } from "react";
+import {
+  DEFAULT_EDITOR_TYPOGRAPHY,
+  editorTypographyEquals,
+  normalizeEditorTypography,
+  type EditorTypography,
+} from "@qingmo/shared";
 
 import {
   DEFAULT_LANGUAGE,
@@ -9,6 +15,7 @@ import {
 
 export const THEME_STORAGE_KEY = "qingmo.ui.theme";
 export const LANGUAGE_STORAGE_KEY = "qingmo.ui.language";
+export const EDITOR_TYPOGRAPHY_STORAGE_KEY = "qingmo.ui.editorTypography";
 export const THEME_PREFERENCES = ["light", "dark", "system"] as const;
 
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
@@ -21,6 +28,8 @@ export interface UiSnapshot {
   resolvedTheme: ResolvedTheme;
   /** Persisted UI language. */
   language: SupportedLanguage;
+  /** Persisted editor typography. */
+  typography: EditorTypography;
 }
 
 export interface ThemeStorage {
@@ -105,11 +114,26 @@ function readStoredLanguage(storage: ThemeStorage | null): SupportedLanguage {
   }
 }
 
+function readStoredTypography(storage: ThemeStorage | null): EditorTypography {
+  if (!storage) {
+    return DEFAULT_EDITOR_TYPOGRAPHY;
+  }
+  try {
+    const raw = storage.getItem(EDITOR_TYPOGRAPHY_STORAGE_KEY);
+    if (!raw) {
+      return DEFAULT_EDITOR_TYPOGRAPHY;
+    }
+    return normalizeEditorTypography(JSON.parse(raw));
+  } catch {
+    return DEFAULT_EDITOR_TYPOGRAPHY;
+  }
+}
+
 /**
- * UI-only store. The persisted keys are the theme preference and the UI
- * language; document identity/body never enters this store. Theme changes are
- * applied to the root `data-theme` attribute and published to the editor theme
- * service.
+ * UI-only store. The persisted keys are the theme preference, the UI
+ * language, and the editor typography; document identity/body never enters
+ * this store. Theme changes are applied to the root `data-theme` attribute and
+ * published to the editor theme service.
  */
 export class UiStore {
   private readonly storage: ThemeStorage | null;
@@ -119,6 +143,7 @@ export class UiStore {
   private snapshot: UiSnapshot;
   private mediaListening = false;
   private languagePersistenceDegraded = false;
+  private typographyPersistenceDegraded = false;
 
   constructor(options: UiStoreOptions = {}) {
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
@@ -131,6 +156,7 @@ export class UiStore {
       theme,
       resolvedTheme: resolveTheme(theme, this.media?.matches ?? false),
       language: readStoredLanguage(this.storage),
+      typography: readStoredTypography(this.storage),
     });
   }
 
@@ -168,6 +194,29 @@ export class UiStore {
   }
 
   /**
+   * Persists the editor typography as one atomic JSON document. A failed write
+   * keeps the value for this session and marks persistence degraded; the
+   * Settings window surfaces that once through a toast.
+   */
+  setTypography(next: EditorTypography): boolean {
+    const normalized = normalizeEditorTypography(next);
+    if (editorTypographyEquals(normalized, this.snapshot.typography)) {
+      return true;
+    }
+    const persisted = this.persist(
+      EDITOR_TYPOGRAPHY_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        fontSize: normalized.fontSize,
+        fontFamily: normalized.fontFamily,
+      }),
+    );
+    this.typographyPersistenceDegraded = !persisted;
+    this.replaceSnapshot({ ...this.snapshot, typography: normalized });
+    return persisted;
+  }
+
+  /**
    * Reads the authoritative persisted language for cross-window guards.
    * `null` means there is no trustworthy stored value (storage disabled, read
    * failure, missing key, or a failed write in this window).
@@ -194,13 +243,28 @@ export class UiStore {
   /**
    * Adopts a preference persisted by another window without writing it back.
    * The About window is a separate webview and uses this on `storage` events.
+   *
+   * `changedKey` lets a degraded typography write survive unrelated theme or
+   * language events: only its own key (or `localStorage.clear()`) may replace
+   * the in-memory value and clear the degraded flag.
    */
-  syncFromStorage(): void {
+  syncFromStorage(changedKey?: string | null): void {
     const theme = readStoredTheme(this.storage);
+    const language = readStoredLanguage(this.storage);
+    const typography =
+      this.typographyPersistenceDegraded &&
+      changedKey !== null &&
+      changedKey !== EDITOR_TYPOGRAPHY_STORAGE_KEY
+        ? this.snapshot.typography
+        : readStoredTypography(this.storage);
+    if (changedKey === null || changedKey === EDITOR_TYPOGRAPHY_STORAGE_KEY) {
+      this.typographyPersistenceDegraded = false;
+    }
     this.replaceSnapshot({
       theme,
       resolvedTheme: resolveTheme(theme, this.media?.matches ?? false),
-      language: readStoredLanguage(this.storage),
+      language,
+      typography,
     });
     this.syncMediaListener();
   }
@@ -253,7 +317,8 @@ export class UiStore {
     if (
       next.theme === this.snapshot.theme &&
       next.resolvedTheme === this.snapshot.resolvedTheme &&
-      next.language === this.snapshot.language
+      next.language === this.snapshot.language &&
+      editorTypographyEquals(next.typography, this.snapshot.typography)
     ) {
       return;
     }
