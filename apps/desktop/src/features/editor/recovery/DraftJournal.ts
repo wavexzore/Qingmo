@@ -86,6 +86,8 @@ export class DraftJournal {
   private inFlight: Promise<DraftFlushResult> | null = null;
   /** Content key of the write currently in flight, for deduplication. */
   private inFlightKey: string | null = null;
+  /** Whether the in-flight write was forced; stronger callers never share. */
+  private inFlightForce = false;
   private lastWrittenKey: string | null = null;
   private lastSaveState: string | null = null;
   private warned = false;
@@ -241,7 +243,14 @@ export class DraftJournal {
 
   private writeOnce(force: boolean, preserveNamedDirty: boolean): Promise<DraftFlushResult> {
     const queuedKey = this.snapshotKey();
-    if (this.inFlight !== null && this.inFlightKey === queuedKey) {
+    if (
+      this.inFlight !== null &&
+      this.inFlightKey === queuedKey &&
+      // A forced caller must not share a run that would skip: when the key is
+      // already on disk a plain flush is a no-op, while the forced contract
+      // is to rewrite the row regardless (it may have been evicted).
+      (!force || this.inFlightForce || queuedKey !== this.lastWrittenKey)
+    ) {
       // An identical snapshot is already being written; sharing its result
       // avoids a duplicate write to the same draft row (the close paths
       // trigger an auto flush and an explicit flush at nearly the same time).
@@ -254,10 +263,12 @@ export class DraftJournal {
     // Claim the key synchronously so a same-tick flush deduplicates before
     // the queued write has even started.
     this.inFlightKey = queuedKey;
+    this.inFlightForce = force;
     void run.finally(() => {
       if (this.inFlight === run) {
         this.inFlight = null;
         this.inFlightKey = null;
+        this.inFlightForce = false;
       }
     });
     return run;
