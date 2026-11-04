@@ -23,9 +23,10 @@ pub mod state;
 use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
-    EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_OPEN, MENU_FILE_SAVE, MENU_LANGUAGE_EN,
-    MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
-    MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE, MENU_VIEW_TOGGLE_THEME,
+    EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN,
+    MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK,
+    MENU_THEME_LIGHT, MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE,
+    MENU_VIEW_TOGGLE_THEME,
 };
 use ipc::dto::{AppLanguage, MenuActionPayload, NativeShellLabels};
 
@@ -155,9 +156,9 @@ fn action<'a>(id: &'static str, label: &'a str, accelerator: Option<&'a str>) ->
 /// Help entries that do not match Qingmo's command surface, so this layout
 /// keeps only working items: file operations, native editing actions,
 /// view/theme/language toggles and window controls. Custom items are forwarded
-/// to the webview through `app://menu-action`; native predefined items
-/// (undo/copy/paste) stay in the platform so the first responder keeps handling
-/// text editing.
+/// to the webview through `app://menu-action`, except New, which Rust creates
+/// directly; native predefined items (undo/copy/paste) stay in the platform so
+/// the first responder keeps handling text editing.
 ///
 /// Platform differences:
 /// - macOS keeps the standard application submenu and Window's "Bring All to
@@ -177,6 +178,7 @@ fn menu_layout<'a>(
     let macos = platform == MenuPlatform::Mac;
 
     let mut file_items = vec![
+        action(MENU_FILE_NEW, &labels.new, Some("CmdOrCtrl+N")),
         action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
         action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
     ];
@@ -323,11 +325,10 @@ fn menu_layout<'a>(
 /// guard and whose About item would add a second copy source.
 fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
     let macos = platform == MenuPlatform::Mac;
-    let mut file_items = vec![action(
-        MENU_CLOSE_WINDOW,
-        "Close Window",
-        Some("CmdOrCtrl+W"),
-    )];
+    let mut file_items = vec![
+        action(MENU_FILE_NEW, "New", Some("CmdOrCtrl+N")),
+        action(MENU_CLOSE_WINDOW, "Close Window", Some("CmdOrCtrl+W")),
+    ];
     if !macos {
         file_items.push(MenuEntry::Separator);
         file_items.push(action(MENU_QUIT, "Quit", Some("CmdOrCtrl+Q")));
@@ -524,9 +525,11 @@ fn command_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
         .and_then(|label| app.get_webview_window(&label))
         .or_else(|| app.get_webview_window("main"))
         .or_else(|| {
+            // Auxiliary windows have no menu listener, so Settings owning the
+            // last focus during startup must not swallow a document command.
             app.webview_windows()
                 .values()
-                .find(|window| window.label() != ABOUT_WINDOW_LABEL)
+                .find(|window| !commands::close::is_auxiliary_window(window.label()))
                 .cloned()
         })
 }
@@ -571,6 +574,12 @@ fn resolve_window_title(
             commands::document::window_title_for(&record.canonical_target, &labels.app_name)
         });
     }
+    if sessions.is_untitled(label) {
+        return Some(commands::document::window_title_for_untitled(
+            &labels.untitled_file_name,
+            &labels.app_name,
+        ));
+    }
     Some(labels.app_name.clone())
 }
 
@@ -604,8 +613,17 @@ const MAIN_WINDOW_BOOT_DELAY: Duration = Duration::from_millis(300);
 /// The window is declared with `create: false` so a launch caused by opening a
 /// document can skip it. A failed open falls back to it instead of ending the
 /// launch with no window at all.
-fn ensure_main_window(app: &AppHandle) {
+///
+/// This is the one intentional exception to `create_document_window`: it uses
+/// the configured `main` window (different role and URL) and is itself the
+/// fallback target, so routing it through the shared primitive would recurse.
+///
+/// Every return path advances `Main` to `MainReady`: the boot claim is over
+/// once the build attempt ends, success or failure.
+pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
+    let startup = app.state::<state::StartupWindow>();
     if app.get_webview_window("main").is_some() {
+        startup.mark_main_ready();
         return;
     }
 
@@ -618,22 +636,31 @@ fn ensure_main_window(app: &AppHandle) {
         .cloned()
     else {
         tracing::error!("the main window config is missing");
+        startup.mark_main_ready();
         return;
     };
 
     let labels = app.state::<state::ShellLocale>().labels();
+    let title = labels.as_ref().map(|labels| {
+        commands::document::window_title_for_untitled(&labels.untitled_file_name, &labels.app_name)
+    });
     let built = WebviewWindowBuilder::from_config(app, &config).and_then(|builder| {
-        let builder = match labels.as_ref() {
-            // The config title is the product default; use the startup
-            // projection so an English launch does not briefly show it.
-            Some(labels) => builder.title(labels.app_name.clone()),
-            None => builder,
-        };
-        builder.build()
+        // The config title is the product default; use the startup projection
+        // so an English launch does not briefly show it. Every main window is
+        // an untitled document, matching the New window title.
+        match title {
+            Some(title) => builder.title(title).build(),
+            None => builder.build(),
+        }
     });
     if let Err(error) = built {
         tracing::error!(%error, "failed to create the main window");
+    } else {
+        app.state::<state::WindowSessions>().mark_untitled("main");
     }
+    // The build is over, success or failure. `Main` may now advance so later
+    // New requests stop waiting for a build that already finished.
+    startup.mark_main_ready();
 }
 
 fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
@@ -707,6 +734,37 @@ pub fn run() {
                         toggle_fullscreen(window);
                     }
                 }
+                return;
+            }
+
+            if id == MENU_FILE_NEW {
+                // New is a separate native window. While the boot main window
+                // is still building, the shared helper reuses that one instead
+                // of adding a second empty window; afterwards it always builds
+                // a new one. Doing it in Rust also works during the startup
+                // delay, when no webview exists to receive an action event, and
+                // keeps New available while Settings owns the last focus.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = commands::document::create_untitled_window(app.clone()).await
+                    {
+                        tracing::error!(%error, "failed to create a document window");
+                        // The menu path has no invoke promise to reject, so
+                        // report to an editable window for the same toast.
+                        if let Some(window) = command_window(&app) {
+                            if let Err(emit_error) = window.emit_to(
+                                window.label(),
+                                EVENT_DOCUMENT_NEW_FAILED,
+                                error,
+                            ) {
+                                tracing::error!(
+                                    %emit_error,
+                                    "failed to emit the document-new failure"
+                                );
+                            }
+                        }
+                    }
+                });
                 return;
             }
 
@@ -807,7 +865,11 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(MAIN_WINDOW_BOOT_DELAY).await;
-                if !handle.state::<state::StartupWindow>().was_opened() {
+                let startup = handle.state::<state::StartupWindow>();
+                if startup.claim_main_if_undecided() {
+                    // `ensure_main_window` also advances `Main` to `MainReady`
+                    // when the build ends, so later New requests build their
+                    // own window instead of waiting for `main`.
                     ensure_main_window(&handle);
                 }
             });
@@ -958,6 +1020,7 @@ mod menu_tests {
             show_all: format!("{prefix}-show-all"),
             quit_app: format!("{prefix}-quit"),
             file: format!("{prefix}-file"),
+            new: format!("{prefix}-new"),
             open: format!("{prefix}-open"),
             save: format!("{prefix}-save"),
             close_window: format!("{prefix}-close"),
@@ -1099,6 +1162,7 @@ mod menu_tests {
 
         let file_menu = menu(&layout, "zh-file");
         let file_ids = action_ids(file_menu);
+        assert!(file_ids.contains(&MENU_FILE_NEW));
         assert!(file_ids.contains(&MENU_FILE_OPEN));
         assert!(file_ids.contains(&MENU_FILE_SAVE));
         assert!(file_ids.contains(&MENU_CLOSE_WINDOW));
@@ -1107,7 +1171,21 @@ mod menu_tests {
             !file_ids.contains(&MENU_SETTINGS),
             "macOS keeps settings in the application menu"
         );
+        assert_eq!(action_label(action(file_menu, MENU_FILE_NEW)), "zh-new");
+        assert_eq!(
+            action_accelerator(action(file_menu, MENU_FILE_NEW)),
+            Some("CmdOrCtrl+N")
+        );
         assert_eq!(action_label(action(file_menu, MENU_FILE_OPEN)), "zh-open");
+        assert_eq!(
+            file_ids,
+            [
+                MENU_FILE_NEW,
+                MENU_FILE_OPEN,
+                MENU_FILE_SAVE,
+                MENU_CLOSE_WINDOW
+            ]
+        );
 
         assert_eq!(
             menu(&layout, "zh-window").items.last(),
@@ -1177,6 +1255,7 @@ mod menu_tests {
 
         let file_menu = menu(&layout, "en-file");
         let file_ids = action_ids(file_menu);
+        assert!(file_ids.contains(&MENU_FILE_NEW));
         assert!(file_ids.contains(&MENU_QUIT));
         assert!(file_ids.contains(&MENU_SETTINGS));
         assert_eq!(
@@ -1263,6 +1342,7 @@ mod menu_tests {
                 "startup menu must expose exactly one custom Quit on {platform:?}"
             );
             assert!(ids.contains(&MENU_CLOSE_WINDOW));
+            assert!(ids.contains(&MENU_FILE_NEW));
             assert!(!ids.contains(&MENU_ABOUT));
             assert!(!ids.contains(&MENU_SETTINGS));
             assert_every_action_has_a_handler(&layout);
@@ -1310,10 +1390,29 @@ mod menu_tests {
         let sessions = state::WindowSessions::new();
         let registry = state::DocumentRegistry::new();
 
+        sessions.mark_untitled("main");
+        assert_eq!(
+            resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
+            Some("zh.md — zh-app")
+        );
+        sessions.set_token("main", "main-token".to_string());
+        assert!(!sessions.is_untitled("main"));
+        assert!(
+            resolve_window_title("main", &labels, &sessions, &registry).is_none(),
+            "main keeps its title while a token has no record"
+        );
+        sessions.release("main");
         assert_eq!(
             resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
             Some("zh-app")
         );
+
+        sessions.mark_untitled("doc-new");
+        assert_eq!(
+            resolve_window_title("doc-new", &labels, &sessions, &registry).as_deref(),
+            Some("zh.md — zh-app")
+        );
+        sessions.clear_untitled("doc-new");
         assert_eq!(
             resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
             Some("zh-about")

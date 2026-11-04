@@ -1,4 +1,4 @@
-import type { CloseReason } from "@qingmo/shared";
+import type { AppError, CloseReason } from "@qingmo/shared";
 
 import type { MenuAction } from "../ipc/commands";
 
@@ -7,6 +7,8 @@ export interface PlatformPort {
   onCloseRequested(callback: (reason: CloseReason) => void): () => void;
   /** Subscribe to native menu activations forwarded by Rust. */
   onMenuAction(callback: (action: MenuAction) => void): () => void;
+  /** Native New failed after Rust handled it without a webview hop. */
+  onDocumentNewFailed(callback: (error: AppError) => void): () => void;
   /** Window lost focus; used by the autosave coordinator in T-011. */
   onBlur(callback: () => void): () => void;
   /** True while an IME composition is active; save shortcuts must not fire. */

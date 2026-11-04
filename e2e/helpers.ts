@@ -93,6 +93,7 @@ export async function openSeededFile(page: Page, fileName: string): Promise<void
 export async function emitMenuAction(
   page: Page,
   action:
+    | "file.new"
     | "file.open"
     | "file.save"
     | "palette.open"

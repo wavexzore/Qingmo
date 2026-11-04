@@ -39,6 +39,7 @@ function renderApp() {
 }
 
 afterEach(() => {
+  commandRegistry.unregister("file.new");
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");

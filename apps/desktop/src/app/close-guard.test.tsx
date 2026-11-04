@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EditorSession } from "../features/editor/EditorSession";
+import { DraftJournal } from "../features/editor/recovery/DraftJournal";
 import { SaveCoordinator } from "../features/editor/save/SaveCoordinator";
 import { COMMANDS } from "../lib/ipc/commands";
 import { FakeIpc } from "../lib/ipc/fake";
@@ -17,6 +18,7 @@ interface Harness {
   platform: FakePlatform;
   session: EditorSession;
   coordinator: SaveCoordinator;
+  journal: DraftJournal;
   view: EditorView;
   parent: HTMLDivElement;
   state: { current: CloseGuardState | null };
@@ -29,14 +31,16 @@ function Probe({
   ipc,
   platform,
   coordinator,
+  journal,
   onState,
 }: {
   ipc: FakeIpc;
   platform: FakePlatform;
   coordinator: SaveCoordinator | null;
+  journal: DraftJournal | null;
   onState(value: CloseGuardState): void;
 }) {
-  const state = useCloseGuard({ ipc, platform, coordinator });
+  const state = useCloseGuard({ ipc, platform, coordinator, journal });
   onState(state);
   return (
     <CloseConfirmDialog
@@ -53,6 +57,13 @@ function mountHarness(ipc: FakeIpc, session: EditorSession): Harness {
   const view = new EditorView({ state: session.editorState, parent });
   session.attach(view);
   const coordinator = new SaveCoordinator({ session, ipc });
+  const journal = new DraftJournal({
+    session,
+    coordinator,
+    ipc,
+    debounceMs: 60_000,
+    maxWaitMs: 120_000,
+  });
   const platform = new FakePlatform();
   const state: { current: CloseGuardState | null } = { current: null };
 
@@ -61,13 +72,14 @@ function mountHarness(ipc: FakeIpc, session: EditorSession): Harness {
       ipc={ipc}
       platform={platform}
       coordinator={coordinator}
+      journal={journal}
       onState={(value) => {
         state.current = value;
       }}
     />,
   );
 
-  active = { ipc, platform, session, coordinator, view, parent, state, unmount };
+  active = { ipc, platform, session, coordinator, journal, view, parent, state, unmount };
   return active;
 }
 
@@ -89,6 +101,7 @@ function insert(view: EditorView, text: string): void {
 afterEach(() => {
   if (active) {
     active.unmount();
+    active.journal.dispose();
     active.coordinator.dispose();
     active.session.detach(active.view);
     active.view.destroy();
@@ -155,6 +168,50 @@ describe("useCloseGuard", () => {
     });
     expect(saveAs).not.toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("rewrites an evicted draft before prompting on untitled close", async () => {
+    const harness = openUntitledHarness();
+    insert(harness.view, "precious");
+    await harness.journal.flushNow({ force: true });
+    const original = (await harness.ipc.sessionDraftList())[0]?.id;
+    expect(original).toBeDefined();
+    for (let index = 0; index < 21; index += 1) {
+      await harness.ipc.sessionDraftWrite({
+        kind: "untitled",
+        title: `filler ${index}`,
+        text: "x",
+        anchor: 0,
+        head: 0,
+      });
+    }
+    expect((await harness.ipc.sessionDraftList()).some((draft) => draft.id === original)).toBe(
+      false,
+    );
+
+    await act(async () => {
+      harness.platform.emitCloseRequested("exit");
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect((await harness.ipc.sessionDraftList()).some((draft) => draft.id === original)).toBe(
+      true,
+    );
+    expect((await harness.ipc.sessionDraftRead(original!)).text).toContain("precious");
+  });
+
+  it("still prompts when the draft write fails during close", async () => {
+    const harness = openUntitledHarness();
+    insert(harness.view, "precious");
+    harness.ipc.failNext(COMMANDS.sessionDraftWrite, "IO", "draft storage unavailable");
+
+    await act(async () => {
+      harness.platform.emitCloseRequested("exit");
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("有未保存的修改");
   });
 
   it("confirms an untitled exit without opening Save As", async () => {

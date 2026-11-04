@@ -6,6 +6,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-document-open",
+    "allow-document-new",
     "allow-document-take-pending",
     "allow-document-reload",
     "allow-document-save-as",
@@ -26,6 +27,8 @@
     "allow-session-view-state-get",
     "allow-session-view-state-set",
     "allow-session-draft-write",
-    "allow-session-draft-discard"
+    "allow-session-draft-discard",
+    "allow-session-draft-list",
+    "allow-session-draft-read"
   ]
 }

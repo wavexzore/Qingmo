@@ -188,6 +188,37 @@ describe("CommandPalette", () => {
     expect(onError.mock.calls[0]?.[0]).toMatchObject({ code: "IO", message: "boom" });
   });
 
+  it("clears the previous query when reopened", () => {
+    const registry = createRegistry();
+    registerFileCommands(registry);
+
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <div>
+          <button type="button" onClick={() => setOpen(true)}>
+            open palette
+          </button>
+          <button type="button" onClick={() => setOpen(false)}>
+            close palette
+          </button>
+          <CommandPalette open={open} onClose={() => setOpen(false)} registry={registry} />
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "open palette" }));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "打开" } });
+    expect(screen.getByRole("combobox")).toHaveValue("打开");
+
+    fireEvent.click(screen.getByRole("button", { name: "close palette" }));
+    fireEvent.click(screen.getByRole("button", { name: "open palette" }));
+
+    expect(screen.getByRole("combobox")).toHaveValue("");
+    expect(screen.getAllByRole("option").length).toBeGreaterThan(1);
+  });
+
   it("restores focus to the element that opened it", () => {
     const registry = createRegistry();
     registerFileCommands(registry);

@@ -18,7 +18,7 @@ import { useSaveCoordinator } from "./useSaveCoordinator";
 function DocumentEditor() {
   const { t } = useTranslation(["common", "editor"]);
   const { session } = useEditor();
-  const { coordinator, drafts, recorder, viewState, restoreDraft, discardDraft } =
+  const { coordinator, drafts, recorder, viewState, refreshDrafts, restoreDraft, discardDraft } =
     useDocumentSession();
   const status = useEditorStatus(session);
   const outlineOpen = useOutlineOpen();
@@ -62,7 +62,15 @@ function DocumentEditor() {
       data-testid={untitled ? "untitled-editor" : "document-session"}
       className="flex h-full flex-col bg-paper text-ink"
     >
-      <RecoveryBanner drafts={drafts} onOpen={() => setRecoveryOpen(true)} />
+      {/* A named session cannot adopt a draft in place, so only untitled
+          windows advertise the recovery entry. */}
+      <RecoveryBanner
+        drafts={untitled ? drafts : []}
+        onOpen={() => {
+          setRecoveryOpen(true);
+          void refreshDrafts();
+        }}
+      />
       <RecoveryDialog
         drafts={drafts}
         open={recoveryOpen}
