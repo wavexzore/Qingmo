@@ -1184,6 +1184,47 @@ describe("blank editor -> editor open flow", () => {
     expect(ipc.getFile("/docs/note.md")?.text).toBe("# Note\n\nABCD");
   });
 
+  it("maps a failed reload to its own error message", async () => {
+    const ipc = fileIpc("# Note\n");
+    const captured: { current: EditorSession | null } = { current: null };
+    const { platform } = renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    platform.emitMenuAction("file.open");
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() => expect(captured.current?.isUntitled).toBe(false));
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nA" } });
+    });
+
+    ipc.setCommandDelay(COMMANDS.documentOpen, 150);
+    const original = ipc.documentOpen.bind(ipc);
+    const openSpy = vi.spyOn(ipc, "documentOpen").mockImplementation(async () => {
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: "B" } });
+      });
+      ipc.failNext(COMMANDS.documentReload, "NOT_FOUND", "file vanished");
+      return original();
+    });
+    const before = captured.current;
+    platform.emitMenuAction("file.open");
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+
+    // The toast names the actual failure, not a generic IO message, and the
+    // current session stays in place with its late text on disk.
+    expect(await screen.findByText("文件不存在或已被移动。")).toBeInTheDocument();
+    expect(screen.queryByText("读写文件时发生错误。")).not.toBeInTheDocument();
+    expect(captured.current).toBe(before);
+    expect(ipc.getFile("/docs/note.md")?.text.endsWith("AB")).toBe(true);
+  });
+
   it("keeps a dirty untitled document when the draft write fails", async () => {
     const ipc = fileIpc();
     const captured: { current: EditorSession | null } = { current: null };
