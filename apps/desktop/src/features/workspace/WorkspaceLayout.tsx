@@ -166,8 +166,9 @@ export function WorkspaceLayout() {
       }
     }
     // The user out-typed every retry; this is the last chance to capture the
-    // tail. A change during this final write is still caught for Open by the
-    // adoption tail passes below.
+    // tail. Changes during the writes above are caught by the adoption tail
+    // passes below; keystrokes landing during this final list refresh are not
+    // and remain inside the known narrow window.
     return (await attempt()) !== "failed";
   }, [getCurrentBundle, handleCommandError, refreshDrafts]);
 
