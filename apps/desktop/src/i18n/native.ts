@@ -22,6 +22,7 @@ export function buildNativeShellLabels(language: SupportedLanguage): NativeShell
     showAll: menu("showAll"),
     quitApp: menu("quitApp", { appName }),
     file: menu("file"),
+    new: menu("new"),
     open: menu("open"),
     save: menu("save"),
     closeWindow: menu("closeWindow"),

@@ -12,6 +12,7 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({ label: tauriMocks.windowLabel }),
 }));
 
+import { AppError } from "../ipc/errors";
 import { getCompositionTracker } from "./composition";
 import { FakePlatform } from "./fake";
 import { createTauriPlatform } from "./tauri";
@@ -65,6 +66,19 @@ describe("FakePlatform", () => {
 
     expect(received).toEqual(["file.open", "theme.dark"]);
     expect(platform.listenerCounts.menu).toBe(0);
+  });
+
+  it("delivers native New failures until unsubscribed", () => {
+    const platform = new FakePlatform();
+    const received: string[] = [];
+    const stop = platform.onDocumentNewFailed((error) => received.push(error.code));
+
+    platform.emitDocumentNewFailed(new AppError("IO", "window backend failed"));
+    stop();
+    platform.emitDocumentNewFailed(new AppError("IO", "again"));
+
+    expect(received).toEqual(["IO"]);
+    expect(platform.listenerCounts.newFailed).toBe(0);
   });
 });
 
@@ -161,6 +175,36 @@ describe("Tauri PlatformPort adapter", () => {
     expect(unlisten).toHaveBeenCalledTimes(1);
     handler?.({ payload: { action: "file.open", target: "main" } });
     expect(received).toEqual(["theme.dark"]);
+  });
+
+  it("maps app://document-new-failed and unsubscribes", async () => {
+    let handler: ((event: { payload: { code: string; message: string } }) => void) | undefined;
+    const unlisten = vi.fn<() => void>();
+    tauriMocks.listen.mockImplementation(async (_event: string, callback: typeof handler) => {
+      handler = callback;
+      return unlisten;
+    });
+
+    const platform = createTauriPlatform();
+    const received: string[] = [];
+    const stop = platform.onDocumentNewFailed((error) => received.push(error.code));
+
+    await vi.waitFor(() => {
+      expect(tauriMocks.listen).toHaveBeenCalledWith(
+        "app://document-new-failed",
+        expect.any(Function),
+        { target: { kind: "WebviewWindow", label: "main" } },
+      );
+      expect(handler).toBeTypeOf("function");
+    });
+
+    handler?.({ payload: { code: "IO", message: "window backend failed" } });
+    expect(received).toEqual(["IO"]);
+
+    stop();
+    expect(unlisten).toHaveBeenCalledTimes(1);
+    handler?.({ payload: { code: "IO", message: "again" } });
+    expect(received).toEqual(["IO"]);
   });
 
   it("delivers window blur and reports composition state", () => {

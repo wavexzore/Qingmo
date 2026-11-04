@@ -296,7 +296,7 @@ export const errors = {
   NOT_FOUND: "The file does not exist or was moved.",
   NOT_A_FILE: "The selected path is not a regular file.",
   UNSUPPORTED_EXTENSION: "Only .md and .markdown files are supported.",
-  FILE_TOO_LARGE: "The file exceeds the 10 MiB limit.",
+  FILE_TOO_LARGE: "Content too large: the file limit is 10 MiB, the crash-draft limit 2 MiB.",
   UNSUPPORTED_ENCODING: "Only UTF-8 or UTF-16 with a BOM is supported.",
   CONFLICT: "The file changed on disk; confirm the version first.",
   PERMISSION_DENIED: "You do not have permission to read or write this file.",
@@ -465,6 +465,7 @@ export const settings = {
 
 export const commandLabels = {
   file: {
+    new: "New file",
     open: "Open file",
     save: "Save file",
   },

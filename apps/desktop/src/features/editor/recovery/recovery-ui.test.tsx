@@ -1,12 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { DraftRecord } from "@qingmo/shared";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppServicesProvider } from "../../../app/AppServices";
 import { routes } from "../../../app/routes";
 import { AppErrorBoundary } from "../../../components/AppErrorBoundary";
 import { ToastProvider } from "../../../components/ToastHost";
+import { COMMANDS } from "../../../lib/ipc/commands";
 import { FakeIpc } from "../../../lib/ipc/fake";
 import { FakeLogPort } from "../../../lib/log/fake";
 import { FakePlatform } from "../../../lib/platform/fake";
@@ -65,6 +66,10 @@ function renderApp(ipc: FakeIpc, onSession?: (session: EditorSession | null) => 
   return router;
 }
 
+afterEach(() => {
+  window.history.replaceState({}, "", "/");
+});
+
 describe("recovery UI", () => {
   it("lists a draft, restores it as a new untitled session, and never writes the original path", async () => {
     const record = draft({
@@ -101,10 +106,62 @@ describe("recovery UI", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
     });
-    // The restored session now owns the draft, so a crash after restore still
-    // has a copy; only the banner entry disappears.
+    // The restored session forks the draft: another window may list the same
+    // original id, so the copy owns a new id and the original is released.
     const remaining = await ipc.sessionDraftList();
-    expect(remaining.map((entry) => entry.id)).toEqual([record.id]);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.id).not.toBe(record.id);
+    const copy = await ipc.sessionDraftRead(remaining[0]!.id);
+    expect(copy.text).toBe(record.text);
+  });
+
+  it("keeps the original draft visible when the copy write fails", async () => {
+    const record = draft();
+    const ipc = new FakeIpc();
+    ipc.seedDraft(record);
+    const latest: { current: EditorSession | null } = { current: null };
+    renderApp(ipc, (next) => {
+      latest.current = next;
+    });
+
+    expect(await screen.findByTestId("recovery-banner")).toHaveTextContent("1");
+    fireEvent.click(screen.getByTestId("recovery-open"));
+    await screen.findByTestId("recovery-list");
+    ipc.failNext(COMMANDS.sessionDraftWrite, "IO", "draft storage unavailable");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`recovery-restore-${record.id}`));
+    });
+
+    await waitFor(() => expect(latest.current?.readText()).toBe(record.text));
+    const stored = await ipc.sessionDraftList();
+    expect(stored.map((item) => item.id)).toContain(record.id);
+    expect(await screen.findByTestId("recovery-banner")).toBeInTheDocument();
+  });
+
+  it("drops a draft from the list when another window already discarded it", async () => {
+    const record = draft();
+    const ipc = new FakeIpc();
+    ipc.seedDraft(record);
+    renderApp(ipc);
+
+    expect(await screen.findByTestId("recovery-banner")).toHaveTextContent("1");
+    fireEvent.click(screen.getByTestId("recovery-open"));
+    await screen.findByTestId("recovery-list");
+    // Another window removed it; this window's list is still stale.
+    await ipc.sessionDraftDiscard(record.id);
+    vi.spyOn(ipc, "sessionDraftDiscard").mockResolvedValueOnce(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`recovery-discard-${record.id}`));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(`recovery-item-${record.id}`)).not.toBeInTheDocument();
+    });
+    // The only draft is gone, so the banner entry point disappears with it.
+    expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
+    expect(await ipc.sessionDraftList()).toHaveLength(0);
   });
 
   it("blocks restore while the current untitled document has content", async () => {
@@ -142,5 +199,22 @@ describe("recovery UI", () => {
       expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
     });
     expect(await ipc.sessionDraftList()).toHaveLength(0);
+  });
+
+  it("hides the banner in a named document window", async () => {
+    window.history.replaceState({}, "", "/?window=document");
+    const record = draft();
+    const ipc = new FakeIpc({ files: [{ path: "/docs/note.md", text: "note\n" }] });
+    ipc.seedDraft(record);
+    const payload = await ipc.documentOpen();
+    if (!payload) {
+      throw new Error("fake open must return a payload");
+    }
+    ipc.stagePending(payload);
+
+    renderApp(ipc);
+
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    expect(screen.queryByTestId("recovery-banner")).not.toBeInTheDocument();
   });
 });

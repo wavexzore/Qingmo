@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tauri::{AppHandle, Manager, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -7,16 +8,98 @@ use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{FilePayload, SaveResult};
 use crate::services::AtomicWriter;
 use crate::state::document_registry::ensure_supported_extension;
-use crate::state::{DocumentRegistry, DocumentWatcher, FocusTracker, WindowSessions};
+use crate::state::{
+    DocumentRegistry, DocumentWatcher, FocusTracker, StartupWindow, WindowSessions,
+};
 
-/// Native window title for an open document.
+/// The one native title format for every document window.
 ///
-/// The macOS window is the document surface, so the file name belongs in the
-/// title bar rather than in a second in-app header.
-pub(crate) fn window_title_for(path: &Path, app_name: &str) -> String {
-    match path.file_name().and_then(|name| name.to_str()) {
+/// The macOS window is the document surface, so the file name (or the
+/// localized "Untitled" name) belongs in the title bar rather than in a second
+/// in-app header.
+fn format_window_title(document_name: Option<&str>, app_name: &str) -> String {
+    match document_name {
         Some(name) => format!("{name} — {app_name}"),
         None => app_name.to_string(),
+    }
+}
+
+/// Native window title for an open document.
+pub(crate) fn window_title_for(path: &Path, app_name: &str) -> String {
+    format_window_title(path.file_name().and_then(|name| name.to_str()), app_name)
+}
+
+/// Native window title for a document that has no path yet.
+pub(crate) fn window_title_for_untitled(untitled_file_name: &str, app_name: &str) -> String {
+    format_window_title(Some(untitled_file_name), app_name)
+}
+
+/// Builds one document window with the single window configuration shared by
+/// Open and New, then records and applies focus.
+fn build_document_window<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    title: String,
+) -> tauri::Result<WebviewWindow<R>> {
+    let window = WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::App("index.html?window=document".into()),
+    )
+    .title(title)
+    .inner_size(1200.0, 800.0)
+    .min_inner_size(800.0, 600.0)
+    .focused(true)
+    .build()?;
+    app.state::<FocusTracker>().set(label);
+    if let Err(error) = window.set_focus() {
+        tracing::warn!(%error, "failed to focus the document window");
+    }
+    Ok(window)
+}
+
+/// Whether any window can hold a document.
+///
+/// About and Settings never do, so they cannot keep the app alive on their
+/// own. Used to decide whether a failed window creation must fall back to the
+/// main window.
+pub fn has_editable_window<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
+    app.webview_windows()
+        .keys()
+        .any(|label| !crate::commands::close::is_auxiliary_window(label))
+}
+
+/// Creates one document window and rolls back the caller's staged state when
+/// the webview cannot be built.
+///
+/// Open and New differ only in preparing the label/title and undoing their own
+/// staged state, so the build order, rollback and windowless fallback live
+/// here. A failure only creates the main window when the failed window would
+/// have been the last editable one.
+pub fn create_document_window<R, Build, Rollback>(
+    app: &AppHandle<R>,
+    label: String,
+    title: String,
+    build: Build,
+    rollback: Rollback,
+) -> Result<(), AppError>
+where
+    R: tauri::Runtime,
+    Build: FnOnce(&AppHandle<R>, &str, String) -> tauri::Result<WebviewWindow<R>>,
+    Rollback: FnOnce(),
+{
+    match build(app, &label, title) {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            rollback();
+            if !has_editable_window(app) {
+                crate::ensure_main_window(app);
+            }
+            Err(AppError::new(
+                AppErrorCode::Io,
+                format!("failed to create the document window: {error}"),
+            ))
+        }
     }
 }
 
@@ -31,6 +114,81 @@ pub async fn document_open(app: State<'_, AppHandle>) -> Result<(), AppError> {
     let app = app.inner().clone();
     let path = pick_document(&app).await?;
     open_path_in_new_window(app, path).await
+}
+
+/// Creates a new empty document window.
+///
+/// No payload is staged: the window's `document_take_pending` resolves `None`
+/// and the webview starts its existing untitled session. The command returns
+/// `null` because the caller has nothing to adopt.
+#[tauri::command]
+pub async fn document_new(app: State<'_, AppHandle>) -> Result<(), AppError> {
+    create_untitled_window(app.inner().clone()).await
+}
+
+const MAIN_WINDOW_WAIT_STEP: Duration = Duration::from_millis(10);
+const MAIN_WINDOW_WAIT_STEPS: usize = 50;
+
+/// Waits briefly for the startup fallback to finish creating `main`.
+///
+/// A New landing after the timer's claim but before the build finishes must
+/// reuse that untitled window instead of adding a second one.
+async fn wait_for_main<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
+    for _ in 0..MAIN_WINDOW_WAIT_STEPS {
+        if let Some(window) = app.get_webview_window("main") {
+            return Some(window);
+        }
+        // The boot build finished (success would have been caught above), so
+        // stop waiting out the full budget before building our own window.
+        if !app.state::<StartupWindow>().is_main_claimed() {
+            break;
+        }
+        tokio::time::sleep(MAIN_WINDOW_WAIT_STEP).await;
+    }
+    app.get_webview_window("main")
+}
+
+/// Creates an untitled document window.
+///
+/// Shared by the IPC command and the startup menu fallback (no webview is
+/// alive yet during the boot delay, so there is nothing to forward).
+pub async fn create_untitled_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), AppError> {
+    let startup = app.state::<StartupWindow>();
+    if !startup.claim_document_if_undecided() && startup.is_main_claimed() {
+        if let Some(main) = wait_for_main(&app).await {
+            startup.mark_opened();
+            if let Err(error) = main.set_focus() {
+                tracing::warn!(%error, "failed to focus the reused main window");
+            }
+            tracing::info!(window = "main", "New reused the boot main window");
+            return Ok(());
+        }
+        // The boot build ended without a window (it failed, or another launch
+        // path took over); this New still needs a window.
+        startup.mark_opened();
+    }
+    // `MainReady` (boot build finished) and `Document` (OS open or an earlier
+    // New) both fall through here, so each request gets its own window.
+
+    let locale = app.state::<crate::state::ShellLocale>();
+    let app_name = locale
+        .labels()
+        .map(|labels| labels.app_name)
+        .unwrap_or_else(|| "青墨".to_string());
+    let title = window_title_for_untitled(&locale.untitled_file_name(), &app_name);
+    let label = format!("doc-{}", uuid::Uuid::new_v4());
+    let sessions = app.state::<WindowSessions>().inner().clone();
+    sessions.mark_untitled(&label);
+
+    let rollback_label = label.clone();
+    create_document_window(&app, label, title, build_document_window, || {
+        sessions.clear_untitled(&rollback_label);
+    })?;
+    // From here on a document owns the launch, even if the boot main window
+    // exists; `was_opened` stays truthful for the rest of the process.
+    startup.mark_opened();
+    tracing::info!(window = %rollback_label, "opened an untitled document window");
+    Ok(())
 }
 
 /// Number of parent directories granted non-recursively for `../` images.
@@ -97,7 +255,10 @@ async fn pick_document(app: &AppHandle) -> Result<PathBuf, AppError> {
 /// it on boot through `document_take_pending`. The caller owns user-visible
 /// error reporting: the dialog command forwards it over IPC, the OS handler
 /// only logs it.
-pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Result<(), AppError> {
+pub(crate) async fn open_path_in_new_window<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    path: PathBuf,
+) -> Result<(), AppError> {
     let registry = app.state::<DocumentRegistry>().inner().clone();
     let sessions = app.state::<WindowSessions>().inner().clone();
 
@@ -124,35 +285,12 @@ pub(crate) async fn open_path_in_new_window(app: AppHandle, path: PathBuf) -> Re
     let label = format!("doc-{}", uuid::Uuid::new_v4());
     sessions.stage(&label, payload);
 
-    let built = WebviewWindowBuilder::new(
-        &app,
-        &label,
-        WebviewUrl::App("index.html?window=document".into()),
-    )
-    .title(title)
-    .inner_size(1200.0, 800.0)
-    .min_inner_size(800.0, 600.0)
-    .focused(true)
-    .build();
-
-    match built {
-        Ok(window) => {
-            tracing::info!(window = %label, "opened a document window");
-            app.state::<FocusTracker>().set(&label);
-            if let Err(error) = window.set_focus() {
-                tracing::warn!(%error, "failed to focus the document window");
-            }
-        }
-        Err(error) => {
-            sessions.discard_pending(&label);
-            registry.release(&doc_token);
-            return Err(AppError::new(
-                AppErrorCode::Io,
-                format!("failed to create the document window: {error}"),
-            ));
-        }
-    }
-
+    let rollback_label = label.clone();
+    create_document_window(&app, label, title, build_document_window, || {
+        sessions.discard_pending(&rollback_label);
+        registry.release(&doc_token);
+    })?;
+    tracing::info!(window = %rollback_label, "opened a document window");
     Ok(())
 }
 
@@ -320,6 +458,7 @@ pub async fn document_write_atomic(
 
 #[cfg(test)]
 mod tests {
+    use super::window_title_for_untitled;
     use super::{asset_scope_dirs, opened_paths, startup_paths, window_title_for};
     use std::path::Path;
     use tauri::Url;
@@ -334,6 +473,18 @@ mod tests {
         assert_eq!(
             window_title_for(Path::new("/docs/note.md"), "青墨"),
             "note.md — 青墨"
+        );
+    }
+
+    #[test]
+    fn untitled_window_title_uses_the_localized_file_name() {
+        assert_eq!(
+            window_title_for_untitled("未命名.md", "青墨"),
+            "未命名.md — 青墨"
+        );
+        assert_eq!(
+            window_title_for_untitled("Untitled.md", "Qingmo"),
+            "Untitled.md — Qingmo"
         );
     }
 

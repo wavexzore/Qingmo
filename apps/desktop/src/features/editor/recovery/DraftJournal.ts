@@ -1,4 +1,4 @@
-import type { DraftWriteRequest } from "@qingmo/shared";
+import type { DraftMeta, DraftWriteRequest } from "@qingmo/shared";
 
 import type { IpcPort } from "../../../lib/ipc/port";
 import type { EditorSession } from "../EditorSession";
@@ -9,6 +9,32 @@ export type DraftJournalCoordinator = Pick<SaveCoordinator, "subscribe" | "getSn
 
 export const DRAFT_DEBOUNCE_MS = 1_500;
 export const DRAFT_MAX_WAIT_MS = 5_000;
+
+/**
+ * Outcome of an explicit flush.
+ *
+ * `ok` with `meta: null` means the current snapshot is already preserved (or
+ * nothing needs preserving); callers replacing the session may proceed.
+ * `ok: false` carries the write error so they can keep the session instead.
+ */
+export type DraftFlushResult = { ok: true; meta: DraftMeta | null } | { ok: false; error: unknown };
+
+export interface DraftFlushOptions {
+  /**
+   * Write even when the same snapshot was already written by this session.
+   *
+   * The global store prunes old drafts, so the local `lastWrittenKey` is not
+   * proof the rows still exist. Callers replacing the session must force.
+   */
+  force?: boolean;
+  /**
+   * Also journal a dirty named document in its normal `dirty` state.
+   *
+   * Named documents usually rely on the save path, but a late edit between a
+   * save and the session replacement has no other durable carrier.
+   */
+  preserveNamedDirty?: boolean;
+}
 
 const defaultTimers: SaveTimerApi = {
   setTimeout: (callback, milliseconds) => setTimeout(callback, milliseconds),
@@ -34,6 +60,8 @@ export interface DraftJournalOptions {
  * - Untitled dirty documents always need a draft (there is no path to save).
  * - Named documents only draft while `error`/`conflict`, or during a retrying
  *   `scheduled` state; normal dirty/saving states are the save path's job.
+ * - An explicit `flushNow({preserveNamedDirty:true})` also journals a merely
+ *   dirty named document (session replacement with no save opportunity).
  * - A draft this session owns is deleted only after the coordinator reports
  *   `clean` with no pending edit. Drafts owned by an earlier session are never
  *   touched.
@@ -55,7 +83,11 @@ export class DraftJournal {
   private ownedDraftId: string | null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
-  private inFlight: Promise<void> | null = null;
+  private inFlight: Promise<DraftFlushResult> | null = null;
+  /** Content key of the write currently in flight, for deduplication. */
+  private inFlightKey: string | null = null;
+  /** Whether the in-flight write was forced; stronger callers never share. */
+  private inFlightForce = false;
   private lastWrittenKey: string | null = null;
   private lastSaveState: string | null = null;
   private warned = false;
@@ -141,17 +173,26 @@ export class DraftJournal {
     }
   }
 
-  /** Writes now when a draft is still warranted; safe to call while closing. */
-  async flushNow(): Promise<void> {
+  /**
+   * Writes now when a draft is still warranted; safe to call while closing.
+   *
+   * Returns whether the snapshot is preserved, not whether this call had to
+   * write: a snapshot already written earlier is a success. Callers that are
+   * about to replace the session must keep it on `ok: false`.
+   */
+  async flushNow({
+    force = false,
+    preserveNamedDirty = false,
+  }: DraftFlushOptions = {}): Promise<DraftFlushResult> {
     if (this.disposed || this.discarding) {
-      return;
+      return { ok: true, meta: null };
     }
     this.cancelTimers();
-    if (!this.shouldWrite()) {
+    if (!this.shouldWrite(preserveNamedDirty)) {
       this.releaseWhenClean();
-      return;
+      return { ok: true, meta: null };
     }
-    await this.writeOnce();
+    return this.writeOnce(force, preserveNamedDirty);
   }
 
   /**
@@ -181,13 +222,16 @@ export class DraftJournal {
     this.unsubscribeCoordinator();
   }
 
-  private shouldWrite(): boolean {
+  private shouldWrite(preserveNamedDirty = false): boolean {
     const session = this.session.getSnapshot();
     if (session.readOnly || !session.dirty) {
       return false;
     }
     if (this.session.isUntitled) {
       return this.session.editorState.doc.length > 0;
+    }
+    if (preserveNamedDirty) {
+      return true;
     }
     const save = this.coordinator.getSnapshot();
     return (
@@ -197,20 +241,57 @@ export class DraftJournal {
     );
   }
 
-  private writeOnce(): Promise<void> {
-    const run = (this.inFlight ?? Promise.resolve()).then(() => this.writeLatest());
+  private writeOnce(force: boolean, preserveNamedDirty: boolean): Promise<DraftFlushResult> {
+    const queuedKey = this.snapshotKey();
+    if (
+      this.inFlight !== null &&
+      this.inFlightKey === queuedKey &&
+      // A forced caller must not share a run that would skip: when the key is
+      // already on disk a plain flush is a no-op, while the forced contract
+      // is to rewrite the row regardless (it may have been evicted).
+      (!force || this.inFlightForce || queuedKey !== this.lastWrittenKey)
+    ) {
+      // An identical snapshot is already being written; sharing its result
+      // avoids a duplicate write to the same draft row (the close paths
+      // trigger an auto flush and an explicit flush at nearly the same time).
+      return this.inFlight;
+    }
+    const run = (this.inFlight ?? Promise.resolve({ ok: true, meta: null })).then(() =>
+      this.writeLatest(force, preserveNamedDirty),
+    );
     this.inFlight = run;
+    // Claim the key synchronously so a same-tick flush deduplicates before
+    // the queued write has even started.
+    this.inFlightKey = queuedKey;
+    this.inFlightForce = force;
     void run.finally(() => {
       if (this.inFlight === run) {
         this.inFlight = null;
+        this.inFlightKey = null;
+        this.inFlightForce = false;
       }
     });
     return run;
   }
 
-  private async writeLatest(): Promise<void> {
-    if (this.disposed || this.discarding || !this.shouldWrite()) {
-      return;
+  /** Identifies the draft row content: text, selection, title, and path. */
+  private snapshotKey(): string {
+    const snapshot = this.session.getSnapshot();
+    return JSON.stringify([
+      this.session.readText(),
+      snapshot.selection.anchor,
+      snapshot.selection.head,
+      snapshot.fileName,
+      this.session.isUntitled ? null : snapshot.docId,
+    ]);
+  }
+
+  private async writeLatest(
+    force: boolean,
+    preserveNamedDirty: boolean,
+  ): Promise<DraftFlushResult> {
+    if (this.disposed || this.discarding || !this.shouldWrite(preserveNamedDirty)) {
+      return { ok: true, meta: null };
     }
     const snapshot = this.session.getSnapshot();
     const text = this.session.readText();
@@ -219,9 +300,13 @@ export class DraftJournal {
     const title = snapshot.fileName;
     const path = this.session.isUntitled ? null : snapshot.docId;
     const key = JSON.stringify([text, anchor, head, title, path]);
-    if (key === this.lastWrittenKey) {
-      return;
+    if (!force && key === this.lastWrittenKey) {
+      // Already on disk from this session; the snapshot is preserved.
+      return { ok: true, meta: null };
     }
+    // Content may have drifted since the write was queued; later callers
+    // deduplicate against what is actually being written.
+    this.inFlightKey = key;
 
     const request: DraftWriteRequest = {
       ...(this.ownedDraftId ? { id: this.ownedDraftId } : {}),
@@ -235,16 +320,18 @@ export class DraftJournal {
     try {
       const meta = await this.ipc.sessionDraftWrite(request);
       if (this.disposed) {
-        return;
+        return { ok: true, meta };
       }
       this.ownedDraftId = meta.id;
       this.lastWrittenKey = key;
       this.releaseIfNoLongerNeeded();
+      return { ok: true, meta };
     } catch (error) {
       if (!this.warned) {
         this.warned = true;
         console.warn("failed to write the crash draft", error);
       }
+      return { ok: false, error };
     }
   }
 

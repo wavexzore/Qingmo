@@ -11,7 +11,7 @@ use crate::state::{CloseGuard, CloseOutcome, DocumentRegistry, DocumentWatcher, 
 ///
 /// About and Settings can own keyboard focus, but they neither confirm a quit
 /// nor keep the app alive after the last document closes.
-fn is_auxiliary_window(label: &str) -> bool {
+pub(crate) fn is_auxiliary_window(label: &str) -> bool {
     label == ABOUT_WINDOW_LABEL || label == SETTINGS_WINDOW_LABEL
 }
 

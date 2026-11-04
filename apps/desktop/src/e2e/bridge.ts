@@ -35,8 +35,9 @@ export interface E2eUpdateInfo {
  *
  * Playwright seeds `__QINGMO_E2E_SEED__` with `addInitScript`, then drives the
  * same FakeIpc/FakePlatform the unit tests use. The production build replaces
- * `MODE` with `production`, so this module is tree-shaken out of the Tauri
- * bundle.
+ * `MODE` with `production`; `isE2eMode` is also imported by the workspace to
+ * distinguish the E2E bridge from the native shell, so only the service
+ * builders are dropped from the Tauri bundle by tree-shaking.
  */
 export interface E2eBridge {
   setDiskText(path: string, text: string): void;

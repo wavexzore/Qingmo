@@ -282,6 +282,7 @@ pub struct NativeShellLabels {
     pub show_all: String,
     pub quit_app: String,
     pub file: String,
+    pub new: String,
     pub open: String,
     pub save: String,
     pub close_window: String,
@@ -370,7 +371,7 @@ fn validate_untitled_file_name(name: &str) -> Result<(), AppError> {
 
 impl NativeShellLabels {
     /// Menu/title labels only; `untitledFileName` is validated separately.
-    pub fn fields(&self) -> [(&'static str, &str); 39] {
+    pub fn fields(&self) -> [(&'static str, &str); 40] {
         [
             ("appName", &self.app_name),
             ("about", &self.about),
@@ -381,6 +382,7 @@ impl NativeShellLabels {
             ("showAll", &self.show_all),
             ("quitApp", &self.quit_app),
             ("file", &self.file),
+            ("new", &self.new),
             ("open", &self.open),
             ("save", &self.save),
             ("closeWindow", &self.close_window),
@@ -458,6 +460,7 @@ pub fn test_native_labels(app_name: &str) -> NativeShellLabels {
         show_all: "Show All".to_string(),
         quit_app: format!("Quit {app_name}"),
         file: "File".to_string(),
+        new: "New".to_string(),
         open: "Open…".to_string(),
         save: "Save".to_string(),
         close_window: "Close Window".to_string(),

@@ -76,6 +76,7 @@ mod tests {
             "showAll": "show all",
             "quitApp": "quit",
             "file": "file",
+            "new": "new",
             "open": "open",
             "save": "save",
             "closeWindow": "close",

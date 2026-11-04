@@ -20,6 +20,15 @@ export interface LivePreviewRequest {
 }
 
 /**
+ * Where a New request placed the untitled document.
+ *
+ * Tauri creates a native window (`window`). Browser harnesses cannot, so they
+ * reset the current window (`current`) and the caller adopts the new empty
+ * session in place.
+ */
+export type DocumentNewPlacement = "window" | "current";
+
+/**
  * The only document/file channel available to the UI.
  *
  * There is deliberately no path parameter: the native dialog runs in Rust and
@@ -34,6 +43,24 @@ export interface IpcPort {
    * they return the payload for the caller to adopt in place.
    */
   documentOpen(): Promise<FilePayload | null>;
+  /**
+   * Makes a payload returned by `documentOpen` the active document token, or
+   * restores an earlier token after an abandoned open.
+   *
+   * Browser adapters keep one active token and switch it on open; a caller
+   * that aborts (failed late write) can activate its previous token again.
+   * The `untitled` sentinel clears the active record (no writable path), and
+   * an unknown token is rejected with `INVALID_PATH`. The native adapter is a
+   * no-op because Open creates a new window.
+   */
+  documentActivate(docToken: string): Promise<void>;
+  /**
+   * Creates a new empty document. A native window receives an untitled
+   * session on boot and this window keeps its document untouched. Browser
+   * adapters return `current`; the caller flushes (or journals) the current
+   * document and then replaces this window's session.
+   */
+  documentNew(): Promise<DocumentNewPlacement>;
   /** Consumes the payload staged for a freshly created document window. */
   documentTakePending(): Promise<FilePayload | null>;
   documentReload(docToken: string): Promise<FilePayload>;

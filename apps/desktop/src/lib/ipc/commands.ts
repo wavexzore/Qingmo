@@ -26,6 +26,7 @@ import type {
  */
 export const COMMANDS = {
   documentOpen: "document_open",
+  documentNew: "document_new",
   documentTakePending: "document_take_pending",
   documentReload: "document_reload",
   documentSaveAs: "document_save_as",
@@ -60,6 +61,7 @@ export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
 
 export const COMMAND_NAMES = [
   COMMANDS.documentOpen,
+  COMMANDS.documentNew,
   COMMANDS.documentTakePending,
   COMMANDS.documentReload,
   COMMANDS.documentSaveAs,
@@ -96,6 +98,7 @@ export const EVENTS = {
   updateProgress: "app://update-progress",
   menuAction: "app://menu-action",
   documentChanged: "app://document-changed",
+  documentNewFailed: "app://document-new-failed",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -106,15 +109,21 @@ export const EVENT_NAMES = [
   EVENTS.updateProgress,
   EVENTS.menuAction,
   EVENTS.documentChanged,
+  EVENTS.documentNewFailed,
 ] as const satisfies readonly EventName[];
 
 /**
- * Native menu item ids forwarded by `app://menu-action`.
+ * Native menu item ids mirrored from Rust.
+ *
+ * `app://menu-action` forwards these ids except `file.new`, which Rust builds
+ * directly; the `fileNew` entry still names the command used by the palette and
+ * keyboard.
  *
  * Predefined AppKit items (undo/copy/paste/close/fullscreen) never appear
  * here: they are handled by the first responder inside the webview.
  */
 export const MENU_ACTIONS = {
+  fileNew: "file.new",
   fileOpen: "file.open",
   fileSave: "file.save",
   paletteOpen: "palette.open",
@@ -132,6 +141,7 @@ export const MENU_ACTIONS = {
 export type MenuAction = (typeof MENU_ACTIONS)[keyof typeof MENU_ACTIONS];
 
 export const MENU_ACTION_NAMES = [
+  MENU_ACTIONS.fileNew,
   MENU_ACTIONS.fileOpen,
   MENU_ACTIONS.fileSave,
   MENU_ACTIONS.paletteOpen,
@@ -148,6 +158,7 @@ export const MENU_ACTION_NAMES = [
 
 export interface CommandRequestMap {
   [COMMANDS.documentOpen]: Record<string, never>;
+  [COMMANDS.documentNew]: Record<string, never>;
   [COMMANDS.documentTakePending]: Record<string, never>;
   [COMMANDS.documentReload]: { docToken: string };
   [COMMANDS.documentSaveAs]: { text: string };
@@ -180,6 +191,7 @@ export interface CommandRequestMap {
 
 export interface CommandResponseMap {
   [COMMANDS.documentOpen]: null;
+  [COMMANDS.documentNew]: null;
   [COMMANDS.documentTakePending]: FilePayload | null;
   [COMMANDS.documentReload]: FilePayload;
   [COMMANDS.documentSaveAs]: FilePayload;
@@ -222,6 +234,7 @@ export function commandPermission(command: CommandName): string {
 
 export const COMMAND_PERMISSIONS = {
   [COMMANDS.documentOpen]: commandPermission(COMMANDS.documentOpen),
+  [COMMANDS.documentNew]: commandPermission(COMMANDS.documentNew),
   [COMMANDS.documentTakePending]: commandPermission(COMMANDS.documentTakePending),
   [COMMANDS.documentReload]: commandPermission(COMMANDS.documentReload),
   [COMMANDS.documentSaveAs]: commandPermission(COMMANDS.documentSaveAs),

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Outlet, useNavigate } from "react-router-dom";
 
-import type { AppError } from "@qingmo/shared";
+import type { AppError, FilePayload } from "@qingmo/shared";
 
 import { useAppServices } from "../../app/AppServices";
 import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
@@ -12,7 +12,9 @@ import { useToast } from "../../components/ToastHost";
 import { buildEditorUiCopy } from "../../i18n/editorCopy";
 import { normalizeLanguage } from "../../i18n/language";
 import { MENU_ACTIONS } from "../../lib/ipc/commands";
-import { AppError as AppErrorClass } from "../../lib/ipc/errors";
+import { AppError as AppErrorClass, normalizeError } from "../../lib/ipc/errors";
+import { isE2eMode } from "../../e2e/bridge";
+import { isTauriRuntime } from "../../lib/platform/runtime";
 import { uiStore } from "../../stores/uiStore";
 import { CommandPalette } from "../commands/CommandPalette";
 import { commandRegistry } from "../commands/CommandRegistry";
@@ -26,7 +28,9 @@ import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
 import { LogDialog } from "../logs/LogDialog";
 import { UpdateHost } from "../update/UpdateHost";
 import { useUpdateController, useUpdateSnapshot } from "../update/UpdateProvider";
+import { adoptInPlace } from "./adoptInPlace";
 import { openFile } from "./openFile";
+import { newDocument } from "./newDocument";
 
 /**
  * App-level workspace layout. It owns the single `file.open` registration and
@@ -39,7 +43,16 @@ export function WorkspaceLayout() {
   const toast = useToast();
   const navigate = useNavigate();
   const { ipc, platform } = useAppServices();
-  const { session, coordinator, recorder, journal, setSession } = useDocumentSession();
+  const {
+    session,
+    coordinator,
+    recorder,
+    journal,
+    refreshDrafts,
+    setSession,
+    startUntitled,
+    getCurrentBundle,
+  } = useDocumentSession();
   const closeGuard = useCloseGuard({
     ipc,
     platform,
@@ -53,6 +66,21 @@ export function WorkspaceLayout() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const openingRef = useRef(false);
+  const creatingRef = useRef(false);
+  // Open and New both replace (or retire) this window's session in the
+  // browser harness. Serializing them keeps a flush from racing the token
+  // swap of an Open started a moment later.
+  const replacementQueue = useRef<Promise<void>>(Promise.resolve());
+  const beginReplacement = useCallback(async (): Promise<() => void> => {
+    const previous = replacementQueue.current;
+    let release!: () => void;
+    replacementQueue.current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    return release;
+  }, []);
+
   const sessionRef = useRef(session);
   const coordinatorRef = useRef(coordinator);
   sessionRef.current = session;
@@ -75,6 +103,94 @@ export function WorkspaceLayout() {
       toast.push(t(`errors:${error.code}`));
     },
     [t, toast],
+  );
+
+  /**
+   * Preserves the current session before a harness Open/New replaces it.
+   *
+   * Named documents flush to disk; untitled ones force a crash draft (the
+   * store may have pruned an earlier copy). Every pass also refreshes the
+   * draft list before comparing, and text that arrives meanwhile triggers
+   * another pass (three times, then one final attempt). Returns false after
+   * surfacing the error, in which case the caller must keep the session.
+   */
+  const preserveCurrentSession = useCallback(async (): Promise<boolean> => {
+    const { session: current, coordinator, journal: liveJournal } = getCurrentBundle();
+    if (!current || !coordinator) {
+      return true;
+    }
+
+    const attempt = async (): Promise<"stable" | "changed" | "failed"> => {
+      const before = current.readText();
+      const flushed = await coordinator.flush("auto");
+      if (!flushed.ok) {
+        await liveJournal?.flushNow({ force: true, preserveNamedDirty: true });
+        await refreshDrafts();
+        handleCommandError(
+          flushed.error ??
+            new AppErrorClass(
+              flushed.failure === "conflict" ? "CONFLICT" : "IO",
+              "the current document could not be saved",
+            ),
+        );
+        return "failed";
+      }
+      if (current.isUntitled && before.length > 0) {
+        const draft = await liveJournal?.flushNow({ force: true });
+        if (!draft?.ok) {
+          await refreshDrafts();
+          handleCommandError(
+            draft && !draft.ok
+              ? normalizeError(draft.error)
+              : new AppErrorClass("IO", "the crash draft could not be written"),
+          );
+          return "failed";
+        }
+      }
+      // The list refresh is part of the protected interval too; text typed
+      // while it is in flight must trigger another pass, not vanish with the
+      // replaced session.
+      await refreshDrafts();
+      return current.readText() === before ? "stable" : "changed";
+    };
+
+    for (let attemptIndex = 0; attemptIndex < 3; attemptIndex += 1) {
+      const result = await attempt();
+      if (result === "failed") {
+        return false;
+      }
+      if (result === "stable") {
+        return true;
+      }
+    }
+    // The user out-typed every retry; this is the last chance to capture the
+    // tail. Changes during the writes above are caught by the adoption tail
+    // passes below; keystrokes landing during this final list refresh are not
+    // and remain inside the known narrow window.
+    return (await attempt()) !== "failed";
+  }, [getCurrentBundle, handleCommandError, refreshDrafts]);
+
+  /**
+   * Adopts a harness Open payload in place (browser/E2E only); see
+   * `adoptInPlace.ts` for the preserve/re-read/abandon contract.
+   */
+  const adoptOpened = useCallback(
+    (payload: FilePayload, baseline: string | null, previousToken: string | null) =>
+      adoptInPlace(
+        {
+          ipc,
+          getCurrentSession: () => getCurrentBundle().session,
+          preserveCurrentSession,
+          setSession,
+          reportError: (error) => toast.push(t(`errors:${normalizeError(error).code}`)),
+          reportBusy: () => toast.push(t("errors:BUSY")),
+          uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
+        },
+        payload,
+        baseline,
+        previousToken,
+      ),
+    [getCurrentBundle, i18n.language, ipc, preserveCurrentSession, setSession, t, toast],
   );
   useCommandKeybindings({
     enabled:
@@ -110,10 +226,21 @@ export function WorkspaceLayout() {
       return;
     }
     openingRef.current = true;
+    let release: (() => void) | null = null;
     try {
-      // Opening never replaces this window: Tauri creates a new document
-      // window, so there is nothing to flush and a dirty untitled buffer must
-      // not be forced through Save As first.
+      release = await beginReplacement();
+      // Only the browser harness (or the E2E bridge) replaces this window;
+      // native Open creates a new window and must stay usable even when the
+      // current document cannot be saved.
+      const replacesInPlace = !isTauriRuntime() || isE2eMode();
+      let baseline: string | null = null;
+      if (replacesInPlace) {
+        if (!(await preserveCurrentSession())) {
+          return;
+        }
+        baseline = getCurrentBundle().session?.readText() ?? null;
+      }
+      const previousToken = getCurrentBundle().session?.docToken ?? null;
       const result = await openFile(ipc);
       if (!result.ok) {
         if (result.error.code !== "CANCELLED") {
@@ -126,18 +253,78 @@ export function WorkspaceLayout() {
         // stays exactly as it was.
         return;
       }
-      // Browser harness fallback: no native window exists, adopt in place.
-      const created = await createDocumentSession(
-        ipc,
-        result.value,
-        buildEditorUiCopy(normalizeLanguage(i18n.language)),
-      );
-      setSession(created.session, { viewState: created.viewState });
+      if (replacesInPlace) {
+        // Browser harness fallback: no native window exists, adopt in place.
+        if (!(await adoptOpened(result.value, baseline, previousToken))) {
+          return;
+        }
+      } else {
+        const created = await createDocumentSession(
+          ipc,
+          result.value,
+          buildEditorUiCopy(normalizeLanguage(i18n.language)),
+        );
+        setSession(created.session, { viewState: created.viewState });
+      }
       navigate("/editor");
     } finally {
+      release?.();
       openingRef.current = false;
     }
-  }, [i18n.language, ipc, navigate, setSession, t, toast]);
+  }, [
+    adoptOpened,
+    beginReplacement,
+    getCurrentBundle,
+    i18n.language,
+    ipc,
+    navigate,
+    preserveCurrentSession,
+    setSession,
+    t,
+    toast,
+  ]);
+
+  const createDocument = useCallback(async () => {
+    if (creatingRef.current) {
+      return;
+    }
+    creatingRef.current = true;
+    let release: (() => void) | null = null;
+    try {
+      release = await beginReplacement();
+      // New never saves or replaces the current document in Tauri: a new
+      // window is created. Browser harnesses cannot, so they report `current`
+      // and this window is reset. Flush a named document before replacing it;
+      // an untitled document writes a crash draft instead (auto flush is a
+      // no-op there), and a failed flush keeps the current session visible.
+      const result = await newDocument(ipc);
+      if (!result.ok) {
+        handleCommandError(result.error);
+        return;
+      }
+      if (result.value === "current") {
+        const current = getCurrentBundle().session;
+        if (!(await preserveCurrentSession())) {
+          return;
+        }
+        if (getCurrentBundle().session === current) {
+          startUntitled();
+          navigate("/editor");
+        }
+      }
+    } finally {
+      release?.();
+      creatingRef.current = false;
+    }
+  }, [
+    beginReplacement,
+    getCurrentBundle,
+    handleCommandError,
+    ipc,
+    navigate,
+    preserveCurrentSession,
+    startUntitled,
+  ]);
 
   const runMenuCommand = useCallback(
     async (id: string) => {
@@ -152,9 +339,9 @@ export function WorkspaceLayout() {
     [handleCommandError],
   );
 
-  // Native menu items are mirrored by the same availability gate as
-  // keyboard shortcuts: no menu-driven open/save while a modal or install is
-  // in progress.
+  // Menu items that still reach the webview share the keyboard-shortcut
+  // availability gate. Native New is handled entirely in Rust and is always
+  // available.
   const menuEnabled =
     !paletteOpen &&
     !logsOpen &&
@@ -168,6 +355,9 @@ export function WorkspaceLayout() {
     }
     return platform.onMenuAction((action) => {
       switch (action) {
+        case MENU_ACTIONS.fileNew:
+          void createDocument();
+          break;
         case MENU_ACTIONS.fileOpen:
           void openDocument();
           break;
@@ -206,7 +396,12 @@ export function WorkspaceLayout() {
           break;
       }
     });
-  }, [menuEnabled, openDocument, openPalette, platform, runMenuCommand]);
+  }, [menuEnabled, createDocument, openDocument, openPalette, platform, runMenuCommand]);
+
+  // Native New bypasses the webview; Rust only emits this when it failed.
+  useEffect(() => {
+    return platform.onDocumentNewFailed(handleCommandError);
+  }, [platform, handleCommandError]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({
@@ -220,6 +415,17 @@ export function WorkspaceLayout() {
     });
     return () => disposable.dispose();
   }, []);
+
+  useEffect(() => {
+    const disposable = commandRegistry.register({
+      id: "file.new",
+      titleKey: "commands:file.new",
+      category: "commands:category.file",
+      keybinding: "Mod+N",
+      run: createDocument,
+    });
+    return () => disposable.dispose();
+  }, [createDocument]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({

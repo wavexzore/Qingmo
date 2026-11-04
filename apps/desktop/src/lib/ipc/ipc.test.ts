@@ -247,6 +247,7 @@ describe("FakeIpc", () => {
     });
 
     const opened = await ipc.documentOpen();
+    await ipc.documentActivate(opened.docToken);
     expect(opened.path).toBe("/docs/note.md");
     expect(opened.text).toBe("a😀b\n");
     expect(opened.textUnits).toBe(5);
@@ -312,8 +313,10 @@ describe("FakeIpc", () => {
       ],
     });
     const first = await ipc.documentOpen();
+    await ipc.documentActivate(first.docToken);
     ipc.setOpenFile("/docs/b.md");
     const second = await ipc.documentOpen();
+    await ipc.documentActivate(second.docToken);
 
     expect(second.docToken).not.toBe(first.docToken);
     await expect(
@@ -324,11 +327,43 @@ describe("FakeIpc", () => {
     });
   });
 
+  it("can reactivate the token of an abandoned open", async () => {
+    const ipc = new FakeIpc({
+      files: [
+        { path: "/docs/a.md", text: "a" },
+        { path: "/docs/b.md", text: "b" },
+      ],
+    });
+    const first = await ipc.documentOpen();
+    await ipc.documentActivate(first.docToken);
+    ipc.setOpenFile("/docs/b.md");
+    const abandoned = await ipc.documentOpen();
+
+    // The caller changed its mind before adopting; the old token must work.
+    await ipc.documentActivate(first.docToken);
+    await expect(
+      ipc.documentWriteAtomic({ docToken: first.docToken, text: "late\n" }),
+    ).resolves.toMatchObject({ hash: fakeHash("late\n") });
+    expect(ipc.getFile("/docs/a.md")?.text).toBe("late\n");
+    await expect(
+      ipc.documentWriteAtomic({ docToken: abandoned.docToken, text: "x" }),
+    ).rejects.toMatchObject({ code: "INVALID_PATH" });
+
+    // Untitled sessions use the constant token and have no active record.
+    await ipc.documentActivate("untitled");
+    await expect(
+      ipc.documentWriteAtomic({ docToken: "untitled", text: "x" }),
+    ).rejects.toMatchObject({
+      code: "INVALID_PATH",
+    });
+  });
+
   it("detects an external change and allows an exact-version override", async () => {
     const ipc = new FakeIpc({
       files: [{ path: "/docs/note.md", text: "base\n" }],
     });
     const opened = await ipc.documentOpen();
+    await ipc.documentActivate(opened.docToken);
     ipc.setDiskText("/docs/note.md", "external\n");
 
     const conflict = await ipc
@@ -357,6 +392,7 @@ describe("FakeIpc", () => {
       files: [{ path: "/docs/note.md", text: "base\n" }],
     });
     const opened = await ipc.documentOpen();
+    await ipc.documentActivate(opened.docToken);
     ipc.setDiskText("/docs/note.md", "first\n");
     const first = asAppError(
       await ipc
@@ -386,6 +422,7 @@ describe("FakeIpc", () => {
       files: [{ path: "/docs/note.md", text: "base\n" }],
     });
     const opened = await ipc.documentOpen();
+    await ipc.documentActivate(opened.docToken);
     ipc.setDiskText("/docs/note.md", "external\n");
 
     await expect(
@@ -410,12 +447,14 @@ describe("FakeIpc", () => {
     });
 
     const mdx = await ipc.documentOpen();
+    await ipc.documentActivate(mdx.docToken);
     await expect(
       ipc.documentWriteAtomic({ docToken: mdx.docToken, text: "mine\n" }),
     ).rejects.toMatchObject({ code: "READ_ONLY" });
 
     ipc.setOpenFile("/docs/mixed.md");
     const mixed = await ipc.documentOpen();
+    await ipc.documentActivate(mixed.docToken);
     await expect(
       ipc.documentWriteAtomic({
         docToken: mixed.docToken,
@@ -430,6 +469,7 @@ describe("FakeIpc", () => {
       files: [{ path: "/docs/note.md", text: "base\n" }],
     });
     const opened = await ipc.documentOpen();
+    await ipc.documentActivate(opened.docToken);
     const before = ipc.getFile("/docs/note.md");
 
     await expect(
@@ -481,6 +521,7 @@ describe("FakeIpc", () => {
       message: "busy once",
     });
     const opened = await ipc.documentOpen();
+    await ipc.documentActivate(opened.docToken);
     if (!opened) {
       throw new Error("fake open must return a payload");
     }
