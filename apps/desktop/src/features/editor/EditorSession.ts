@@ -16,12 +16,22 @@ import {
   setPlaceholderEffect,
   setReadOnlyEffect,
   setThemeEffect,
+  setTypographyEffect,
   themeExtension,
   type EditorUiCopy,
   type HeadingOutlineState,
   type PreviewTier,
 } from "@qingmo/editor-core";
-import type { FilePayload, ReadOnlyReason, SaveResult, TextFormat } from "@qingmo/shared";
+import {
+  DEFAULT_EDITOR_TYPOGRAPHY,
+  editorTypographyEquals,
+  normalizeEditorTypography,
+  type EditorTypography,
+  type FilePayload,
+  type ReadOnlyReason,
+  type SaveResult,
+  type TextFormat,
+} from "@qingmo/shared";
 
 import type { SaveState } from "../../lib/save-state";
 
@@ -111,6 +121,12 @@ export interface EditorSessionOptions {
   initialText?: string;
   /** Marks a restored untitled draft as dirty before the first edit. */
   initialDirty?: boolean;
+  /**
+   * Initial editor typography. Production relies on the default plus the
+   * `useEditorTypography` layout effect; tests and reloads can pass it
+   * explicitly so the very first state already carries the value.
+   */
+  typography?: EditorTypography;
 }
 
 function fileNameOf(path: string): string {
@@ -212,6 +228,8 @@ export class EditorSession {
   private untitled: boolean;
   private theme: "light" | "dark" = "light";
   private themeApplied = false;
+  private typography: EditorTypography;
+  private pendingTypography: EditorTypography | null = null;
   private view: EditorView | null = null;
   private compositionCleanup: (() => void) | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -238,6 +256,7 @@ export class EditorSession {
     this.uiCopy = options.uiCopy;
     this.untitled = options.untitledTitle !== undefined;
     this.previewPreference = options.previewPreference ?? true;
+    this.typography = normalizeEditorTypography(options.typography ?? DEFAULT_EDITOR_TYPOGRAPHY);
 
     // `createEditorState` normalizes line endings, so derive the tier from the
     // normalized length in the same way the factory does.
@@ -249,6 +268,7 @@ export class EditorSession {
       extraExtensions: this.baseExtensions,
       imageSrcResolver: this.imageResolver,
       previewEnabled: effective,
+      typography: this.typography,
       ...(options.initialSelection ? { selection: options.initialSelection } : {}),
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
       ...(this.uiCopy !== undefined ? { uiCopy: this.uiCopy } : {}),
@@ -437,6 +457,7 @@ export class EditorSession {
       extraExtensions: this.baseExtensions,
       imageSrcResolver: this.imageResolver,
       previewEnabled: effective,
+      typography: this.typography,
       ...(this.placeholder !== undefined ? { placeholder: this.placeholder } : {}),
       ...(this.uiCopy !== undefined ? { uiCopy: this.uiCopy } : {}),
     });
@@ -455,6 +476,9 @@ export class EditorSession {
     // A reload must not reset the user's preview preference; only the tier
     // and the effective mode are re-derived.
     this.modeAttached = effective;
+    // The fresh state already installs `this.typography`; any deferred IME
+    // dispatch is obsolete now.
+    this.pendingTypography = null;
     this.metadata = metadataOf(payload);
 
     if (this.view) {
@@ -580,6 +604,28 @@ export class EditorSession {
     } else {
       this.state = this.state.update({ effects: effect }).state;
     }
+  }
+
+  /**
+   * Reconfigures only the typography compartment. The view identity, document,
+   * selection and undo history survive. Equal values are a no-op so a store
+   * notification cannot trigger a needless CM6 content measurement.
+   */
+  applyTypography(next: EditorTypography): void {
+    if (this.disposed) {
+      return;
+    }
+    const normalized = normalizeEditorTypography(next);
+    if (editorTypographyEquals(normalized, this.typography) && this.pendingTypography === null) {
+      return;
+    }
+    this.typography = normalized;
+    this.pendingTypography = normalized;
+    this.flushTypography();
+  }
+
+  getTypography(): EditorTypography {
+    return this.typography;
   }
 
   /**
@@ -892,6 +938,7 @@ export class EditorSession {
     this.compositionCleanup?.();
     this.pendingPlaceholder = null;
     this.pendingUiCopy = null;
+    this.pendingTypography = null;
     this.pendingModeSync = false;
     this.modeSyncScheduled = false;
     this.listeners.clear();
@@ -903,6 +950,7 @@ export class EditorSession {
 
   private attachCompositionListener(view: EditorView): void {
     const onCompositionEnd = (): void => {
+      this.flushTypography();
       this.flushPlaceholder();
       this.flushUiCopy();
       if (this.pendingModeSync) {
@@ -914,6 +962,23 @@ export class EditorSession {
       view.contentDOM.removeEventListener("compositionend", onCompositionEnd);
       this.compositionCleanup = null;
     };
+  }
+
+  private flushTypography(): void {
+    if (this.disposed || this.pendingTypography === null) {
+      return;
+    }
+    if (this.view?.composing) {
+      return;
+    }
+    const typography = this.pendingTypography;
+    this.pendingTypography = null;
+    const effect = setTypographyEffect(typography);
+    if (this.view) {
+      this.view.dispatch({ effects: effect });
+    } else {
+      this.state = this.state.update({ effects: effect }).state;
+    }
   }
 
   private flushPlaceholder(): void {

@@ -1,4 +1,9 @@
-import { LANGUAGE_STORAGE_KEY, THEME_STORAGE_KEY, type UiStore } from "../stores/uiStore";
+import {
+  EDITOR_TYPOGRAPHY_STORAGE_KEY,
+  LANGUAGE_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  type UiStore,
+} from "../stores/uiStore";
 
 /**
  * Keeps every webview (main, document windows, About) in sync when another
@@ -12,9 +17,10 @@ export function watchUiStorage(
     if (
       event.key === null ||
       event.key === THEME_STORAGE_KEY ||
-      event.key === LANGUAGE_STORAGE_KEY
+      event.key === LANGUAGE_STORAGE_KEY ||
+      event.key === EDITOR_TYPOGRAPHY_STORAGE_KEY
     ) {
-      store.syncFromStorage();
+      store.syncFromStorage(event.key);
     }
   };
 

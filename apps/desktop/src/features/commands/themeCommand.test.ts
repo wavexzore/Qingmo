@@ -20,6 +20,7 @@ describe("view.toggleTheme command", () => {
       theme: "system",
       resolvedTheme: "light",
       language: "zh-CN",
+      typography: { fontSize: 15, fontFamily: "mono" },
     });
 
     const result = await registry.execute("view.toggleTheme");
@@ -29,6 +30,7 @@ describe("view.toggleTheme command", () => {
       theme: "dark",
       resolvedTheme: "dark",
       language: "zh-CN",
+      typography: { fontSize: 15, fontFamily: "mono" },
     });
 
     disposable.dispose();

@@ -408,11 +408,11 @@ export const settings = {
     language: "界面语言",
   },
   title: "设置",
-  lede: "让青墨以你习惯的语言开口。",
+  lede: "语言、排版，以及纸面上的安静细节。",
   nav: {
     caption: "偏好",
     general: "通用",
-    generalNote: "界面语言",
+    generalNote: "界面语言与排版",
   },
   storageNote: "所有偏好只保存在这台设备上。",
   localFirst: "LOCAL-FIRST",
@@ -421,9 +421,10 @@ export const settings = {
     general: "通用",
   },
   heading: "通用设置",
-  description: "应用的界面语言。更改会立即应用，不需要重启。",
+  description: "界面语言与编辑器排版。更改会立即应用，不需要重启。",
   section: {
     interface: "界面",
+    typography: "排版",
   },
   language: {
     title: "语言",
@@ -436,10 +437,30 @@ export const settings = {
     enDetail: "English",
     enCode: "EN",
   },
+  typography: {
+    fontSize: "字号",
+    fontSizeHint: "12–30 px，默认 15 px。",
+    fontFamily: "字体",
+    fontFamilyHint: "仅作用于正文。代码块、表格与图表保持各自字体。",
+    family: {
+      mono: "等宽",
+      monoDetail: "SF Mono · JetBrains Mono",
+      sans: "无衬线",
+      sansDetail: "Avenir Next · 苹方",
+      serif: "衬线",
+      serifDetail: "Iowan Old Style · 宋体",
+    },
+    preview: "预览",
+    previewAria: "排版预览",
+    previewText:
+      "永和九年，岁在癸丑，暮春之初，会于会稽山阴之兰亭。0123456789 —— 安静的纸面，清晰的思绪。",
+    hint: "应用到所有已打开的编辑器窗口。",
+    reset: "恢复默认",
+  },
   hint: "更改会立即应用到所有窗口。",
   note: {
-    quote: "语言是工具开口的方式。",
-    body: "青墨只翻译界面本身。你的 Markdown 文本、文件名与元数据始终保持原样。",
+    quote: "工具应当以你的语言开口，也以你的字体落笔。",
+    body: "青墨只翻译界面，从不改写你的 Markdown。字体设置只作用于编辑器，文件内容始终保持原样。",
     ghost: "语",
   },
   footer: {
@@ -448,6 +469,8 @@ export const settings = {
   },
   toast: {
     languageChanged: "界面语言已切换为 {{language}}。",
+    typographyReset: "编辑器排版已恢复默认。",
+    typographyPersistenceFailed: "无法保存排版设置；本次会话仍生效，重启后会恢复默认。",
   },
   actions: {
     close: "关闭设置",

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_EDITOR_TYPOGRAPHY, type EditorTypography } from "@qingmo/shared";
+
 import {
+  EDITOR_TYPOGRAPHY_STORAGE_KEY,
   LANGUAGE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   UiStore,
@@ -18,6 +21,7 @@ interface MemoryStorage extends ThemeStorage {
 function memoryStorage(
   initialTheme?: string | null,
   initialLanguage?: string | null,
+  initialTypography?: string | null,
 ): MemoryStorage {
   const values = new Map<string, string>();
   if (initialTheme !== undefined && initialTheme !== null) {
@@ -25,6 +29,9 @@ function memoryStorage(
   }
   if (initialLanguage !== undefined && initialLanguage !== null) {
     values.set(LANGUAGE_STORAGE_KEY, initialLanguage);
+  }
+  if (initialTypography !== undefined && initialTypography !== null) {
+    values.set(EDITOR_TYPOGRAPHY_STORAGE_KEY, initialTypography);
   }
   return {
     values,
@@ -43,8 +50,9 @@ function uiSnapshot(
   theme: ThemePreference,
   resolvedTheme: "light" | "dark",
   language: "zh-CN" | "en" = "zh-CN",
+  typography: EditorTypography = DEFAULT_EDITOR_TYPOGRAPHY,
 ) {
-  return { theme, resolvedTheme, language };
+  return { theme, resolvedTheme, language, typography };
 }
 
 interface FakeMedia extends ThemeMediaQuery {
@@ -274,5 +282,123 @@ describe("uiStore language", () => {
     expect(store.getSnapshot().language).toBe("en");
     expect(store.getSnapshot().theme).toBe("system");
     expect(store.readPersistedLanguage()).toBeNull();
+  });
+});
+
+describe("uiStore typography", () => {
+  it("defaults to 15px mono and reads a valid persisted JSON value", () => {
+    const defaultStore = createStore({ storage: memoryStorage(null) });
+    expect(defaultStore.getSnapshot().typography).toEqual(DEFAULT_EDITOR_TYPOGRAPHY);
+
+    const stored = memoryStorage(
+      null,
+      null,
+      JSON.stringify({ version: 1, fontSize: 22, fontFamily: "serif" }),
+    );
+    const store = createStore({ storage: stored });
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 22, fontFamily: "serif" });
+  });
+
+  it("falls back to defaults for corrupt or out-of-range stored values", () => {
+    const corrupt = createStore({ storage: memoryStorage(null, null, "{not json") });
+    expect(corrupt.getSnapshot().typography).toEqual(DEFAULT_EDITOR_TYPOGRAPHY);
+
+    const outOfRange = memoryStorage(
+      null,
+      null,
+      JSON.stringify({ version: 1, fontSize: 99, fontFamily: "comic" }),
+    );
+    const clamped = createStore({ storage: outOfRange });
+    expect(clamped.getSnapshot().typography).toEqual({ fontSize: 30, fontFamily: "mono" });
+  });
+
+  it("persists one atomic JSON document and ignores equal values", () => {
+    const storage = memoryStorage(null);
+    const store = createStore({ storage });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    expect(store.setTypography({ fontSize: 20, fontFamily: "sans" })).toBe(true);
+    expect(storage.values.get(EDITOR_TYPOGRAPHY_STORAGE_KEY)).toBe(
+      JSON.stringify({ version: 1, fontSize: 20, fontFamily: "sans" }),
+    );
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 20, fontFamily: "sans" });
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    expect(store.setTypography({ fontSize: 20, fontFamily: "sans" })).toBe(true);
+    expect(storage.writes).toHaveLength(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes setter input before persisting and notifying", () => {
+    const storage = memoryStorage(null);
+    const store = createStore({ storage });
+
+    store.setTypography({ fontSize: 40.9, fontFamily: "serif" });
+
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 30, fontFamily: "serif" });
+    expect(storage.values.get(EDITOR_TYPOGRAPHY_STORAGE_KEY)).toBe(
+      JSON.stringify({ version: 1, fontSize: 30, fontFamily: "serif" }),
+    );
+  });
+
+  it("adopts typography written by another window", () => {
+    const storage = memoryStorage(null);
+    const store = createStore({ storage });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    storage.values.set(
+      EDITOR_TYPOGRAPHY_STORAGE_KEY,
+      JSON.stringify({ version: 1, fontSize: 18, fontFamily: "sans" }),
+    );
+    store.syncFromStorage(EDITOR_TYPOGRAPHY_STORAGE_KEY);
+
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 18, fontFamily: "sans" });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an in-memory typography when writes fail, ignoring unrelated keys", () => {
+    const values = new Map<string, string>();
+    const storage: ThemeStorage = {
+      getItem(key) {
+        return values.get(key) ?? null;
+      },
+      setItem() {
+        throw new Error("quota exceeded");
+      },
+    };
+    const store = createStore({ storage });
+
+    expect(store.setTypography({ fontSize: 24, fontFamily: "serif" })).toBe(false);
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 24, fontFamily: "serif" });
+
+    values.set(THEME_STORAGE_KEY, "dark");
+    store.syncFromStorage(THEME_STORAGE_KEY);
+    expect(store.getSnapshot().theme).toBe("dark");
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 24, fontFamily: "serif" });
+
+    values.set(
+      EDITOR_TYPOGRAPHY_STORAGE_KEY,
+      JSON.stringify({ version: 1, fontSize: 16, fontFamily: "sans" }),
+    );
+    store.syncFromStorage(EDITOR_TYPOGRAPHY_STORAGE_KEY);
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 16, fontFamily: "sans" });
+  });
+
+  it("survives blocked storage without throwing", () => {
+    const storage: ThemeStorage = {
+      getItem() {
+        throw new Error("storage blocked");
+      },
+      setItem() {
+        throw new Error("storage blocked");
+      },
+    };
+    const store = createStore({ storage });
+
+    expect(store.getSnapshot().typography).toEqual(DEFAULT_EDITOR_TYPOGRAPHY);
+    expect(() => store.setTypography({ fontSize: 18, fontFamily: "sans" })).not.toThrow();
+    expect(store.getSnapshot().typography).toEqual({ fontSize: 18, fontFamily: "sans" });
   });
 });
