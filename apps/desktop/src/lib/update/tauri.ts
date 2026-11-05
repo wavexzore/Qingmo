@@ -1,4 +1,4 @@
-import type { UpdateProgressPayload, UpdateSnapshot } from "@qingmo/shared";
+import type { UpdateFlushRequest, UpdateProgressPayload, UpdateSnapshot } from "@qingmo/shared";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -19,6 +19,14 @@ async function invokeUpdate<K extends keyof typeof COMMANDS>(
 async function invokeInstall(): Promise<void> {
   try {
     await invoke<null>(COMMANDS.appUpdateInstall, {});
+  } catch (error) {
+    throw normalizeError(error);
+  }
+}
+
+async function invokeFlushAck(requestId: number, ok: boolean): Promise<void> {
+  try {
+    await invoke<null>(COMMANDS.appUpdateFlushAck, { requestId, ok });
   } catch (error) {
     throw normalizeError(error);
   }
@@ -65,6 +73,21 @@ export function createTauriUpdatePort(): UpdatePort {
       } catch (error) {
         throw normalizeError(error);
       }
+    },
+    async onFlushRequest(handler) {
+      try {
+        const unlisten = await listen<UpdateFlushRequest>(EVENTS.updateFlushRequest, (event) => {
+          handler(event.payload);
+        });
+        return () => {
+          unlisten();
+        };
+      } catch (error) {
+        throw normalizeError(error);
+      }
+    },
+    flushAck(requestId, ok) {
+      return invokeFlushAck(requestId, ok);
     },
   };
 }

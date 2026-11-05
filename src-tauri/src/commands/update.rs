@@ -2,19 +2,21 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_updater::{Error as UpdaterError, UpdaterExt};
-
 use crate::error::{AppError, AppErrorCode};
-use crate::ipc::contract::{EVENT_UPDATE_PROGRESS, EVENT_UPDATE_STATE};
-use crate::ipc::dto::{UpdateProgress, UpdateProgressPayload, UpdateSnapshot};
-use crate::state::{CloseGuard, UpdateManager};
+use crate::ipc::contract::{EVENT_UPDATE_FLUSH_REQUEST, EVENT_UPDATE_PROGRESS, EVENT_UPDATE_STATE};
+use crate::ipc::dto::{UpdateFlushRequest, UpdateProgress, UpdateProgressPayload, UpdateSnapshot};
+use crate::state::{CloseGuard, UpdateFlushGate, UpdateManager};
+use serde_json::json;
+use tauri::{AppHandle, Emitter, Manager, Runtime, State, WebviewWindow};
+use tauri_plugin_updater::{Error as UpdaterError, UpdaterExt};
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
+/// A document save may legitimately take a while; a window that cannot answer
+/// within this budget fails the install instead of risking unsaved text.
+const FLUSH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy)]
 enum Operation {
@@ -182,11 +184,93 @@ pub async fn app_update_download<R: Runtime>(
     }
 }
 
+/// Asks every editable window to save before the app restarts.
+///
+/// The initiator is included on purpose: it flushed before invoking the
+/// command, but the user may have typed again while the command waited. The
+/// answer is a barrier, not a notification: a failed or missing save must
+/// abort the install so the restart cannot discard a document.
+async fn flush_before_install<R: Runtime>(
+    app: &AppHandle<R>,
+    gate: &UpdateFlushGate,
+    version: Option<&str>,
+) -> Result<(), AppError> {
+    let targets: Vec<String> = app
+        .webview_windows()
+        .keys()
+        .filter(|label| !crate::commands::close::is_auxiliary_window(label))
+        .cloned()
+        .collect();
+    if targets.is_empty() {
+        return Ok(());
+    }
+
+    let (request_id, receiver) = gate.begin(targets.clone());
+    for label in &targets {
+        if let Err(error) = app.emit_to(
+            label.as_str(),
+            EVENT_UPDATE_FLUSH_REQUEST,
+            UpdateFlushRequest { request_id },
+        ) {
+            tracing::warn!(window = %label, %error, "failed to request a pre-install flush");
+            let _ = gate.ack(request_id, label, false);
+        }
+    }
+
+    match tokio::time::timeout(FLUSH_TIMEOUT, receiver).await {
+        Ok(Ok(Ok(()))) => Ok(()),
+        Ok(Ok(Err(failed))) => {
+            tracing::warn!(windows = ?failed, "a window could not flush before install");
+            Err(update_error(Operation::Install, "flush", true, version))
+        }
+        Ok(Err(error)) => {
+            tracing::warn!(%error, "the update flush request was abandoned");
+            Err(update_error(Operation::Install, "flush", true, version))
+        }
+        Err(_) => {
+            gate.cancel(request_id);
+            tracing::warn!(
+                timeout_seconds = FLUSH_TIMEOUT.as_secs(),
+                "timed out waiting for windows to flush before install"
+            );
+            Err(update_error(
+                Operation::Install,
+                "flush-timeout",
+                false,
+                version,
+            ))
+        }
+    }
+}
+
+/// Records one window's answer to `app://update-flush-request`.
+///
+/// A stale answer (the install already timed out or failed) is ignored: the
+/// window did its work, and failing the command would only surface a spurious
+/// error after the fact.
+#[tauri::command]
+pub fn app_update_flush_ack<R: Runtime>(
+    window: WebviewWindow<R>,
+    gate: State<'_, UpdateFlushGate>,
+    request_id: u64,
+    ok: bool,
+) -> Result<(), AppError> {
+    if !gate.ack(request_id, window.label(), ok) {
+        tracing::debug!(
+            window = window.label(),
+            request_id,
+            "ignored a stale update flush acknowledgement"
+        );
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn app_update_install<R: Runtime>(
     app: AppHandle<R>,
     manager: State<'_, UpdateManager>,
     close_guard: State<'_, CloseGuard>,
+    flush_gate: State<'_, UpdateFlushGate>,
 ) -> Result<(), AppError> {
     close_guard.begin_install()?;
     let generation = match manager.begin_install() {
@@ -213,6 +297,16 @@ pub async fn app_update_install<R: Runtime>(
         emit_state(&app, &manager.snapshot());
         return Err(error);
     };
+
+    // Every editable window, including this one, must report a clean save
+    // before the restart; the initiator may have typed while the command
+    // waited.
+    if let Err(error) = flush_before_install(&app, flush_gate.inner(), version.as_deref()).await {
+        let _ = manager.fail_install(generation, error.clone(), false);
+        close_guard.end_install();
+        emit_state(&app, &manager.snapshot());
+        return Err(error);
+    }
 
     let result = tauri::async_runtime::spawn_blocking(move || update.install(artifact)).await;
 

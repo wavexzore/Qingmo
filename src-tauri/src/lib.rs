@@ -663,6 +663,24 @@ pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
     startup.mark_main_ready();
 }
 
+/// Opens one document delivered by the operating system.
+///
+/// The open may fail after the window starts building (missing file, unsupported
+/// path); in that case a launch with no window must still end with the blank
+/// main window instead of a windowless process.
+fn open_path_from_os<R: Runtime>(app: &AppHandle<R>, path: PathBuf) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = commands::document::open_path_in_new_window(app.clone(), path).await {
+            tracing::warn!(%error, "failed to open a file from the operating system");
+            // A launch open that failed must not end windowless.
+            if app.webview_windows().is_empty() {
+                ensure_main_window(&app);
+            }
+        }
+    });
+}
+
 fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
     match window.is_fullscreen() {
         Ok(fullscreen) => {
@@ -674,9 +692,125 @@ fn toggle_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
     }
 }
 
+/// Removes the LaunchServices records of every older copy of this app.
+///
+/// macOS keeps one record per bundle path, so a DMG mount, a second download or
+/// a local build all stay in Finder's "Open With" menu after an upgrade. The
+/// cleanup runs off the main thread and only edits the per-user LaunchServices
+/// database; the bundles on disk are left untouched.
+#[cfg(target_os = "macos")]
+fn schedule_launch_services_cleanup() {
+    let Some(current) = services::launch_services::current_bundle_path() else {
+        tracing::debug!("not running from an app bundle; skipping LaunchServices cleanup");
+        return;
+    };
+    tracing::debug!(
+        path = %current.display(),
+        "checking LaunchServices registrations"
+    );
+    tauri::async_runtime::spawn(async move {
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            services::launch_services::cleanup_duplicate_registrations(&current)
+        })
+        .await;
+        match result {
+            Ok(report) => {
+                if !report.unregistered.is_empty() {
+                    tracing::info!(
+                        count = report.unregistered.len(),
+                        "cleaned stale LaunchServices registrations"
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "LaunchServices cleanup task failed");
+            }
+        }
+    });
+}
+
+/// Runs one extra LaunchServices pass when the running app is activated.
+///
+/// Startup already cleaned the database; a warm activation is the only
+/// no-relaunch moment where a newly mounted or downloaded copy can appear.
+/// The pass is capped at one per process so Finder opens never pay for
+/// `lsregister` repeatedly.
+#[cfg(target_os = "macos")]
+fn schedule_warm_launch_services_cleanup() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static RAN: AtomicBool = AtomicBool::new(false);
+    if RAN.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    schedule_launch_services_cleanup();
+}
+
+/// Brings an existing window forward, or builds the main window when the app
+/// somehow has none (for example after a crashed webview).
+#[cfg(desktop)]
+fn focus_or_create_main_window<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = command_window(app) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        if let Err(error) = window.set_focus() {
+            tracing::warn!(%error, "failed to focus the existing window");
+        }
+        return;
+    }
+    ensure_main_window(app);
+}
+
+/// Handles a second launch that the single-instance plugin kept out of
+/// `Builder::run`.
+///
+/// The second process only leaves its arguments and working directory behind,
+/// so the running instance focuses itself and opens the requested documents.
+/// Early requests still wait for `setup`: a cold first launch must finish
+/// installing its window services before a document can open.
+#[cfg(desktop)]
+fn handle_second_instance<R: Runtime>(app: &AppHandle<R>, args: Vec<String>, cwd: String) {
+    let cwd = if cwd.is_empty() {
+        std::env::current_dir().unwrap_or_default()
+    } else {
+        PathBuf::from(cwd)
+    };
+    let paths = commands::document::startup_paths_from(
+        args.into_iter().map(std::ffi::OsString::from),
+        &cwd,
+    );
+
+    if paths.is_empty() {
+        if app.state::<state::StartupOpenQueue>().is_ready() {
+            focus_or_create_main_window(app);
+            #[cfg(target_os = "macos")]
+            schedule_warm_launch_services_cleanup();
+        }
+        return;
+    }
+
+    app.state::<state::StartupWindow>().mark_opened();
+    let queue = app.state::<state::StartupOpenQueue>();
+    for path in paths {
+        if queue.push(path.clone()) {
+            open_path_from_os(app, path);
+            #[cfg(target_os = "macos")]
+            schedule_warm_launch_services_cleanup();
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The second launch must be detected before any other plugin or setup
+    // work runs; the plugin exits that process and reports its arguments to
+    // the instance already running.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        handle_second_instance(app, args, cwd);
+    }));
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -793,15 +927,16 @@ pub fn run() {
         .manage(state::CloseGuard::new())
         .manage(state::FocusTracker::new())
         .manage(state::PreviewModes::new())
+        .manage(state::StartupOpenQueue::new())
         .manage(state::StartupWindow::new())
+        .manage(state::UpdateFlushGate::new())
         .manage(state::ShellLocale::default())
         .setup(|app| {
             app.manage(app.handle().clone());
-            let registry = app.state::<state::DocumentRegistry>().inner().clone();
-            app.manage(state::DocumentWatcher::start(
-                app.handle().clone(),
-                registry,
-            ));
+            // Logging must exist before any other startup service can report a
+            // failure; otherwise the first warnings (for example a watcher
+            // thread that cannot start) are written to a subscriber that is
+            // not installed yet.
             let log_dir = app.path().app_log_dir().ok();
             if let Some(dir) = log_dir.as_ref() {
                 if let Err(error) = services::logging::init(dir.clone()) {
@@ -810,6 +945,11 @@ pub fn run() {
             }
             services::logging::install_panic_hook();
             init_tracing(log_dir.as_ref());
+            let registry = app.state::<state::DocumentRegistry>().inner().clone();
+            app.manage(state::DocumentWatcher::start(
+                app.handle().clone(),
+                registry,
+            ));
             // Session storage is optional: a broken data directory disables
             // drafts/view state but must never block startup or fall back to
             // /tmp, which would leak plaintext drafts outside the app sandbox.
@@ -849,6 +989,8 @@ pub fn run() {
                 log_dir = %services::logging::dir().display(),
                 "Qingmo started"
             );
+            #[cfg(target_os = "macos")]
+            schedule_launch_services_cleanup();
             // Seed the shell projection before any window can be created. The
             // first webview projection then matches the startup menu and does
             // not rebuild it, so the menu bar never visibly changes on load.
@@ -860,6 +1002,14 @@ pub fn run() {
             app.manage(state::UpdateManager::new(
                 app.package_info().version.to_string(),
             ));
+            // macOS can deliver an OS open request before this hook runs. By
+            // now every service those windows need exists, so replay the paths
+            // that were parked instead of letting the first document race the
+            // setup sequence.
+            let queued = app.state::<state::StartupOpenQueue>().mark_ready();
+            for path in queued {
+                open_path_from_os(app.handle(), path);
+            }
             // The main window is opt-in: give an OS open request the chance to
             // become the only window before falling back to an empty editor.
             let handle = app.handle().clone();
@@ -953,20 +1103,28 @@ pub fn run() {
             }
             // Skip the blank main window even if it has not started building.
             app_handle.state::<state::StartupWindow>().mark_opened();
+            // Cold launches can deliver this event before `setup`; park those
+            // paths until every window service exists.
+            let queue = app_handle.state::<state::StartupOpenQueue>();
             for path in paths {
-                let app = app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) =
-                        commands::document::open_path_in_new_window(app.clone(), path).await
-                    {
-                        tracing::warn!(%error, "failed to open a file from the operating system");
-                        // A launch open that failed must not end windowless.
-                        if app.webview_windows().is_empty() {
-                            ensure_main_window(&app);
-                        }
-                    }
-                });
+                if queue.push(path.clone()) {
+                    open_path_from_os(app_handle, path);
+                    #[cfg(target_os = "macos")]
+                    schedule_warm_launch_services_cleanup();
+                }
             }
+        }
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => {
+            // A crashed webview can leave the process running with no window;
+            // Dock activation must recover instead of showing nothing.
+            if !has_visible_windows {
+                focus_or_create_main_window(app_handle);
+            }
+            schedule_warm_launch_services_cleanup();
         }
         #[cfg(windows)]
         RunEvent::Ready => {

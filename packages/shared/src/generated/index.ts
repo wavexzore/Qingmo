@@ -28,6 +28,7 @@ export type { SaveResult } from "./SaveResult";
 export type { TextEncoding } from "./TextEncoding";
 export type { TextFormat } from "./TextFormat";
 export type { UpdateInfo } from "./UpdateInfo";
+export type { UpdateFlushRequest } from "./UpdateFlushRequest";
 export type { UpdatePhase } from "./UpdatePhase";
 export type { UpdateProgress } from "./UpdateProgress";
 export type { UpdateProgressPayload } from "./UpdateProgressPayload";

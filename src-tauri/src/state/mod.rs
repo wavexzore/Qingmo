@@ -4,7 +4,9 @@ pub mod document_watcher;
 pub mod focus_tracker;
 pub mod preview_modes;
 pub mod shell_locale;
+pub mod startup_open_queue;
 pub mod startup_window;
+pub mod update_flush;
 pub mod update_manager;
 pub mod window_sessions;
 
@@ -14,6 +16,8 @@ pub use document_watcher::DocumentWatcher;
 pub use focus_tracker::FocusTracker;
 pub use preview_modes::PreviewModes;
 pub use shell_locale::ShellLocale;
+pub use startup_open_queue::StartupOpenQueue;
 pub use startup_window::StartupWindow;
+pub use update_flush::UpdateFlushGate;
 pub use update_manager::UpdateManager;
 pub use window_sessions::WindowSessions;

@@ -256,6 +256,16 @@ pub struct UpdateProgressPayload {
     pub total: Option<u64>,
 }
 
+/// Payload of `app://update-flush-request`.
+///
+/// Rust broadcasts one request before installing and waits for every editable
+/// window to acknowledge it through `app_update_flush_ack`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateFlushRequest {
+    pub request_id: u64,
+}
+
 /// UI language selected in the webview.
 ///
 /// The webview owns the user preference and projects it into native shell

@@ -53,13 +53,14 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 30);
+    assert_eq!(COMMANDS.len(), 31);
     assert_eq!(
         EVENTS,
         &[
             "app://close-requested",
             "app://update-state",
             "app://update-progress",
+            "app://update-flush-request",
             "app://menu-action",
             "app://document-changed",
             "app://document-new-failed"
@@ -332,6 +333,7 @@ fn invoke_handler_registers_every_contract_command() {
         .manage(qingmo_lib::state::FocusTracker::new())
         .manage(qingmo_lib::state::PreviewModes::new())
         .manage(qingmo_lib::state::ShellLocale::default())
+        .manage(qingmo_lib::state::UpdateFlushGate::new())
         .manage(qingmo_lib::state::UpdateManager::new(env!(
             "CARGO_PKG_VERSION"
         )))

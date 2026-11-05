@@ -136,14 +136,20 @@ export class UpdateController {
       const progress = this.trackUnlisten(
         this.port.onProgress((next) => this.publishProgress(next)),
       );
-      const [offState, offProgress] = await Promise.all([state, progress]);
+      const flush = this.trackUnlisten(
+        this.port.onFlushRequest((request) => {
+          void this.answerFlushRequest(request.requestId);
+        }),
+      );
+      const [offState, offProgress, offFlush] = await Promise.all([state, progress, flush]);
 
       if (run !== this.runId) {
         offState();
         offProgress();
+        offFlush();
         return;
       }
-      this.unlisten.push(offState, offProgress);
+      this.unlisten.push(offState, offProgress, offFlush);
 
       const current = await this.port.status();
       if (run !== this.runId) {
@@ -168,6 +174,29 @@ export class UpdateController {
       this.runId += 1;
       this.detachAll();
       console.debug("update bootstrap failed", normalizeError(error));
+    }
+  }
+
+  /**
+   * Saves this window when Rust asks every editable window to flush before an
+   * update install. A window without a registered save gate has nothing to
+   * protect, so it acknowledges success.
+   */
+  private async answerFlushRequest(requestId: number): Promise<void> {
+    const prepare = this.prepareInstall;
+    let ok = true;
+    if (prepare) {
+      try {
+        ok = (await prepare()).ok;
+      } catch (error) {
+        console.debug("pre-install flush failed", normalizeError(error));
+        ok = false;
+      }
+    }
+    try {
+      await this.port.flushAck(requestId, ok);
+    } catch (error) {
+      console.debug("pre-install flush acknowledgement failed", normalizeError(error));
     }
   }
 

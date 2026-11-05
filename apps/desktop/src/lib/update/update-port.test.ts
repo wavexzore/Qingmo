@@ -102,19 +102,23 @@ describe("Tauri update adapter", () => {
     await updates.check();
     await updates.download();
     await updates.install();
+    await updates.flushAck(3, true);
 
     expect(tauriMocks.invoke.mock.calls).toEqual([
       [COMMANDS.appUpdateStatus, {}],
       [COMMANDS.appUpdateCheck, {}],
       [COMMANDS.appUpdateDownload, {}],
       [COMMANDS.appUpdateInstall, {}],
+      [COMMANDS.appUpdateFlushAck, { requestId: 3, ok: true }],
     ]);
 
     await updates.onState(vi.fn());
     await updates.onProgress(vi.fn());
+    await updates.onFlushRequest(vi.fn());
     expect(tauriMocks.listen.mock.calls.map(([event]) => event)).toEqual([
       EVENTS.updateState,
       EVENTS.updateProgress,
+      EVENTS.updateFlushRequest,
     ]);
   });
 

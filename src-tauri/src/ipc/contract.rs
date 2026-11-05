@@ -22,6 +22,7 @@ pub const COMMANDS: &[&str] = &[
     "app_update_check",
     "app_update_download",
     "app_update_install",
+    "app_update_flush_ack",
     "app_logs_list",
     "app_logs_stats",
     "app_logs_export",
@@ -39,6 +40,8 @@ pub const COMMANDS: &[&str] = &[
 pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";
 pub const EVENT_UPDATE_STATE: &str = "app://update-state";
 pub const EVENT_UPDATE_PROGRESS: &str = "app://update-progress";
+/// Another window must save before the update restarts the app.
+pub const EVENT_UPDATE_FLUSH_REQUEST: &str = "app://update-flush-request";
 /// Native menu item activation. The payload is one of `MENU_ACTIONS`.
 pub const EVENT_MENU_ACTION: &str = "app://menu-action";
 /// The watcher found a different (or missing) disk version for an open document.
@@ -50,6 +53,7 @@ pub const EVENTS: &[&str] = &[
     EVENT_CLOSE_REQUESTED,
     EVENT_UPDATE_STATE,
     EVENT_UPDATE_PROGRESS,
+    EVENT_UPDATE_FLUSH_REQUEST,
     EVENT_MENU_ACTION,
     EVENT_DOCUMENT_CHANGED,
     EVENT_DOCUMENT_NEW_FAILED,

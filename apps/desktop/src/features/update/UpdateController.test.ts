@@ -120,6 +120,44 @@ describe("UpdateController", () => {
     controller.stop();
   });
 
+  it("saves this window when another window starts an install", async () => {
+    const updates = new FakeUpdatePort();
+    const controller = new UpdateController(updates, { autoCheck: false });
+    controller.start();
+    await flushPromises();
+
+    const prepare = vi.fn().mockResolvedValue({ ok: true, state: "clean" });
+    const unregister = controller.registerPrepareInstall(prepare);
+
+    updates.emitFlushRequest(7);
+    await flushPromises();
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(updates.flushAcks).toEqual([{ requestId: 7, ok: true }]);
+
+    prepare.mockResolvedValue({ ok: false, state: "conflict", failure: "conflict" });
+    updates.emitFlushRequest(8);
+    await flushPromises();
+    expect(updates.flushAcks).toEqual([
+      { requestId: 7, ok: true },
+      { requestId: 8, ok: false },
+    ]);
+
+    unregister();
+    controller.stop();
+  });
+
+  it("acknowledges a flush when no document gate is registered", async () => {
+    const updates = new FakeUpdatePort();
+    const controller = new UpdateController(updates, { autoCheck: false });
+    controller.start();
+    await flushPromises();
+
+    updates.emitFlushRequest(9);
+    await flushPromises();
+    expect(updates.flushAcks).toEqual([{ requestId: 9, ok: true }]);
+    controller.stop();
+  });
+
   it("rejects install without a save gate and prevents double install", async () => {
     const updates = new FakeUpdatePort({ update });
     const controller = new UpdateController(updates, { autoCheck: false });
@@ -171,6 +209,8 @@ describe("UpdateController", () => {
           resolveState = resolve;
         }),
       onProgress: () => Promise.resolve(vi.fn()),
+      onFlushRequest: () => Promise.resolve(vi.fn()),
+      flushAck: () => Promise.resolve(),
     };
     const controller = new UpdateController(port, { autoCheck: false });
     controller.start();

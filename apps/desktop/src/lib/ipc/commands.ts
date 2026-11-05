@@ -43,6 +43,7 @@ export const COMMANDS = {
   appUpdateCheck: "app_update_check",
   appUpdateDownload: "app_update_download",
   appUpdateInstall: "app_update_install",
+  appUpdateFlushAck: "app_update_flush_ack",
   appLogsList: "app_logs_list",
   appLogsStats: "app_logs_stats",
   appLogsExport: "app_logs_export",
@@ -78,6 +79,7 @@ export const COMMAND_NAMES = [
   COMMANDS.appUpdateCheck,
   COMMANDS.appUpdateDownload,
   COMMANDS.appUpdateInstall,
+  COMMANDS.appUpdateFlushAck,
   COMMANDS.appLogsList,
   COMMANDS.appLogsStats,
   COMMANDS.appLogsExport,
@@ -96,6 +98,7 @@ export const EVENTS = {
   closeRequested: "app://close-requested",
   updateState: "app://update-state",
   updateProgress: "app://update-progress",
+  updateFlushRequest: "app://update-flush-request",
   menuAction: "app://menu-action",
   documentChanged: "app://document-changed",
   documentNewFailed: "app://document-new-failed",
@@ -107,6 +110,7 @@ export const EVENT_NAMES = [
   EVENTS.closeRequested,
   EVENTS.updateState,
   EVENTS.updateProgress,
+  EVENTS.updateFlushRequest,
   EVENTS.menuAction,
   EVENTS.documentChanged,
   EVENTS.documentNewFailed,
@@ -175,6 +179,7 @@ export interface CommandRequestMap {
   [COMMANDS.appUpdateCheck]: Record<string, never>;
   [COMMANDS.appUpdateDownload]: Record<string, never>;
   [COMMANDS.appUpdateInstall]: Record<string, never>;
+  [COMMANDS.appUpdateFlushAck]: { requestId: number; ok: boolean };
   [COMMANDS.appLogsList]: { level?: LogLevel | null; limit?: number; offset?: number };
   [COMMANDS.appLogsStats]: Record<string, never>;
   [COMMANDS.appLogsExport]: { level?: LogLevel | null };
@@ -208,6 +213,7 @@ export interface CommandResponseMap {
   [COMMANDS.appUpdateCheck]: UpdateSnapshot;
   [COMMANDS.appUpdateDownload]: UpdateSnapshot;
   [COMMANDS.appUpdateInstall]: null;
+  [COMMANDS.appUpdateFlushAck]: null;
   [COMMANDS.appLogsList]: LogEntry[];
   [COMMANDS.appLogsStats]: LogStats;
   [COMMANDS.appLogsExport]: string;
@@ -251,6 +257,7 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.appUpdateCheck]: commandPermission(COMMANDS.appUpdateCheck),
   [COMMANDS.appUpdateDownload]: commandPermission(COMMANDS.appUpdateDownload),
   [COMMANDS.appUpdateInstall]: commandPermission(COMMANDS.appUpdateInstall),
+  [COMMANDS.appUpdateFlushAck]: commandPermission(COMMANDS.appUpdateFlushAck),
   [COMMANDS.appLogsList]: commandPermission(COMMANDS.appLogsList),
   [COMMANDS.appLogsStats]: commandPermission(COMMANDS.appLogsStats),
   [COMMANDS.appLogsExport]: commandPermission(COMMANDS.appLogsExport),

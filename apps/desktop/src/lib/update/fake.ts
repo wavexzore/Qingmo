@@ -1,5 +1,6 @@
 import type {
   AppError,
+  UpdateFlushRequest,
   UpdateInfo,
   UpdateProgress,
   UpdateProgressPayload,
@@ -50,6 +51,10 @@ export class FakeUpdatePort implements UpdatePort {
   private downloadRelease: (() => void) | null = null;
   private readonly stateListeners = new Set<(snapshot: UpdateSnapshot) => void>();
   private readonly progressListeners = new Set<(progress: UpdateProgressPayload) => void>();
+  private readonly flushListeners = new Set<(request: UpdateFlushRequest) => void>();
+
+  /** Answers recorded by `flushAck`, in call order. */
+  readonly flushAcks: Array<{ requestId: number; ok: boolean }> = [];
 
   readonly calls: FakeUpdateCalls = {
     status: 0,
@@ -173,6 +178,24 @@ export class FakeUpdatePort implements UpdatePort {
     };
   }
 
+  async onFlushRequest(handler: (request: UpdateFlushRequest) => void): Promise<() => void> {
+    this.flushListeners.add(handler);
+    return () => {
+      this.flushListeners.delete(handler);
+    };
+  }
+
+  async flushAck(requestId: number, ok: boolean): Promise<void> {
+    this.flushAcks.push({ requestId, ok });
+  }
+
+  /** Inject a pre-install flush request (unit/E2E control). */
+  emitFlushRequest(requestId: number): void {
+    for (const listener of this.flushListeners) {
+      listener({ requestId });
+    }
+  }
+
   /** Inject a snapshot and notify state listeners (E2E/manual transitions). */
   emitState(snapshot: UpdateSnapshot): void {
     this.snapshot = snapshot;
@@ -193,6 +216,7 @@ export class FakeUpdatePort implements UpdatePort {
     this.calls.check = 0;
     this.calls.download = 0;
     this.calls.install = 0;
+    this.flushAcks.length = 0;
   }
 
   /** E2E/unit control: change what the next `check()` announces. */

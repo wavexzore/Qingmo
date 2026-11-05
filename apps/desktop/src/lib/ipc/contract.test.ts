@@ -12,7 +12,7 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the thirty command names stable", () => {
+  it("keeps the thirty-one command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
       "document_new",
@@ -32,6 +32,7 @@ describe("IPC contract mirror", () => {
       "app_update_check",
       "app_update_download",
       "app_update_install",
+      "app_update_flush_ack",
       "app_logs_list",
       "app_logs_stats",
       "app_logs_export",
@@ -45,7 +46,7 @@ describe("IPC contract mirror", () => {
       "session_draft_read",
       "session_draft_discard",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(30);
+    expect(new Set(COMMAND_NAMES).size).toBe(31);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
@@ -61,11 +62,12 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionDraftDiscard]).toBe("allow-session-draft-discard");
   });
 
-  it("keeps the six events stable", () => {
+  it("keeps the seven events stable", () => {
     expect(EVENT_NAMES).toEqual([
       "app://close-requested",
       "app://update-state",
       "app://update-progress",
+      "app://update-flush-request",
       "app://menu-action",
       "app://document-changed",
       "app://document-new-failed",
@@ -73,6 +75,7 @@ describe("IPC contract mirror", () => {
     expect(EVENTS.closeRequested).toBe("app://close-requested");
     expect(EVENTS.updateState).toBe("app://update-state");
     expect(EVENTS.updateProgress).toBe("app://update-progress");
+    expect(EVENTS.updateFlushRequest).toBe("app://update-flush-request");
     expect(EVENTS.menuAction).toBe("app://menu-action");
     expect(EVENTS.documentChanged).toBe("app://document-changed");
     expect(EVENTS.documentNewFailed).toBe("app://document-new-failed");

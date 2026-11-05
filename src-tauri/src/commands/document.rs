@@ -316,10 +316,31 @@ pub(crate) fn startup_paths<I>(args: I) -> Vec<PathBuf>
 where
     I: IntoIterator<Item = std::ffi::OsString>,
 {
+    startup_paths_from(args, Path::new(""))
+}
+
+/// Like `startup_paths`, but resolves relative arguments against the directory
+/// the other process was started in.
+///
+/// A second instance reports its own working directory while the first
+/// instance may run from `/`, so `qingmo notes.md` must be resolved before the
+/// existence check.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub(crate) fn startup_paths_from<I>(args: I, cwd: &Path) -> Vec<PathBuf>
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
     args.into_iter()
         .skip(1)
         .filter(|arg| !arg.to_string_lossy().starts_with('-'))
         .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                cwd.join(path)
+            }
+        })
         .filter(|path| ensure_supported_extension(path).is_ok() && path.is_file())
         .collect()
 }
@@ -459,7 +480,9 @@ pub async fn document_write_atomic(
 #[cfg(test)]
 mod tests {
     use super::window_title_for_untitled;
-    use super::{asset_scope_dirs, opened_paths, startup_paths, window_title_for};
+    use super::{
+        asset_scope_dirs, opened_paths, startup_paths, startup_paths_from, window_title_for,
+    };
     use std::path::Path;
     use tauri::Url;
 
@@ -527,6 +550,21 @@ mod tests {
         ];
 
         assert_eq!(startup_paths(args), vec![markdown]);
+    }
+
+    #[test]
+    fn startup_paths_resolve_relative_arguments_against_the_caller_cwd() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let markdown = dir.path().join("note.md");
+        std::fs::write(&markdown, "body").expect("write fixture");
+
+        let args = vec![
+            std::ffi::OsString::from("/Applications/青墨.app/Contents/MacOS/qingmo"),
+            std::ffi::OsString::from("note.md"),
+            std::ffi::OsString::from("../outside.md"),
+        ];
+
+        assert_eq!(startup_paths_from(args, dir.path()), vec![markdown]);
     }
 
     #[test]

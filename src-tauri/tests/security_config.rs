@@ -56,6 +56,7 @@ fn capability_contains_only_expected_permissions() {
             "allow-app-update-check",
             "allow-app-update-download",
             "allow-app-update-install",
+            "allow-app-update-flush-ack",
             "allow-app-logs-list",
             "allow-app-logs-stats",
             "allow-app-logs-export",

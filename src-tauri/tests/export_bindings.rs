@@ -3,8 +3,8 @@ use qingmo_lib::ipc::dto::{
     AboutInfo, AboutLink, AppLanguage, ApplyLocaleRequest, CloseRequestedPayload, ConflictDetails,
     DocumentChangeKind, DocumentChangedPayload, DraftKind, DraftMeta, DraftRecord,
     DraftWriteRequest, EditorViewState, EditorViewStateInput, FilePayload, LogEntry, LogLevel,
-    LogStats, MenuActionPayload, NativeShellLabels, SaveRequest, SaveResult, UpdateInfo,
-    UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
+    LogStats, MenuActionPayload, NativeShellLabels, SaveRequest, SaveResult, UpdateFlushRequest,
+    UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
 };
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
@@ -33,6 +33,7 @@ fn export_bindings() {
     UpdateProgress::export_all(&config).expect("UpdateProgress bindings must export");
     UpdateSnapshot::export_all(&config).expect("UpdateSnapshot bindings must export");
     UpdateProgressPayload::export_all(&config).expect("UpdateProgressPayload bindings must export");
+    UpdateFlushRequest::export_all(&config).expect("UpdateFlushRequest bindings must export");
     LogLevel::export_all(&config).expect("LogLevel bindings must export");
     LogEntry::export_all(&config).expect("LogEntry bindings must export");
     LogStats::export_all(&config).expect("LogStats bindings must export");

@@ -31,6 +31,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         update::app_update_check,
         update::app_update_download,
         update::app_update_install,
+        update::app_update_flush_ack,
         logs::app_logs_list,
         logs::app_logs_stats,
         logs::app_logs_export,
