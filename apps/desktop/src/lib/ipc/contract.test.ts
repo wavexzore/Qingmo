@@ -12,14 +12,20 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the thirty-one command names stable", () => {
+  it("keeps the thirty-seven command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
       "document_new",
       "document_take_pending",
+      "document_activate",
       "document_reload",
       "document_save_as",
       "document_write_atomic",
+      "workspace_open",
+      "workspace_current",
+      "workspace_list",
+      "workspace_open_document",
+      "workspace_locate_document",
       "app_close_confirm",
       "app_set_live_preview",
       "app_about_info",
@@ -46,7 +52,7 @@ describe("IPC contract mirror", () => {
       "session_draft_read",
       "session_draft_discard",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(31);
+    expect(new Set(COMMAND_NAMES).size).toBe(37);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
@@ -55,8 +61,14 @@ describe("IPC contract mirror", () => {
     }
     expect(COMMAND_PERMISSIONS[COMMANDS.documentOpen]).toBe("allow-document-open");
     expect(COMMAND_PERMISSIONS[COMMANDS.documentNew]).toBe("allow-document-new");
+    expect(COMMAND_PERMISSIONS[COMMANDS.documentActivate]).toBe("allow-document-activate");
     expect(COMMAND_PERMISSIONS[COMMANDS.documentSaveAs]).toBe("allow-document-save-as");
     expect(COMMAND_PERMISSIONS[COMMANDS.documentWriteAtomic]).toBe("allow-document-write-atomic");
+    expect(COMMAND_PERMISSIONS[COMMANDS.workspaceOpen]).toBe("allow-workspace-open");
+    expect(COMMAND_PERMISSIONS[COMMANDS.workspaceList]).toBe("allow-workspace-list");
+    expect(COMMAND_PERMISSIONS[COMMANDS.workspaceLocateDocument]).toBe(
+      "allow-workspace-locate-document",
+    );
     expect(COMMAND_PERMISSIONS[COMMANDS.appAboutOpenLink]).toBe("allow-app-about-open-link");
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionViewStateGet]).toBe("allow-session-view-state-get");
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionDraftDiscard]).toBe("allow-session-draft-discard");
@@ -71,6 +83,7 @@ describe("IPC contract mirror", () => {
       "app://menu-action",
       "app://document-changed",
       "app://document-new-failed",
+      "app://workspace-changed",
     ]);
     expect(EVENTS.closeRequested).toBe("app://close-requested");
     expect(EVENTS.updateState).toBe("app://update-state");
@@ -79,12 +92,14 @@ describe("IPC contract mirror", () => {
     expect(EVENTS.menuAction).toBe("app://menu-action");
     expect(EVENTS.documentChanged).toBe("app://document-changed");
     expect(EVENTS.documentNewFailed).toBe("app://document-new-failed");
+    expect(EVENTS.workspaceChanged).toBe("app://workspace-changed");
   });
 
   it("exposes every native menu action once", () => {
     expect(MENU_ACTION_NAMES).toEqual([
       "file.new",
       "file.open",
+      "file.openFolder",
       "file.save",
       "palette.open",
       "view.toggleLivePreview",

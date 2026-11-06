@@ -208,8 +208,16 @@ describe("EditorHost", () => {
   });
 });
 
-function StatusProbe({ session, onRender }: { session: EditorSession; onRender: () => void }) {
-  const status = useEditorStatus(session);
+function StatusProbe({
+  session,
+  onRender,
+  enabled = true,
+}: {
+  session: EditorSession;
+  onRender: () => void;
+  enabled?: boolean;
+}) {
+  const status = useEditorStatus(session, enabled);
   onRender();
   return (
     <span data-testid="status-probe">
@@ -217,6 +225,22 @@ function StatusProbe({ session, onRender }: { session: EditorSession; onRender: 
     </span>
   );
 }
+
+describe("useEditorStatus subscription", () => {
+  it("does not subscribe while disabled and subscribes when re-enabled", () => {
+    const session = EditorSession.create(payload({ text: "abc" }));
+    const subscribe = vi.spyOn(session, "subscribeStatus");
+    const onRender = vi.fn();
+    const { rerender } = render(
+      <StatusProbe session={session} onRender={onRender} enabled={false} />,
+    );
+    expect(subscribe).not.toHaveBeenCalled();
+
+    rerender(<StatusProbe session={session} onRender={onRender} enabled />);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("status-probe")).toHaveTextContent("clean|1:1");
+  });
+});
 
 describe("useEditorStatus throttle", () => {
   it("renders a bounded number of times for 100 typed characters", () => {

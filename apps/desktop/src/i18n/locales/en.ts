@@ -492,6 +492,12 @@ export const commandLabels = {
     open: "Open file",
     save: "Save file",
   },
+  workspace: {
+    open: "Open Folder",
+    refresh: "Refresh Workspace",
+    collapseAll: "Collapse All Folders",
+    toggleSidebar: "Toggle Workspace Sidebar",
+  },
   view: {
     toggleOutline: "Toggle Outline",
     toggleLivePreview: "Toggle Live Preview",
@@ -505,6 +511,7 @@ export const commandLabels = {
   },
   category: {
     file: "File",
+    workspace: "Workspace",
     view: "View",
     app: "Application",
   },
@@ -562,6 +569,42 @@ export const logs = {
   },
 } as const;
 
+export const workspace = {
+  dock: {
+    workspaceTab: "Workspace",
+    outlineTab: "Outline",
+    region: "Sidebar views",
+    hide: "Hide sidebar",
+    reopen: "Show sidebar",
+  },
+  header: {
+    refresh: "Refresh workspace",
+    collapseAll: "Collapse all folders",
+    loading: "Reading the workspace…",
+    retry: "Retry",
+    empty: "Empty folder",
+  },
+  tree: {
+    region: "Workspace file tree",
+    retry: "Retry this directory",
+    truncatedRow: "Only the first 10,000 items are shown here; open a subfolder",
+    rowError: "This directory could not be read",
+  },
+  truncated: {
+    listed: "Only the first 10,000 items are shown; open a subfolder.",
+    scanned: "This folder has too many entries; results may be incomplete.",
+  },
+  error: {
+    expired: "This workspace is no longer valid. Open the folder again.",
+    outside: "That path is outside the workspace.",
+    missing: "The folder or file no longer exists.",
+    notFile: "The selected item is not a regular file.",
+    unsupported: "This file type is not supported.",
+    permission: "You do not have permission to read this location.",
+    io: "Could not read the workspace. Try again.",
+  },
+} as const;
+
 export const en = {
   common,
   editor,
@@ -572,4 +615,5 @@ export const en = {
   settings,
   logs,
   menu,
+  workspace,
 };

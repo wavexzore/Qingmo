@@ -17,7 +17,7 @@ import { THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider, useDocumentSession } from "../editor/DocumentSessionContext";
 import type { EditorSession } from "../editor/EditorSession";
-import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
+import { sidebarDockStore } from "./sidebarDockStore";
 import { UpdateProvider } from "../update/UpdateProvider";
 import { newDocument } from "./newDocument";
 import { openFile } from "./openFile";
@@ -67,6 +67,18 @@ function fileIpc(
   });
 }
 
+function workspaceIpc() {
+  return new FakeIpc({
+    workspace: {
+      root: "/docs",
+      files: [
+        { path: "/docs/notes/a.md", text: "# A\n" },
+        { path: "/docs/readme.md", text: "# Readme\n" },
+      ],
+    },
+  });
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   commandRegistry.unregister("file.new");
@@ -75,10 +87,14 @@ afterEach(() => {
   commandRegistry.unregister("view.toggleLivePreview");
   commandRegistry.unregister("view.toggleOutline");
   commandRegistry.unregister("view.toggleTheme");
+  commandRegistry.unregister("workspace.open");
+  commandRegistry.unregister("workspace.refresh");
+  commandRegistry.unregister("workspace.collapseAll");
+  commandRegistry.unregister("workspace.toggleSidebar");
   uiStore.setTheme("system");
   localStorage.removeItem(THEME_STORAGE_KEY);
   document.documentElement.removeAttribute("data-theme");
-  outlineVisibilityStore.resetForTests();
+  sidebarDockStore.resetForTests();
 });
 
 describe("openFile", () => {
@@ -147,6 +163,12 @@ describe("openFile", () => {
       documentReload: vi.fn(),
       documentSaveAs: vi.fn(),
       documentWriteAtomic: vi.fn(),
+      workspaceOpen: vi.fn(),
+      workspaceCurrent: vi.fn(),
+      workspaceList: vi.fn(),
+      workspaceOpenDocument: vi.fn(),
+      workspaceLocateDocument: vi.fn(),
+      onWorkspaceChanged: vi.fn(() => () => undefined),
       onDocumentChanged: vi.fn(() => () => undefined),
       appCloseConfirm: vi.fn(),
       appSetLivePreview: vi.fn(),
@@ -252,6 +274,75 @@ describe("blank editor -> editor open flow", () => {
     expect(screen.getByTestId("untitled-editor")).toBeInTheDocument();
     expect(screen.queryByTestId("document-session")).not.toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/");
+  });
+
+  it("opens a tree file through the shared Open flow and highlights it", async () => {
+    const ipc = workspaceIpc();
+    const captured: { current: EditorSession | null } = { current: null };
+    renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-workspace-key="notes"]')).not.toBeNull(),
+    );
+    const notes = document.querySelector('[data-workspace-key="notes"]') as HTMLElement;
+    fireEvent.click(notes);
+    await waitFor(() =>
+      expect(document.querySelector('[data-workspace-key="notes/a.md"]')).not.toBeNull(),
+    );
+
+    const file = document.querySelector('[data-workspace-key="notes/a.md"]') as HTMLElement;
+    // A single click opens the file in this window.
+    fireEvent.click(file);
+    await waitFor(() => expect(captured.current?.getSnapshot().docId).toBe("/docs/notes/a.md"));
+    expect(await screen.findByTestId("document-session")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelector('[data-workspace-key="notes/a.md"]')).toHaveAttribute(
+        "data-workspace-current",
+        "true",
+      ),
+    );
+
+    const treeCalls = ipc
+      .getWorkspaceCalls()
+      .filter((call) => call.command === COMMANDS.workspaceOpenDocument);
+    expect(treeCalls).toHaveLength(1);
+    expect(treeCalls[0]?.args).toEqual({
+      workspaceToken: "fake-workspace-1",
+      segments: ["notes", "a.md"],
+    });
+  });
+
+  it("switches between tree files in place even in the native shell", async () => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    const ipc = workspaceIpc();
+    const openSpy = vi.spyOn(ipc, "documentOpen");
+    const captured: { current: EditorSession | null } = { current: null };
+    renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-workspace-key="readme.md"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-workspace-key="readme.md"]') as HTMLElement);
+    await waitFor(() => expect(captured.current?.getSnapshot().docId).toBe("/docs/readme.md"));
+
+    const notes = document.querySelector('[data-workspace-key="notes"]') as HTMLElement;
+    fireEvent.click(notes);
+    await waitFor(() =>
+      expect(document.querySelector('[data-workspace-key="notes/a.md"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-workspace-key="notes/a.md"]') as HTMLElement);
+
+    await waitFor(() => expect(captured.current?.getSnapshot().docId).toBe("/docs/notes/a.md"));
+    expect(screen.getAllByTestId("document-session")).toHaveLength(1);
+    expect(openSpy).not.toHaveBeenCalled();
   });
 
   it("opens another file from a dirty untitled document without Save As", async () => {
@@ -361,11 +452,15 @@ describe("blank editor -> editor open flow", () => {
     expect(view).not.toBeNull();
 
     expect((await commandRegistry.execute("view.toggleOutline")).ok).toBe(true);
-    expect(await screen.findByTestId("outline-panel")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("outline-panel")).toHaveAttribute("data-outline-visible", "true"),
+    );
     expect(captured.current?.attachedView).toBe(view);
 
     expect((await commandRegistry.execute("view.toggleOutline")).ok).toBe(true);
-    await waitFor(() => expect(screen.queryByTestId("outline-panel")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("sidebar-dock")).toHaveAttribute("data-open", "false"),
+    );
     expect(captured.current?.attachedView).toBe(view);
   });
 
@@ -380,11 +475,12 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(8);
+    expect(options).toHaveLength(9);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("新建文件"),
         expect.stringContaining("打开文件"),
+        expect.stringContaining("打开文件夹"),
         expect.stringContaining("保存文件"),
         expect.stringContaining("切换大纲"),
         expect.stringContaining("切换实时预览"),

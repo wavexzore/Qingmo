@@ -3,6 +3,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -30,6 +31,12 @@ interface OutlinePanelProps {
   onClose(): void;
   /** False during the closing transition; the panel stays mounted until it ends. */
   visible?: boolean;
+  /** `dock` fills the SidebarDock and drops its own chrome/focus policy. */
+  variant?: "standalone" | "dock";
+  /** Dock tab activity; inactive panels keep their DOM and scroll position. */
+  active?: boolean;
+  /** Monotonic request from the Dock; only consumed by the dock variant. */
+  focusRequest?: number;
 }
 
 function OutlineMessage({ outline }: { outline: HeadingOutlineState }) {
@@ -84,7 +91,16 @@ class OutlineListBoundary extends Component<
   }
 }
 
-function OutlinePanelView({ session, cursorLine, onClose, visible = true }: OutlinePanelProps) {
+function OutlinePanelView({
+  session,
+  cursorLine,
+  onClose,
+  visible = true,
+  variant = "standalone",
+  active = true,
+  focusRequest = 0,
+}: OutlinePanelProps) {
+  const dock = variant === "dock";
   const { t } = useTranslation(["editor"]);
   const outline = useOutline(session);
   const entries = outline.entries;
@@ -102,19 +118,21 @@ function OutlinePanelView({ session, cursorLine, onClose, visible = true }: Outl
 
   const close = useCallback(() => {
     onClose();
-    session.focusEditor();
-  }, [onClose, session]);
+    if (!dock) {
+      session.focusEditor();
+    }
+  }, [dock, onClose, session]);
 
   // Closing keeps the panel mounted for the width transition. Whoever closed
   // it (button, Escape, menu or command palette) must not leave focus on a
   // panel that is inert and about to unmount.
   const wasVisible = useRef(visible);
   useEffect(() => {
-    if (wasVisible.current && !visible) {
+    if (!dock && wasVisible.current && !visible) {
       session.focusEditor();
     }
     wasVisible.current = visible;
-  }, [session, visible]);
+  }, [dock, session, visible]);
 
   const moveFocus = useCallback(
     (next: number) => {
@@ -159,7 +177,7 @@ function OutlinePanelView({ session, cursorLine, onClose, visible = true }: Outl
   );
 
   useEffect(() => {
-    if (!visible) {
+    if (dock || !visible) {
       return;
     }
     if (
@@ -168,7 +186,22 @@ function OutlinePanelView({ session, cursorLine, onClose, visible = true }: Outl
     ) {
       navRef.current?.focus();
     }
-  }, [visible]);
+  }, [dock, visible]);
+
+  const handledFocusRequest = useRef(0);
+  useLayoutEffect(() => {
+    if (!dock || !active || focusRequest === 0 || focusRequest === handledFocusRequest.current) {
+      return;
+    }
+    handledFocusRequest.current = focusRequest;
+    const nav = navRef.current;
+    if (!nav) {
+      return;
+    }
+    const activeItem = nav.querySelector<HTMLButtonElement>('li button[aria-current="location"]');
+    const firstItem = nav.querySelector<HTMLButtonElement>("li button");
+    (activeItem ?? firstItem ?? nav).focus({ preventScroll: true });
+  }, [active, dock, focusRequest]);
 
   useEffect(() => {
     if (visibleEntries.length === 0) {
@@ -249,43 +282,50 @@ function OutlinePanelView({ session, cursorLine, onClose, visible = true }: Outl
       ref={navRef}
       tabIndex={-1}
       aria-label={t("editor:outline.region")}
-      aria-hidden={visible ? undefined : true}
-      inert={!visible || undefined}
+      aria-hidden={dock ? !active || undefined : visible ? undefined : true}
+      inert={dock ? !active || undefined : !visible || undefined}
       data-testid="outline-panel"
-      data-outline-visible={visible ? "true" : "false"}
+      data-outline-visible={(dock ? active : visible) ? "true" : "false"}
+      data-outline-variant={variant}
       data-outline-status={outline.status}
       data-outline-count={visibleEntries.length}
       data-outline-total={entries.length}
       data-outline-limit={outline.limitReason ?? "none"}
-      style={{ transitionDuration: `${OUTLINE_PANEL_ANIMATION_MS}ms` }}
+      style={dock ? undefined : { transitionDuration: `${OUTLINE_PANEL_ANIMATION_MS}ms` }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (!dock && event.key === "Escape") {
           event.preventDefault();
           close();
         }
       }}
-      className={`relative hidden h-full shrink-0 flex-col overflow-hidden border-line bg-surface/60 transition-[width,opacity] ease-out min-[900px]:flex ${
-        visible ? "w-60 border-r opacity-100" : "w-0 border-r-0 opacity-0"
-      }`}
+      className={
+        dock
+          ? "relative flex h-full w-full flex-col overflow-hidden bg-transparent"
+          : `relative hidden h-full shrink-0 flex-col overflow-hidden border-line bg-surface/60 transition-[width,opacity] ease-out min-[900px]:flex ${
+              visible ? "w-60 border-r opacity-100" : "w-0 border-r-0 opacity-0"
+            }`
+      }
     >
-      <div className="flex h-full w-60 flex-col">
-        <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
-          <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">
-            {t("editor:outline.title")}
-          </h2>
-          <span className="shrink-0 text-[10px] tabular-nums text-ink-faint">
-            {t("editor:outline.count", { count: visibleEntries.length })}
-          </span>
-          <button
-            type="button"
-            aria-label={t("editor:outline.close")}
-            title={t("editor:outline.close")}
-            onClick={close}
-            className="shrink-0 rounded p-1 text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink"
-          >
-            ×
-          </button>
-        </header>
+      <div className={dock ? "flex h-full w-full flex-col" : "flex h-full w-60 flex-col"}>
+        {dock ? null : (
+          <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+            <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">
+              {t("editor:outline.title")}
+            </h2>
+            <span className="shrink-0 text-[10px] tabular-nums text-ink-faint">
+              {t("editor:outline.count", { count: visibleEntries.length })}
+            </span>
+            <button
+              type="button"
+              aria-label={t("editor:outline.close")}
+              title={t("editor:outline.close")}
+              onClick={close}
+              className="shrink-0 rounded p-1 text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink"
+            >
+              ×
+            </button>
+          </header>
+        )}
         {visibleEntries.length === 0 ? (
           <OutlineMessage outline={outline} />
         ) : (

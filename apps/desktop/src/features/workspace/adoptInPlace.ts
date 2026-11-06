@@ -3,7 +3,7 @@ import type { FilePayload } from "@qingmo/shared";
 
 import { normalizeError } from "../../lib/ipc/errors";
 import type { IpcPort } from "../../lib/ipc/port";
-import type { EditorSession } from "../editor/EditorSession";
+import { UNTITLED_DOC_TOKEN, type EditorSession } from "../editor/EditorSession";
 import type { SetSessionExtras } from "../editor/DocumentSessionContext";
 import {
   createDocumentSession,
@@ -32,13 +32,17 @@ export interface AdoptInPlaceDeps {
 }
 
 /**
- * Adopts a harness Open payload in place (browser/E2E only).
+ * Adopts an in-window Open payload.
  *
  * The session being replaced is preserved first (dialog input, then the tail
  * passes that watch the adoption handoff itself), the same file is re-read
  * from disk so a late save is never overwritten, and every failure abandons
  * the adoption with the current session kept. Returns true only when the
  * payload session was installed.
+ *
+ * Native tree opens register the candidate token before this runs; abandoning
+ * one briefly activates it and then restores the previous token so the native
+ * activation table parks it for the next switch or window close.
  */
 export async function adoptInPlace(
   {
@@ -57,12 +61,29 @@ export async function adoptInPlace(
   const live = getCurrentSession();
   const samePath = live !== null && live.getSnapshot().docId === payload.path;
   const late = live !== null && live.readText() !== baseline;
+  // Taking ownership and immediately rolling back parks the candidate token
+  // in the native activation table, so it is released by the next switch or
+  // the window close instead of leaking.
+  const abandonCandidate = async (): Promise<void> => {
+    try {
+      await ipc.documentActivate(payload.docToken);
+      if (previousToken) {
+        await ipc.documentActivate(previousToken);
+      } else if (live === null) {
+        // No session existed to restore; return the window to untitled.
+        await ipc.documentActivate(UNTITLED_DOC_TOKEN);
+      }
+    } catch (error) {
+      console.warn("failed to release an abandoned document token", normalizeError(error));
+    }
+  };
   // From here every write must go through the session being replaced, so
   // restore its token before any await lets an auto-save fire.
   if (previousToken) {
     await ipc.documentActivate(previousToken);
   }
   if (late && !(await preserveCurrentSession())) {
+    await abandonCandidate();
     return false;
   }
   // Snapshot the text the late preserve left behind; the tail passes compare
@@ -110,9 +131,7 @@ export async function adoptInPlace(
       // current session and the Open can simply be repeated.
       console.warn("abandoned an in-place adoption: input kept arriving");
       created.session.dispose();
-      if (previousToken) {
-        await ipc.documentActivate(previousToken);
-      }
+      await abandonCandidate();
       reportBusy();
       return false;
     }
@@ -122,9 +141,7 @@ export async function adoptInPlace(
     // snapshot is already preserved on disk or as a draft.
     console.warn("failed to finish the in-place adoption", normalizeError(error));
     created?.session.dispose();
-    if (previousToken) {
-      await ipc.documentActivate(previousToken);
-    }
+    await abandonCandidate();
     reportError(error);
     return false;
   }

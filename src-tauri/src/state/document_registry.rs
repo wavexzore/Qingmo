@@ -89,6 +89,27 @@ impl DocumentRegistry {
     /// This is public for integration tests; it is not an IPC command and the
     /// frontend cannot supply a path.
     pub fn open_path(&self, selected: PathBuf) -> Result<FilePayload, AppError> {
+        self.open_path_inner(selected, None)
+    }
+
+    /// Opens a tree-selected path while enforcing the workspace root.
+    ///
+    /// Canonicalization and the root check happen in this same call as the
+    /// read, so replacing a resolved file with a symlink outside the root
+    /// cannot turn a tree open into a root escape.
+    pub fn open_path_with_root(
+        &self,
+        selected: PathBuf,
+        root: &Path,
+    ) -> Result<FilePayload, AppError> {
+        self.open_path_inner(selected, Some(root))
+    }
+
+    fn open_path_inner(
+        &self,
+        selected: PathBuf,
+        root: Option<&Path>,
+    ) -> Result<FilePayload, AppError> {
         ensure_supported_extension(&selected)?;
 
         let canonical_target = std::fs::canonicalize(&selected).map_err(|error| {
@@ -101,6 +122,14 @@ impl DocumentRegistry {
                 AppError::from_io(&error)
             }
         })?;
+        if let Some(root) = root {
+            if !canonical_target.starts_with(root) {
+                return Err(AppError::new(
+                    AppErrorCode::OutsideScope,
+                    "the document is outside the workspace",
+                ));
+            }
+        }
         ensure_supported_extension(&canonical_target)?;
 
         let parsed = FileService::read(&canonical_target)?;

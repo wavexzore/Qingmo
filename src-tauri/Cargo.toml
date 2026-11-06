@@ -18,6 +18,7 @@ tauri-build = { version = "2.7.4", features = [] }
 atomic-write-file = "0.3.1"
 blake3 = "1.8.7"
 encoding_rs = "0.8.42"
+notify-debouncer-full = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2.12.5", features = ["protocol-asset"] }

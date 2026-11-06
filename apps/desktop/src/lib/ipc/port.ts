@@ -9,6 +9,8 @@ import type {
   FilePayload,
   SaveRequest,
   SaveResult,
+  WorkspaceInfo,
+  WorkspaceListing,
 } from "@qingmo/shared";
 
 export interface CloseConfirmRequest {
@@ -50,8 +52,9 @@ export interface IpcPort {
    * Browser adapters keep one active token and switch it on open; a caller
    * that aborts (failed late write) can activate its previous token again.
    * The `untitled` sentinel clears the active record (no writable path), and
-   * an unknown token is rejected with `INVALID_PATH`. The native adapter is a
-   * no-op because Open creates a new window.
+   * an unknown token is rejected with `INVALID_PATH`. The native adapter
+   * switches the window token and keeps the previous one alive for one
+   * rollback; the next switch or the window close releases it.
    */
   documentActivate(docToken: string): Promise<void>;
   /**
@@ -73,6 +76,28 @@ export interface IpcPort {
    * not own. Returns an unsubscribe function.
    */
   onDocumentChanged(callback: (change: DocumentChangedPayload) => void): () => void;
+  /**
+   * Opens a folder through the native dialog. The returned token identifies
+   * this window's workspace; it is never persisted and never shared.
+   */
+  workspaceOpen(): Promise<WorkspaceInfo>;
+  /** The calling window's current workspace, or `null` at startup. */
+  workspaceCurrent(): Promise<WorkspaceInfo | null>;
+  /** Lists one directory level below the workspace root. */
+  workspaceList(workspaceToken: string, dirSegments: string[]): Promise<WorkspaceListing>;
+  /**
+   * Reads a tree file for an in-window switch. The caller preserves the
+   * current document, adopts the payload, then calls `documentActivate`.
+   * A failed adoption leaves the current document and its token untouched.
+   */
+  workspaceOpenDocument(workspaceToken: string, segments: string[]): Promise<FilePayload>;
+  /** Path segments of this window's current document, or `null`. */
+  workspaceLocateDocument(workspaceToken: string, docToken: string): Promise<string[] | null>;
+  /**
+   * Subscribes to workspace tree changes for this window. The payload is
+   * empty by design; the hook re-lists known directories.
+   */
+  onWorkspaceChanged(callback: () => void): () => void;
   appCloseConfirm(request: CloseConfirmRequest): Promise<void>;
   /** Mirrors this window's Live Preview mode in the native menu bar. */
   appSetLivePreview(request: LivePreviewRequest): Promise<void>;

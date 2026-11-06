@@ -18,6 +18,15 @@ function panel(page: Page) {
   return page.getByTestId("outline-panel");
 }
 
+function dock(page: Page) {
+  return page.getByTestId("sidebar-dock");
+}
+
+async function expectOutlineHidden(page: Page): Promise<void> {
+  await expect(panel(page)).toHaveAttribute("data-outline-visible", "false");
+  await expect(dock(page)).toHaveAttribute("data-open", "false");
+}
+
 function items(page: Page) {
   return panel(page).getByRole("list").getByRole("button");
 }
@@ -41,7 +50,7 @@ test("E2E-001/002/010: the outline is hidden by default and toggles from the men
   page,
 }) => {
   await openOutlineFixture(page);
-  await expect(panel(page)).toHaveCount(0);
+  await expectOutlineHidden(page);
 
   await openPanel(page);
   await expect(items(page)).toHaveText([
@@ -52,8 +61,8 @@ test("E2E-001/002/010: the outline is hidden by default and toggles from the men
     "Omega",
   ]);
 
-  await panel(page).getByRole("button", { name: "关闭大纲" }).click();
-  await expect(panel(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "隐藏侧栏" }).click();
+  await expectOutlineHidden(page);
   await expect(editorContent(page)).toBeFocused();
 
   await emitMenuAction(page, "view.toggleOutline");
@@ -65,7 +74,7 @@ test("E2E-001/002/010: the outline is hidden by default and toggles from the men
   await palette.getByRole("combobox").fill("切换大纲");
   await palette.getByRole("combobox").press("Enter");
   await expect(palette).toBeHidden();
-  await expect(panel(page)).toHaveCount(0);
+  await expectOutlineHidden(page);
   await expect(editorContent(page)).toBeFocused();
 });
 
@@ -77,7 +86,7 @@ async function startWidthSampler(page: Page): Promise<void> {
     (window as unknown as { __OUTLINE_WIDTH_SAMPLES__: WidthSample[] }).__OUTLINE_WIDTH_SAMPLES__ =
       samples;
     const tick = () => {
-      const element = document.querySelector<HTMLElement>('[data-testid="outline-panel"]');
+      const element = document.querySelector<HTMLElement>('[data-testid="sidebar-dock"]');
       samples.push(element ? element.getBoundingClientRect().width : null);
       if (samples.length < 180) {
         requestAnimationFrame(tick);
@@ -113,17 +122,18 @@ test("E2E-018: the panel animates open and closed without remounting the editor"
   await page.waitForTimeout(300);
 
   const openSamples = await readWidthSamples(page);
-  // Intermediate widths prove the panel grows instead of snapping to 240px.
+  // Intermediate widths prove the dock grows instead of snapping to 240px.
   expect(hasIntermediateWidth(openSamples)).toBe(true);
   expect(openSamples.at(-1)).toBeCloseTo(240, 0);
 
   await startWidthSampler(page);
-  await panel(page).getByRole("button", { name: "关闭大纲" }).click();
-  await expect(panel(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "隐藏侧栏" }).click();
+  await expect(panel(page)).toHaveAttribute("data-outline-visible", "false");
+  await page.waitForTimeout(300);
 
   const closeSamples = await readWidthSamples(page);
   expect(hasIntermediateWidth(closeSamples)).toBe(true);
-  expect(closeSamples.at(-1)).toBeNull();
+  expect(closeSamples.at(-1)).toBeCloseTo(0, 0);
 
   const sameEditor = await page.evaluate(
     () =>
@@ -186,8 +196,9 @@ test("E2E-004/012: one Tab stop, roving keys and Enter navigate the outline", as
 
   const list = panel(page).getByRole("list");
   const buttons = items(page);
-  const close = panel(page).getByRole("button", { name: "关闭大纲" });
-  await expect(close).toHaveAttribute("aria-label", "关闭大纲");
+  // The dock owns the close affordance; the outline panel has no chrome.
+  await expect(panel(page).getByRole("button", { name: "关闭大纲" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "隐藏侧栏" })).toBeVisible();
   await expect(list).toHaveAttribute("aria-label", "文档大纲");
   await expect(buttons.first()).toHaveAttribute("tabindex", "0");
   await expect(buttons.nth(1)).toHaveAttribute("tabindex", "-1");
@@ -337,17 +348,15 @@ test("E2E-011: a 210k document reports the size limit and stays editable", async
   await expect(panel(page)).toBeVisible();
 });
 
-test("E2E-013: the panel hides below 900px and never overflows horizontally", async ({ page }) => {
+test("E2E-013: the dock stays usable below 900px and never overflows horizontally", async ({
+  page,
+}) => {
   await openOutlineFixture(page);
   await openPanel(page);
 
   for (const width of [1200, 900, 899, 800, 600]) {
     await page.setViewportSize({ width, height: 800 });
-    if (width >= 900) {
-      await expect(panel(page)).toBeVisible();
-    } else {
-      await expect(panel(page)).toBeHidden();
-    }
+    await expect(panel(page)).toBeVisible();
     const overflow = await page.evaluate(() => {
       return document.documentElement.scrollWidth - document.documentElement.clientWidth;
     });
@@ -360,18 +369,19 @@ test("E2E-014: theme and language changes restyle and relabel the panel", async 
   await openPanel(page);
 
   const background = () =>
-    panel(page).evaluate((element) => getComputedStyle(element).backgroundColor);
+    dock(page).evaluate((element) => getComputedStyle(element).backgroundColor);
   const before = await background();
   await emitMenuAction(page, "view.toggleTheme");
   await expect.poll(background).not.toBe(before);
 
   await emitMenuAction(page, "language.en");
-  await expect(panel(page).getByRole("heading", { name: "Outline" })).toBeVisible();
+  await expect(dock(page).getByRole("heading", { name: "Outline" })).toBeVisible();
+  await expect(dock(page).getByRole("button", { name: "Hide sidebar" })).toBeVisible();
   await expect(panel(page)).toHaveAttribute("aria-label", "Document outline");
   await expect(panel(page).getByRole("button", { name: "Level 1 heading: Alpha" })).toBeVisible();
-  await expect(panel(page).getByRole("button", { name: "Close outline" })).toBeVisible();
 
   await emitMenuAction(page, "language.zh-CN");
-  await expect(panel(page).getByRole("heading", { name: "大纲" })).toBeVisible();
-  await expect(panel(page).getByRole("button", { name: "关闭大纲" })).toBeVisible();
+  await expect(dock(page).getByRole("heading", { name: "大纲" })).toBeVisible();
+  await expect(dock(page).getByRole("button", { name: "隐藏侧栏" })).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: "1 级标题：Alpha" })).toBeVisible();
 });

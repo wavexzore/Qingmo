@@ -206,6 +206,16 @@ describe("Tauri IpcPort adapter", () => {
     });
   });
 
+  it("activates an in-window document switch through Rust", async () => {
+    tauriMocks.invoke.mockResolvedValueOnce(null);
+
+    await expect(createTauriIpc().documentActivate("token-2")).resolves.toBeUndefined();
+
+    expect(tauriMocks.invoke).toHaveBeenCalledWith("document_activate", {
+      docToken: "token-2",
+    });
+  });
+
   it("turns a Tauri rejection object into AppError", async () => {
     tauriMocks.invoke.mockRejectedValueOnce({
       code: "CONFLICT",

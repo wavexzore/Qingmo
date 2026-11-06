@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { expect, type Page } from "@playwright/test";
 
-import type { SeedDraft, SeedFile, SeedViewState } from "./types";
+import type { E2eWorkspaceSeed, SeedDraft, SeedFile, SeedViewState } from "./types";
 
 export const NOTE_PATH = "/docs/note.md";
 export const CONFLICT_PATH = "/docs/conflict.md";
@@ -80,6 +80,61 @@ export async function openApp(
   await expect(page.getByTestId("untitled-editor")).toBeVisible();
 }
 
+/** Opens the app with an already-open workspace (the dock auto-opens). */
+export async function openWorkspaceApp(
+  page: Page,
+  workspace: E2eWorkspaceSeed,
+  seeds: OpenAppSeeds = {},
+): Promise<void> {
+  await page.addInitScript(
+    (payload) => {
+      window.__QINGMO_E2E_SEED_WORKSPACE__ = payload.workspace;
+      if (payload.drafts) {
+        window.__QINGMO_E2E_SEED_DRAFTS__ = payload.drafts;
+      }
+      if (payload.viewStates) {
+        window.__QINGMO_E2E_SEED_VIEW_STATE__ = payload.viewStates;
+      }
+    },
+    { workspace, ...seeds },
+  );
+  await page.goto("/");
+  await page.waitForFunction(() => Boolean(window.__QINGMO_E2E__));
+  await expect(page.getByTestId("untitled-editor")).toBeVisible();
+  await expect(page.getByTestId("sidebar-dock")).toHaveAttribute("data-open", "true");
+}
+
+export function workspaceRow(page: Page, key: string) {
+  return page.locator(`[data-workspace-key="${key}"]`);
+}
+
+export async function addWorkspaceFile(page: Page, path: string, text = ""): Promise<void> {
+  await page.evaluate(
+    ({ filePath, next }) => {
+      window.__QINGMO_E2E__?.addWorkspaceFile(filePath, next);
+    },
+    { filePath: path, next: text },
+  );
+}
+
+export async function getWorkspaceCalls(
+  page: Page,
+): Promise<Array<{ command: string; args: Record<string, unknown> }>> {
+  return page.evaluate(() => window.__QINGMO_E2E__?.getWorkspaceCalls() ?? []);
+}
+
+export async function emitFocus(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+}
+
+export async function emitWorkspaceChanged(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.__QINGMO_E2E__?.emitWorkspaceChanged();
+  });
+}
+
 export async function getViewState(page: Page, path: string): Promise<SeedViewState | null> {
   return page.evaluate((target) => window.__QINGMO_E2E__?.getViewState(target) ?? null, path);
 }
@@ -95,6 +150,7 @@ export async function emitMenuAction(
   action:
     | "file.new"
     | "file.open"
+    | "file.openFolder"
     | "file.save"
     | "palette.open"
     | "view.toggleLivePreview"

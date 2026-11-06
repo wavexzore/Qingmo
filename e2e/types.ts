@@ -46,6 +46,18 @@ export interface E2eFileSnapshot {
   size: number;
 }
 
+export interface E2eWorkspaceSeed {
+  root: string;
+  name?: string;
+  files?: Array<SeedFile | string>;
+}
+
+export interface E2eWorkspaceInfo {
+  token: string;
+  root: string;
+  name: string;
+}
+
 export interface E2eUpdateInfo {
   version: string;
   date?: string | null;
@@ -97,6 +109,12 @@ export interface E2eBridge {
   getUpdateCalls(): E2eUpdateCalls;
   getUpdateSnapshot(): E2eUpdateSnapshot;
   getViewState(path: string): Promise<SeedViewState | null>;
+  seedWorkspace(root: string, name?: string, files?: Array<SeedFile | string>): E2eWorkspaceInfo;
+  addWorkspaceFile(path: string, text?: string): void;
+  resetWorkspace(): void;
+  setWorkspaceFolder(path: string | null): void;
+  emitWorkspaceChanged(): void;
+  getWorkspaceCalls(): Array<{ command: string; args: Record<string, unknown> }>;
 }
 
 export type E2eAboutLink = "docs" | "github" | "changelog" | "license";
@@ -122,6 +140,7 @@ declare global {
     __QINGMO_E2E_SEED__?: SeedFile[];
     __QINGMO_E2E_SEED_DRAFTS__?: SeedDraft[];
     __QINGMO_E2E_SEED_VIEW_STATE__?: Array<{ path: string; state: SeedViewState }>;
+    __QINGMO_E2E_SEED_WORKSPACE__?: E2eWorkspaceSeed;
     __QINGMO_E2E_PENDING__?: string;
     __QINGMO_E2E__?: E2eBridge;
     __QINGMO_ABOUT_E2E__?: E2eAboutBridge;

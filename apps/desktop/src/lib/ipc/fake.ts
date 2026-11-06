@@ -14,6 +14,9 @@ import type {
   SaveRequest,
   SaveResult,
   TextFormat,
+  WorkspaceEntry,
+  WorkspaceInfo,
+  WorkspaceListing,
 } from "@qingmo/shared";
 
 import { COMMANDS, type CommandName } from "./commands";
@@ -47,7 +50,23 @@ export interface FakeIpcOptions {
   openFile?: string | null;
   /** `null` simulates a cancelled native save dialog. */
   saveAsFile?: string | null;
+  /** Seeds an already-open workspace for this window. */
+  workspace?: FakeWorkspaceSeed | null;
+  /** `null` simulates a cancelled folder dialog. */
+  workspaceFolder?: string | null;
   delayMs?: number;
+}
+
+export interface FakeWorkspaceSeed {
+  root: string;
+  name?: string;
+  /** Files are added before the workspace is exposed. */
+  files?: Array<FakeFile | string>;
+}
+
+export interface FakeWorkspaceCall {
+  command: CommandName;
+  args: Record<string, unknown>;
 }
 
 export interface FakeFileSnapshot {
@@ -127,6 +146,7 @@ export class FakeIpc implements IpcPort {
   private readonly persistentErrors = new Map<CommandName, AppError>();
   private readonly commandDelays = new Map<CommandName, number>();
   private readonly documentChangedListeners = new Set<(change: DocumentChangedPayload) => void>();
+  private readonly workspaceChangedListeners = new Set<() => void>();
   private readonly viewStates = new Map<string, EditorViewState>();
   private readonly drafts = new Map<string, DraftRecord>();
   private active: { token: string; path: string } | null = null;
@@ -135,6 +155,9 @@ export class FakeIpc implements IpcPort {
   private pending: FilePayload | null = null;
   private openFile: string | null;
   private saveAsFile: string | null;
+  private workspace: WorkspaceInfo | null = null;
+  private workspaceFolder: string | null;
+  private nextWorkspaceToken = 1;
   private nextToken = 1;
   private clock = 0;
   private defaultDelayMs: number;
@@ -145,16 +168,24 @@ export class FakeIpc implements IpcPort {
   readonly draftWrites: DraftWriteRequest[] = [];
   readonly localeCalls: ApplyLocaleRequest[] = [];
   readonly openedLinks: string[] = [];
+  readonly commandCalls: FakeWorkspaceCall[] = [];
 
   constructor(options: FakeIpcOptions = {}) {
     for (const file of options.files ?? []) {
       this.addFile(file);
+    }
+    if (options.workspace) {
+      this.seedWorkspace(options.workspace.root, options.workspace);
     }
     this.openFile =
       options.openFile !== undefined
         ? options.openFile
         : (this.records.keys().next().value ?? null);
     this.saveAsFile = options.saveAsFile !== undefined ? options.saveAsFile : "/docs/untitled.md";
+    this.workspaceFolder =
+      options.workspaceFolder !== undefined
+        ? options.workspaceFolder
+        : (this.workspace?.root ?? null);
     this.defaultDelayMs = options.delayMs ?? 0;
   }
 
@@ -225,6 +256,20 @@ export class FakeIpc implements IpcPort {
     };
   }
 
+  /** Simulates a debounced Rust workspace watcher batch. */
+  emitWorkspaceChanged(): void {
+    for (const listener of [...this.workspaceChangedListeners]) {
+      listener();
+    }
+  }
+
+  onWorkspaceChanged(callback: () => void): () => void {
+    this.workspaceChangedListeners.add(callback);
+    return () => {
+      this.workspaceChangedListeners.delete(callback);
+    };
+  }
+
   getFile(path: string): FakeFileSnapshot | undefined {
     const record = this.records.get(path);
     if (!record) {
@@ -244,6 +289,141 @@ export class FakeIpc implements IpcPort {
 
   getActiveToken(): string | null {
     return this.active?.token ?? null;
+  }
+
+  /**
+   * Seeds an open workspace for browser tests. The returned token is replaced
+   * on every later `workspaceOpen`, mirroring the native switch semantics.
+   */
+  seedWorkspace(
+    root: string,
+    options: { name?: string | undefined; files?: Array<FakeFile | string> | undefined } = {},
+  ): WorkspaceInfo {
+    const normalized = normalizeWorkspaceRoot(root);
+    for (const file of options.files ?? []) {
+      const seed = typeof file === "string" ? { path: file } : file;
+      if (!this.records.has(seed.path)) {
+        this.addFile(seed);
+      }
+    }
+    const token = `fake-workspace-${this.nextWorkspaceToken}`;
+    this.nextWorkspaceToken += 1;
+    this.workspace = {
+      token,
+      root: normalized,
+      name: options.name ?? workspaceName(normalized),
+    };
+    return { ...this.workspace };
+  }
+
+  resetWorkspace(): void {
+    this.workspace = null;
+    this.workspaceFolder = null;
+    this.commandCalls.length = 0;
+  }
+
+  /** The next `workspaceOpen` returns this folder; `null` cancels the dialog. */
+  setWorkspaceFolder(path: string | null): void {
+    this.workspaceFolder = path;
+  }
+
+  addWorkspaceFile(path: string, text = ""): void {
+    const existing = this.records.get(path);
+    if (existing) {
+      existing.text = text;
+      existing.diskHash = fakeHash(text);
+      existing.size = byteLength(text);
+      existing.mtimeMs = this.tick();
+      return;
+    }
+    this.addFile({ path, text });
+  }
+
+  getWorkspaceCalls(): FakeWorkspaceCall[] {
+    return this.commandCalls.map((call) => ({ command: call.command, args: { ...call.args } }));
+  }
+
+  async workspaceOpen(): Promise<WorkspaceInfo> {
+    await this.wait(COMMANDS.workspaceOpen);
+    this.maybeThrow(COMMANDS.workspaceOpen);
+    this.record(COMMANDS.workspaceOpen, {});
+    if (this.workspaceFolder === null) {
+      throw new AppError("CANCELLED", "folder dialog was cancelled");
+    }
+    return this.seedWorkspace(this.workspaceFolder);
+  }
+
+  async workspaceCurrent(): Promise<WorkspaceInfo | null> {
+    await this.wait(COMMANDS.workspaceCurrent);
+    this.maybeThrow(COMMANDS.workspaceCurrent);
+    this.record(COMMANDS.workspaceCurrent, {});
+    return this.workspace ? { ...this.workspace } : null;
+  }
+
+  async workspaceList(workspaceToken: string, dirSegments: string[]): Promise<WorkspaceListing> {
+    await this.wait(COMMANDS.workspaceList);
+    this.maybeThrow(COMMANDS.workspaceList);
+    this.record(COMMANDS.workspaceList, { workspaceToken, dirSegments: [...dirSegments] });
+    const workspace = this.requireWorkspace(workspaceToken);
+    for (const segment of dirSegments) {
+      if (!isValidWorkspaceSegment(segment)) {
+        throw new AppError("INVALID_PATH", "invalid workspace directory segment");
+      }
+    }
+    return {
+      segments: [...dirSegments],
+      entries: this.listWorkspaceEntries(workspace.root, dirSegments),
+      truncated: false,
+      truncationReason: null,
+    };
+  }
+
+  async workspaceOpenDocument(workspaceToken: string, segments: string[]): Promise<FilePayload> {
+    await this.wait(COMMANDS.workspaceOpenDocument);
+    this.maybeThrow(COMMANDS.workspaceOpenDocument);
+    this.record(COMMANDS.workspaceOpenDocument, { workspaceToken, segments: [...segments] });
+    const workspace = this.requireWorkspace(workspaceToken);
+    if (segments.length === 0) {
+      throw new AppError("NOT_A_FILE", "a workspace document needs a file segment");
+    }
+    for (const segment of segments) {
+      if (!isValidWorkspaceSegment(segment)) {
+        throw new AppError("INVALID_PATH", "invalid workspace document segment");
+      }
+    }
+    const path = workspacePath(workspace.root, segments);
+    const record = this.records.get(path);
+    if (!record) {
+      throw new AppError("NOT_FOUND", `fake file not found: ${path}`);
+    }
+    if (!isSupportedMarkdown(path)) {
+      throw new AppError("UNSUPPORTED_EXTENSION", `unsupported file extension: ${path}`);
+    }
+    // Browser harnesses adopt in place, exactly like the file dialog path.
+    record.baseHash = record.diskHash;
+    const token = `fake-doc-${this.nextToken}`;
+    this.nextToken += 1;
+    this.issuedTokens.set(token, path);
+    this.active = { token, path };
+    return this.toPayload(record, token);
+  }
+
+  async workspaceLocateDocument(
+    workspaceToken: string,
+    docToken: string,
+  ): Promise<string[] | null> {
+    await this.wait(COMMANDS.workspaceLocateDocument);
+    this.maybeThrow(COMMANDS.workspaceLocateDocument);
+    this.record(COMMANDS.workspaceLocateDocument, { workspaceToken, docToken });
+    const workspace = this.requireWorkspace(workspaceToken);
+    if (docToken === "untitled" || !this.active || this.active.token !== docToken) {
+      return null;
+    }
+    const relative = relativeWorkspaceComponents(this.active.path, workspace.root);
+    if (!relative || relative.length === 0) {
+      return null;
+    }
+    return relative.every(isValidWorkspaceSegment) ? relative : null;
   }
 
   setDelay(milliseconds: number): void {
@@ -473,6 +653,60 @@ export class FakeIpc implements IpcPort {
     this.openedLinks.push(href);
   }
 
+  private requireWorkspace(workspaceToken: string): WorkspaceInfo {
+    if (!this.workspace || this.workspace.token !== workspaceToken) {
+      throw new AppError("INVALID_PATH", "unknown or expired workspaceToken");
+    }
+    return this.workspace;
+  }
+
+  private record(command: CommandName, args: Record<string, unknown>): void {
+    this.commandCalls.push({ command, args });
+  }
+
+  private listWorkspaceEntries(root: string, dirSegments: string[]): WorkspaceEntry[] {
+    const directories = new Set<string>();
+    const files: WorkspaceEntry[] = [];
+
+    for (const record of this.records.values()) {
+      const relative = relativeWorkspaceComponents(record.path, root);
+      if (!relative || relative.length <= dirSegments.length) {
+        continue;
+      }
+      if (!dirSegments.every((segment, index) => relative[index] === segment)) {
+        continue;
+      }
+      const name = relative[dirSegments.length];
+      if (!name) {
+        continue;
+      }
+      if (name.startsWith(".") || name === "node_modules") {
+        continue;
+      }
+      if (relative.length > dirSegments.length + 1) {
+        directories.add(name);
+      } else if (isSupportedMarkdown(name)) {
+        files.push({
+          name,
+          kind: "file",
+          expandable: false,
+          openable: true,
+        });
+      }
+    }
+
+    const directoryEntries: WorkspaceEntry[] = [...directories]
+      .sort(compareWorkspaceNames)
+      .map((name) => ({
+        name,
+        kind: "directory",
+        expandable: true,
+        openable: false,
+      }));
+    files.sort((left, right) => compareWorkspaceNames(left.name, right.name));
+    return [...directoryEntries, ...files];
+  }
+
   private emitDiskModified(path: string): void {
     if (!this.active || this.active.path !== path) {
       return;
@@ -688,6 +922,57 @@ export class FakeIpc implements IpcPort {
     this.clock = Math.max(Date.now(), this.clock + 1);
     return this.clock;
   }
+}
+
+function normalizeWorkspaceRoot(root: string): string {
+  const normalized = root.replaceAll("\\", "/").replace(/\/+$/, "");
+  return normalized === "" ? "/" : normalized;
+}
+
+function workspaceName(root: string): string {
+  const name = root.split("/").filter(Boolean).pop();
+  return name ?? root;
+}
+
+function workspacePath(root: string, segments: string[]): string {
+  const normalized = normalizeWorkspaceRoot(root);
+  const suffix = segments.join("/");
+  return normalized === "/" ? `/${suffix}` : `${normalized}/${suffix}`;
+}
+
+function relativeWorkspaceComponents(path: string, root: string): string[] | null {
+  const normalizedPath = path.replaceAll("\\", "/");
+  const normalizedRoot = normalizeWorkspaceRoot(root);
+  if (normalizedPath === normalizedRoot) {
+    return [];
+  }
+  const prefix = normalizedRoot === "/" ? "/" : `${normalizedRoot}/`;
+  if (!normalizedPath.startsWith(prefix)) {
+    return null;
+  }
+  return normalizedPath.slice(prefix.length).split("/").filter(Boolean);
+}
+
+function isValidWorkspaceSegment(segment: string): boolean {
+  if (segment === "" || segment === "." || segment === ".." || segment.length > 255) {
+    return false;
+  }
+  if (segment.includes("/") || segment.includes("\\") || segment.includes("\0")) {
+    return false;
+  }
+  return !Array.from(segment).some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+  });
+}
+
+function isSupportedMarkdown(path: string): boolean {
+  return /\.(md|markdown|mdx)$/i.test(path);
+}
+
+function compareWorkspaceNames(left: string, right: string): number {
+  const folded = left.toLowerCase().localeCompare(right.toLowerCase());
+  return folded === 0 ? left.localeCompare(right) : folded;
 }
 
 function sanitizeDraftTitle(title: string): string {

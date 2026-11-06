@@ -17,6 +17,8 @@ import type {
   SaveResult,
   UpdateProgressPayload,
   UpdateSnapshot,
+  WorkspaceInfo,
+  WorkspaceListing,
 } from "@qingmo/shared";
 
 /**
@@ -28,9 +30,15 @@ export const COMMANDS = {
   documentOpen: "document_open",
   documentNew: "document_new",
   documentTakePending: "document_take_pending",
+  documentActivate: "document_activate",
   documentReload: "document_reload",
   documentSaveAs: "document_save_as",
   documentWriteAtomic: "document_write_atomic",
+  workspaceOpen: "workspace_open",
+  workspaceCurrent: "workspace_current",
+  workspaceList: "workspace_list",
+  workspaceOpenDocument: "workspace_open_document",
+  workspaceLocateDocument: "workspace_locate_document",
   appCloseConfirm: "app_close_confirm",
   appSetLivePreview: "app_set_live_preview",
   appAboutInfo: "app_about_info",
@@ -64,9 +72,15 @@ export const COMMAND_NAMES = [
   COMMANDS.documentOpen,
   COMMANDS.documentNew,
   COMMANDS.documentTakePending,
+  COMMANDS.documentActivate,
   COMMANDS.documentReload,
   COMMANDS.documentSaveAs,
   COMMANDS.documentWriteAtomic,
+  COMMANDS.workspaceOpen,
+  COMMANDS.workspaceCurrent,
+  COMMANDS.workspaceList,
+  COMMANDS.workspaceOpenDocument,
+  COMMANDS.workspaceLocateDocument,
   COMMANDS.appCloseConfirm,
   COMMANDS.appSetLivePreview,
   COMMANDS.appAboutInfo,
@@ -102,6 +116,7 @@ export const EVENTS = {
   menuAction: "app://menu-action",
   documentChanged: "app://document-changed",
   documentNewFailed: "app://document-new-failed",
+  workspaceChanged: "app://workspace-changed",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -114,6 +129,7 @@ export const EVENT_NAMES = [
   EVENTS.menuAction,
   EVENTS.documentChanged,
   EVENTS.documentNewFailed,
+  EVENTS.workspaceChanged,
 ] as const satisfies readonly EventName[];
 
 /**
@@ -129,6 +145,7 @@ export const EVENT_NAMES = [
 export const MENU_ACTIONS = {
   fileNew: "file.new",
   fileOpen: "file.open",
+  fileOpenFolder: "file.openFolder",
   fileSave: "file.save",
   paletteOpen: "palette.open",
   toggleLivePreview: "view.toggleLivePreview",
@@ -147,6 +164,7 @@ export type MenuAction = (typeof MENU_ACTIONS)[keyof typeof MENU_ACTIONS];
 export const MENU_ACTION_NAMES = [
   MENU_ACTIONS.fileNew,
   MENU_ACTIONS.fileOpen,
+  MENU_ACTIONS.fileOpenFolder,
   MENU_ACTIONS.fileSave,
   MENU_ACTIONS.paletteOpen,
   MENU_ACTIONS.toggleLivePreview,
@@ -164,9 +182,15 @@ export interface CommandRequestMap {
   [COMMANDS.documentOpen]: Record<string, never>;
   [COMMANDS.documentNew]: Record<string, never>;
   [COMMANDS.documentTakePending]: Record<string, never>;
+  [COMMANDS.documentActivate]: { docToken: string };
   [COMMANDS.documentReload]: { docToken: string };
   [COMMANDS.documentSaveAs]: { text: string };
   [COMMANDS.documentWriteAtomic]: SaveRequest;
+  [COMMANDS.workspaceOpen]: Record<string, never>;
+  [COMMANDS.workspaceCurrent]: Record<string, never>;
+  [COMMANDS.workspaceList]: { workspaceToken: string; dirSegments: string[] };
+  [COMMANDS.workspaceOpenDocument]: { workspaceToken: string; segments: string[] };
+  [COMMANDS.workspaceLocateDocument]: { workspaceToken: string; docToken: string };
   [COMMANDS.appCloseConfirm]: { allow: boolean };
   [COMMANDS.appSetLivePreview]: { livePreview: boolean };
   [COMMANDS.appAboutInfo]: Record<string, never>;
@@ -198,9 +222,15 @@ export interface CommandResponseMap {
   [COMMANDS.documentOpen]: null;
   [COMMANDS.documentNew]: null;
   [COMMANDS.documentTakePending]: FilePayload | null;
+  [COMMANDS.documentActivate]: null;
   [COMMANDS.documentReload]: FilePayload;
   [COMMANDS.documentSaveAs]: FilePayload;
   [COMMANDS.documentWriteAtomic]: SaveResult;
+  [COMMANDS.workspaceOpen]: WorkspaceInfo;
+  [COMMANDS.workspaceCurrent]: WorkspaceInfo | null;
+  [COMMANDS.workspaceList]: WorkspaceListing;
+  [COMMANDS.workspaceOpenDocument]: FilePayload;
+  [COMMANDS.workspaceLocateDocument]: string[] | null;
   [COMMANDS.appCloseConfirm]: null;
   [COMMANDS.appSetLivePreview]: null;
   [COMMANDS.appAboutInfo]: AboutInfo;
@@ -242,9 +272,15 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.documentOpen]: commandPermission(COMMANDS.documentOpen),
   [COMMANDS.documentNew]: commandPermission(COMMANDS.documentNew),
   [COMMANDS.documentTakePending]: commandPermission(COMMANDS.documentTakePending),
+  [COMMANDS.documentActivate]: commandPermission(COMMANDS.documentActivate),
   [COMMANDS.documentReload]: commandPermission(COMMANDS.documentReload),
   [COMMANDS.documentSaveAs]: commandPermission(COMMANDS.documentSaveAs),
   [COMMANDS.documentWriteAtomic]: commandPermission(COMMANDS.documentWriteAtomic),
+  [COMMANDS.workspaceOpen]: commandPermission(COMMANDS.workspaceOpen),
+  [COMMANDS.workspaceCurrent]: commandPermission(COMMANDS.workspaceCurrent),
+  [COMMANDS.workspaceList]: commandPermission(COMMANDS.workspaceList),
+  [COMMANDS.workspaceOpenDocument]: commandPermission(COMMANDS.workspaceOpenDocument),
+  [COMMANDS.workspaceLocateDocument]: commandPermission(COMMANDS.workspaceLocateDocument),
   [COMMANDS.appCloseConfirm]: commandPermission(COMMANDS.appCloseConfirm),
   [COMMANDS.appSetLivePreview]: commandPermission(COMMANDS.appSetLivePreview),
   [COMMANDS.appAboutInfo]: commandPermission(COMMANDS.appAboutInfo),

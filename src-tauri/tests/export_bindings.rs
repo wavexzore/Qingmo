@@ -4,7 +4,8 @@ use qingmo_lib::ipc::dto::{
     DocumentChangeKind, DocumentChangedPayload, DraftKind, DraftMeta, DraftRecord,
     DraftWriteRequest, EditorViewState, EditorViewStateInput, FilePayload, LogEntry, LogLevel,
     LogStats, MenuActionPayload, NativeShellLabels, SaveRequest, SaveResult, UpdateFlushRequest,
-    UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot,
+    UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot, WorkspaceEntry,
+    WorkspaceEntryKind, WorkspaceInfo, WorkspaceListing, WorkspaceTruncationReason,
 };
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
@@ -49,4 +50,10 @@ fn export_bindings() {
     DraftMeta::export_all(&config).expect("DraftMeta bindings must export");
     DraftRecord::export_all(&config).expect("DraftRecord bindings must export");
     DraftWriteRequest::export_all(&config).expect("DraftWriteRequest bindings must export");
+    WorkspaceInfo::export_all(&config).expect("WorkspaceInfo bindings must export");
+    WorkspaceEntryKind::export_all(&config).expect("WorkspaceEntryKind bindings must export");
+    WorkspaceEntry::export_all(&config).expect("WorkspaceEntry bindings must export");
+    WorkspaceTruncationReason::export_all(&config)
+        .expect("WorkspaceTruncationReason bindings must export");
+    WorkspaceListing::export_all(&config).expect("WorkspaceListing bindings must export");
 }

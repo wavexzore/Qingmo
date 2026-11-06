@@ -32,8 +32,8 @@ export function createTauriIpc(): IpcPort {
     documentOpen() {
       return invokeCommand(COMMANDS.documentOpen, {});
     },
-    async documentActivate() {
-      // Native Open created another window; this window's token is unchanged.
+    async documentActivate(docToken) {
+      await invokeCommand(COMMANDS.documentActivate, { docToken });
     },
     async documentNew() {
       await invokeCommand(COMMANDS.documentNew, {});
@@ -50,6 +50,21 @@ export function createTauriIpc(): IpcPort {
     },
     documentWriteAtomic(request) {
       return invokeCommand(COMMANDS.documentWriteAtomic, request);
+    },
+    workspaceOpen() {
+      return invokeCommand(COMMANDS.workspaceOpen, {});
+    },
+    workspaceCurrent() {
+      return invokeCommand(COMMANDS.workspaceCurrent, {});
+    },
+    workspaceList(workspaceToken, dirSegments) {
+      return invokeCommand(COMMANDS.workspaceList, { workspaceToken, dirSegments });
+    },
+    workspaceOpenDocument(workspaceToken, segments) {
+      return invokeCommand(COMMANDS.workspaceOpenDocument, { workspaceToken, segments });
+    },
+    workspaceLocateDocument(workspaceToken, docToken) {
+      return invokeCommand(COMMANDS.workspaceLocateDocument, { workspaceToken, docToken });
     },
     onDocumentChanged(callback) {
       let disposed = false;
@@ -71,6 +86,33 @@ export function createTauriIpc(): IpcPort {
           // The document stays usable without live change detection; the next
           // native save still performs the exact-hash conflict check.
           console.error("failed to subscribe to app://document-changed", normalizeError(error));
+        });
+
+      return () => {
+        disposed = true;
+        unlisten?.();
+        unlisten = undefined;
+      };
+    },
+    onWorkspaceChanged(callback) {
+      let disposed = false;
+      let unlisten: UnlistenFn | undefined;
+
+      void listen(EVENTS.workspaceChanged, () => {
+        if (!disposed) {
+          callback();
+        }
+      })
+        .then((stop) => {
+          if (disposed) {
+            stop();
+          } else {
+            unlisten = stop;
+          }
+        })
+        .catch((error: unknown) => {
+          // The tree keeps working through manual/focus refresh.
+          console.error("failed to subscribe to app://workspace-changed", normalizeError(error));
         });
 
       return () => {

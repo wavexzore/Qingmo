@@ -5,7 +5,9 @@ use crate::commands::settings::SETTINGS_WINDOW_LABEL;
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::contract::EVENT_CLOSE_REQUESTED;
 use crate::ipc::dto::{CloseReason, CloseRequestedPayload};
-use crate::state::{CloseGuard, CloseOutcome, DocumentRegistry, DocumentWatcher, WindowSessions};
+use crate::state::{
+    CloseGuard, CloseOutcome, DocumentRegistry, DocumentWatcher, WindowSessions, WorkspaceRegistry,
+};
 
 /// Windows that never hold document state.
 ///
@@ -104,6 +106,29 @@ pub fn request_close(app: &AppHandle, reason: CloseReason, target: Option<&str>)
     }
 }
 
+/// Releases every token owned by a window and stops its watchers.
+///
+/// Safe to call from `Destroyed` after the close path already released the
+/// window: the second call returns an empty [`crate::state::WindowRelease`].
+pub(crate) fn release_window_state<R: tauri::Runtime>(app: &AppHandle<R>, label: &str) {
+    let released = app.state::<WindowSessions>().release(label);
+    for token in [released.doc_token, released.previous_doc_token]
+        .into_iter()
+        .flatten()
+    {
+        app.state::<DocumentRegistry>().release(&token);
+        if let Some(watcher) = app.try_state::<DocumentWatcher>() {
+            watcher.unwatch(&token);
+        }
+    }
+    if let Some(token) = released.workspace_token {
+        app.state::<WorkspaceRegistry>().release(&token);
+    }
+    // Token ownership changed even when nothing was released (Destroyed after
+    // the close path): the watcher routing must follow the live session table.
+    crate::commands::workspace::sync_workspace_watchers(app);
+}
+
 /// Completes or cancels the pending close request for the calling window.
 ///
 /// `allow=true` is accepted only when a native close request is pending for
@@ -114,8 +139,6 @@ pub fn app_close_confirm<R: tauri::Runtime>(
     app: AppHandle<R>,
     window: WebviewWindow<R>,
     guard: State<'_, CloseGuard>,
-    sessions: State<'_, WindowSessions>,
-    registry: State<'_, DocumentRegistry>,
     allow: bool,
 ) -> Result<(), AppError> {
     let label = window.label().to_string();
@@ -151,14 +174,11 @@ pub fn app_close_confirm<R: tauri::Runtime>(
         }
         CloseOutcome::Allowed(reason) => {
             tracing::info!(?reason, window = label, "close request confirmed");
-            if let Some(token) = sessions.release(&label) {
-                registry.release(&token);
-                if let Some(watcher) = app.try_state::<DocumentWatcher>() {
-                    watcher.unwatch(&token);
-                }
-            }
 
             if reason == CloseReason::Exit {
+                // The process is ending; keep the established release order so
+                // no document or workspace state outlives the last tick.
+                release_window_state(&app, &label);
                 app.exit(0);
                 return Ok(());
             }
@@ -168,16 +188,22 @@ pub fn app_close_confirm<R: tauri::Runtime>(
             if remaining == 0 {
                 // Closing the last window is the app's exit gesture on both
                 // platforms, matching the pre-multi-window behavior.
+                release_window_state(&app, &label);
                 app.exit(0);
                 return Ok(());
             }
 
+            // Release only after the native window actually went away. If
+            // `destroy` fails the window stays usable and its document and
+            // workspace tokens must stay valid.
             window.destroy().map_err(|error| {
                 AppError::new(
                     AppErrorCode::Io,
                     format!("failed to close the window: {error}"),
                 )
-            })
+            })?;
+            release_window_state(&app, &label);
+            Ok(())
         }
     }
 }

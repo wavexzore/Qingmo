@@ -53,7 +53,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 31);
+    assert_eq!(COMMANDS.len(), 37);
     assert_eq!(
         EVENTS,
         &[
@@ -63,7 +63,8 @@ fn frontend_command_mirror_contains_every_contract_name() {
             "app://update-flush-request",
             "app://menu-action",
             "app://document-changed",
-            "app://document-new-failed"
+            "app://document-new-failed",
+            "app://workspace-changed"
         ]
     );
 
@@ -74,7 +75,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 13);
+    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 14);
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"file.new"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.zh-CN"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.en"));
@@ -329,6 +330,7 @@ fn invoke_handler_registers_every_contract_command() {
         .manage(store)
         .manage(qingmo_lib::state::DocumentRegistry::new())
         .manage(qingmo_lib::state::WindowSessions::new())
+        .manage(qingmo_lib::state::WorkspaceRegistry::new())
         .manage(CloseGuard::new())
         .manage(qingmo_lib::state::FocusTracker::new())
         .manage(qingmo_lib::state::PreviewModes::new())
@@ -587,6 +589,7 @@ fn valid_labels() -> NativeShellLabels {
         file: "File".to_string(),
         new: "New".to_string(),
         open: "Open…".to_string(),
+        open_folder: "Open Folder…".to_string(),
         save: "Save".to_string(),
         close_window: "Close Window".to_string(),
         edit: "Edit".to_string(),

@@ -7,9 +7,15 @@ pub const COMMANDS: &[&str] = &[
     "document_open",
     "document_new",
     "document_take_pending",
+    "document_activate",
     "document_reload",
     "document_save_as",
     "document_write_atomic",
+    "workspace_open",
+    "workspace_current",
+    "workspace_list",
+    "workspace_open_document",
+    "workspace_locate_document",
     "app_close_confirm",
     "app_set_live_preview",
     "app_about_info",
@@ -48,6 +54,8 @@ pub const EVENT_MENU_ACTION: &str = "app://menu-action";
 pub const EVENT_DOCUMENT_CHANGED: &str = "app://document-changed";
 /// Native New failed after the menu handled it without a webview hop.
 pub const EVENT_DOCUMENT_NEW_FAILED: &str = "app://document-new-failed";
+/// A watched workspace root changed; the payload is empty.
+pub const EVENT_WORKSPACE_CHANGED: &str = "app://workspace-changed";
 
 pub const EVENTS: &[&str] = &[
     EVENT_CLOSE_REQUESTED,
@@ -57,6 +65,7 @@ pub const EVENTS: &[&str] = &[
     EVENT_MENU_ACTION,
     EVENT_DOCUMENT_CHANGED,
     EVENT_DOCUMENT_NEW_FAILED,
+    EVENT_WORKSPACE_CHANGED,
 ];
 
 /// Menu item ids forwarded to the webview, except `file.new`.
@@ -67,6 +76,7 @@ pub const EVENTS: &[&str] = &[
 /// absent: they must be handled by the first responder.
 pub const MENU_FILE_NEW: &str = "file.new";
 pub const MENU_FILE_OPEN: &str = "file.open";
+pub const MENU_FILE_OPEN_FOLDER: &str = "file.openFolder";
 pub const MENU_FILE_SAVE: &str = "file.save";
 pub const MENU_PALETTE_OPEN: &str = "palette.open";
 pub const MENU_VIEW_TOGGLE_OUTLINE: &str = "view.toggleOutline";
@@ -82,6 +92,7 @@ pub const MENU_LANGUAGE_EN: &str = "language.en";
 pub const MENU_ACTIONS: &[&str] = &[
     MENU_FILE_NEW,
     MENU_FILE_OPEN,
+    MENU_FILE_OPEN_FOLDER,
     MENU_FILE_SAVE,
     MENU_PALETTE_OPEN,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW,

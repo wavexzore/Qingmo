@@ -11,9 +11,10 @@ import type {
 
 import { COMMANDS, type MenuAction } from "../lib/ipc/commands";
 import { AppError as AppErrorClass } from "../lib/ipc/errors";
-import { FakeIpc, type FakeFileSnapshot } from "../lib/ipc/fake";
+import { FakeIpc, type FakeFileSnapshot, type FakeWorkspaceCall } from "../lib/ipc/fake";
 import { FakeLogPort } from "../lib/log/fake";
 import type { CloseConfirmRequest } from "../lib/ipc/port";
+import type { WorkspaceInfo } from "@qingmo/shared";
 import { FakePlatform } from "../lib/platform/fake";
 import { FakeUpdatePort, type FakeUpdateCalls } from "../lib/update/fake";
 
@@ -22,6 +23,12 @@ export interface E2eSeedFile {
   text?: string;
   format?: Partial<TextFormat>;
   readOnlyReason?: ReadOnlyReason | null;
+}
+
+export interface E2eWorkspaceSeed {
+  root: string;
+  name?: string;
+  files?: Array<E2eSeedFile | string>;
 }
 
 export interface E2eUpdateInfo {
@@ -66,6 +73,15 @@ export interface E2eBridge {
   getUpdateSnapshot(): UpdateSnapshot;
   /** Reads the FakeIpc view-state map, including writes made by the recorder. */
   getViewState(path: string): Promise<EditorViewState | null>;
+  /** Seeds an open workspace for this window. */
+  seedWorkspace(root: string, name?: string, files?: Array<E2eSeedFile | string>): WorkspaceInfo;
+  addWorkspaceFile(path: string, text?: string): void;
+  resetWorkspace(): void;
+  setWorkspaceFolder(path: string | null): void;
+  /** Simulates one debounced watcher batch. */
+  emitWorkspaceChanged(): void;
+  /** Workspace-related command calls, for asserting scoped refreshes. */
+  getWorkspaceCalls(): FakeWorkspaceCall[];
 }
 
 declare global {
@@ -77,6 +93,8 @@ declare global {
     __QINGMO_E2E_SEED_VIEW_STATE__?: Array<{ path: string; state: EditorViewState }>;
     /** Path staged for a `/?window=document` boot. */
     __QINGMO_E2E_PENDING__?: string;
+    /** Workspace seeded before the webview mounts. */
+    __QINGMO_E2E_SEED_WORKSPACE__?: E2eWorkspaceSeed;
     __QINGMO_E2E__?: E2eBridge;
   }
 }
@@ -93,6 +111,13 @@ export function createE2eServices(): {
 } {
   const files = window.__QINGMO_E2E_SEED__ ?? [];
   const ipc = new FakeIpc({ files });
+  const workspaceSeed = window.__QINGMO_E2E_SEED_WORKSPACE__;
+  if (workspaceSeed) {
+    ipc.seedWorkspace(workspaceSeed.root, {
+      name: workspaceSeed.name,
+      files: workspaceSeed.files,
+    });
+  }
   for (const draft of window.__QINGMO_E2E_SEED_DRAFTS__ ?? []) {
     ipc.seedDraft(draft);
   }
@@ -175,6 +200,20 @@ export function createE2eServices(): {
     getUpdateCalls: () => ({ ...updates.calls }),
     getUpdateSnapshot: () => updates.currentSnapshot,
     getViewState: (path) => ipc.sessionViewStateGet(path),
+    seedWorkspace: (root, name, files) => ipc.seedWorkspace(root, { name, files }),
+    addWorkspaceFile: (path, text) => {
+      ipc.addWorkspaceFile(path, text);
+    },
+    resetWorkspace: () => {
+      ipc.resetWorkspace();
+    },
+    setWorkspaceFolder: (path) => {
+      ipc.setWorkspaceFolder(path);
+    },
+    emitWorkspaceChanged: () => {
+      ipc.emitWorkspaceChanged();
+    },
+    getWorkspaceCalls: () => ipc.getWorkspaceCalls(),
   };
 
   return { ipc, platform, updates, logs };

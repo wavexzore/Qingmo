@@ -9,14 +9,23 @@ import type { EditorSession } from "./EditorSession";
  * changes flush immediately. The unmount cleanup flushes any pending cursor,
  * so switching documents never shows a stale position.
  */
-export function useEditorStatus(session: EditorSession): StatusBarSnapshot {
+export function useEditorStatus(session: EditorSession, enabled = true): StatusBarSnapshot {
   const subscribe = useCallback(
-    (onStoreChange: () => void) => session.subscribeStatus(onStoreChange),
-    [session],
+    (onStoreChange: () => void) => {
+      if (!enabled) {
+        return () => undefined;
+      }
+      return session.subscribeStatus(onStoreChange);
+    },
+    [enabled, session],
   );
-  const snapshot = useSyncExternalStore(subscribe, session.getSnapshot, session.getSnapshot);
+  const getSnapshot = useCallback(() => session.getSnapshot(), [session]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     const flush = () => {
       session.flushStatus();
     };
@@ -25,7 +34,7 @@ export function useEditorStatus(session: EditorSession): StatusBarSnapshot {
       window.removeEventListener("blur", flush);
       session.flushStatus();
     };
-  }, [session]);
+  }, [enabled, session]);
 
   return {
     fileName: snapshot.fileName,

@@ -24,9 +24,9 @@ use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
     EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN,
-    MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN, MENU_PALETTE_OPEN, MENU_THEME_DARK,
-    MENU_THEME_LIGHT, MENU_THEME_SYSTEM, MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE,
-    MENU_VIEW_TOGGLE_THEME,
+    MENU_FILE_OPEN_FOLDER, MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN,
+    MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
+    MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE, MENU_VIEW_TOGGLE_THEME,
 };
 use ipc::dto::{AppLanguage, MenuActionPayload, NativeShellLabels};
 
@@ -180,6 +180,7 @@ fn menu_layout<'a>(
     let mut file_items = vec![
         action(MENU_FILE_NEW, &labels.new, Some("CmdOrCtrl+N")),
         action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
+        action(MENU_FILE_OPEN_FOLDER, &labels.open_folder, None),
         action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
     ];
     if !macos {
@@ -327,6 +328,7 @@ fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
     let macos = platform == MenuPlatform::Mac;
     let mut file_items = vec![
         action(MENU_FILE_NEW, "New", Some("CmdOrCtrl+N")),
+        action(MENU_FILE_OPEN_FOLDER, "Open Folder…", None),
         action(MENU_CLOSE_WINDOW, "Close Window", Some("CmdOrCtrl+W")),
     ];
     if !macos {
@@ -640,6 +642,24 @@ pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
 
+    // The label is about to be reused. Clear a tombstone and any leftovers
+    // from a previous `main` (or a failed destroy) before staging new state;
+    // otherwise late writes from the old generation would target this window.
+    let released = app.state::<state::WindowSessions>().reopen("main");
+    for token in [released.doc_token, released.previous_doc_token]
+        .into_iter()
+        .flatten()
+    {
+        app.state::<state::DocumentRegistry>().release(&token);
+        if let Some(watcher) = app.try_state::<state::DocumentWatcher>() {
+            watcher.unwatch(&token);
+        }
+    }
+    if let Some(token) = released.workspace_token {
+        app.state::<state::WorkspaceRegistry>().release(&token);
+    }
+    commands::workspace::sync_workspace_watchers(app);
+
     let labels = app.state::<state::ShellLocale>().labels();
     let title = labels.as_ref().map(|labels| {
         commands::document::window_title_for_untitled(&labels.untitled_file_name, &labels.app_name)
@@ -669,9 +689,20 @@ pub(crate) fn ensure_main_window<R: Runtime>(app: &AppHandle<R>) {
 /// path); in that case a launch with no window must still end with the blank
 /// main window instead of a windowless process.
 fn open_path_from_os<R: Runtime>(app: &AppHandle<R>, path: PathBuf) {
+    // Warm opens inherit the window the user was editing when the file is
+    // already inside its tree; otherwise the new window gets the file's own
+    // folder. Cold launches start with that folder directly.
+    let parent_workspace = command_window(app)
+        .and_then(|window| commands::document::workspace_token_for_window(app, window.label()));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = commands::document::open_path_in_new_window(app.clone(), path).await {
+        if let Err(error) = commands::document::open_path_with_document_workspace(
+            app.clone(),
+            path,
+            parent_workspace,
+        )
+        .await
+        {
             tracing::warn!(%error, "failed to open a file from the operating system");
             // A launch open that failed must not end windowless.
             if app.webview_windows().is_empty() {
@@ -880,7 +911,19 @@ pub fn run() {
                 // keeps New available while Settings owns the last focus.
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = commands::document::create_untitled_window(app.clone()).await
+                    // Same source as the command palette's New: the last
+                    // document window's workspace, never Settings/About.
+                    let parent = app
+                        .state::<state::FocusTracker>()
+                        .get_command_target()
+                        .and_then(|label| {
+                            commands::document::workspace_token_for_window(&app, &label)
+                        });
+                    if let Err(error) = commands::document::create_untitled_window_with_workspace(
+                        app.clone(),
+                        parent,
+                    )
+                    .await
                     {
                         tracing::error!(%error, "failed to create a document window");
                         // The menu path has no invoke promise to reject, so
@@ -924,6 +967,7 @@ pub fn run() {
         })
         .manage(state::DocumentRegistry::new())
         .manage(state::WindowSessions::new())
+        .manage(state::WorkspaceRegistry::new())
         .manage(state::CloseGuard::new())
         .manage(state::FocusTracker::new())
         .manage(state::PreviewModes::new())
@@ -949,6 +993,15 @@ pub fn run() {
             app.manage(state::DocumentWatcher::start(
                 app.handle().clone(),
                 registry,
+            ));
+            // Workspace trees share one watcher per canonical root. It is
+            // managed here because it needs the app handle for targeted emits.
+            let sessions = app.state::<state::WindowSessions>().inner().clone();
+            let workspaces = app.state::<state::WorkspaceRegistry>().inner().clone();
+            app.manage(state::WorkspaceWatcher::new(
+                app.handle().clone(),
+                sessions,
+                workspaces,
             ));
             // Session storage is optional: a broken data directory disables
             // drafts/view state but must never block startup or fall back to
@@ -1064,16 +1117,9 @@ pub fn run() {
             app_handle.state::<state::FocusTracker>().clear(&label);
             app_handle.state::<state::PreviewModes>().clear(&label);
             // A window can be destroyed without the normal close handshake
-            // (for example a crashed webview); release the document and its
-            // watcher so the registry does not outlive the window.
-            if let Some(token) = app_handle.state::<state::WindowSessions>().release(&label) {
-                app_handle
-                    .state::<state::DocumentRegistry>()
-                    .release(&token);
-                if let Some(watcher) = app_handle.try_state::<state::DocumentWatcher>() {
-                    watcher.unwatch(&token);
-                }
-            }
+            // (for example a crashed webview); release the document, workspace
+            // and their watchers so no registry outlives the window.
+            commands::close::release_window_state(app_handle, &label);
         }
         RunEvent::WindowEvent {
             label,
@@ -1159,6 +1205,11 @@ pub fn run() {
             api.prevent_exit();
             commands::close::request_close(app_handle, ipc::dto::CloseReason::Exit, None);
         }
+        RunEvent::Exit => {
+            if let Some(watcher) = app_handle.try_state::<state::WorkspaceWatcher>() {
+                watcher.shutdown();
+            }
+        }
         _ => {}
     });
 }
@@ -1180,6 +1231,7 @@ mod menu_tests {
             file: format!("{prefix}-file"),
             new: format!("{prefix}-new"),
             open: format!("{prefix}-open"),
+            open_folder: format!("{prefix}-open-folder"),
             save: format!("{prefix}-save"),
             close_window: format!("{prefix}-close"),
             edit: format!("{prefix}-edit"),
@@ -1340,6 +1392,7 @@ mod menu_tests {
             [
                 MENU_FILE_NEW,
                 MENU_FILE_OPEN,
+                MENU_FILE_OPEN_FOLDER,
                 MENU_FILE_SAVE,
                 MENU_CLOSE_WINDOW
             ]

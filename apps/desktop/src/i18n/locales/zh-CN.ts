@@ -483,6 +483,12 @@ export const commandLabels = {
     open: "打开文件",
     save: "保存文件",
   },
+  workspace: {
+    open: "打开文件夹",
+    refresh: "刷新工作区",
+    collapseAll: "折叠全部目录",
+    toggleSidebar: "切换工作区侧栏",
+  },
   view: {
     toggleOutline: "切换大纲",
     toggleLivePreview: "切换实时预览",
@@ -496,6 +502,7 @@ export const commandLabels = {
   },
   category: {
     file: "文件",
+    workspace: "工作区",
     view: "视图",
     app: "应用",
   },
@@ -550,6 +557,42 @@ export const logs = {
   },
 } as const;
 
+export const workspace = {
+  dock: {
+    workspaceTab: "工作区",
+    outlineTab: "大纲",
+    region: "侧栏视图",
+    hide: "隐藏侧栏",
+    reopen: "显示侧栏",
+  },
+  header: {
+    refresh: "刷新工作区",
+    collapseAll: "折叠全部目录",
+    loading: "正在读取工作区…",
+    retry: "重试",
+    empty: "空文件夹",
+  },
+  tree: {
+    region: "工作区文件树",
+    retry: "重试读取此目录",
+    truncatedRow: "此目录只显示前 10,000 项，请进子目录查看",
+    rowError: "无法读取此目录",
+  },
+  truncated: {
+    listed: "仅显示前 10,000 项，请进子目录查看。",
+    scanned: "目录项过多，仅显示部分结果，排序可能不完整。",
+  },
+  error: {
+    expired: "工作区已失效，请重新打开文件夹。",
+    outside: "该路径不在工作区内。",
+    missing: "目录或文件已不存在。",
+    notFile: "所选项目不是普通文件。",
+    unsupported: "不支持的文件类型。",
+    permission: "没有访问这个位置的权限。",
+    io: "读取工作区失败，请重试。",
+  },
+} as const;
+
 export const zhCN = {
   common,
   editor,
@@ -560,4 +603,5 @@ export const zhCN = {
   settings,
   logs,
   menu,
+  workspace,
 };

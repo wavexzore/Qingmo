@@ -13,7 +13,7 @@ import { FakeUpdatePort } from "../../lib/update/fake";
 import { LANGUAGE_STORAGE_KEY, THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider } from "../editor/DocumentSessionContext";
-import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
+import { sidebarDockStore } from "./sidebarDockStore";
 import { UpdateProvider } from "../update/UpdateProvider";
 
 function renderApp() {
@@ -45,9 +45,13 @@ afterEach(() => {
   commandRegistry.unregister("view.toggleLivePreview");
   commandRegistry.unregister("view.toggleOutline");
   commandRegistry.unregister("view.toggleTheme");
+  commandRegistry.unregister("workspace.open");
+  commandRegistry.unregister("workspace.refresh");
+  commandRegistry.unregister("workspace.collapseAll");
+  commandRegistry.unregister("workspace.toggleSidebar");
   uiStore.setTheme("system");
   uiStore.setLanguage("zh-CN");
-  outlineVisibilityStore.resetForTests();
+  sidebarDockStore.resetForTests();
 });
 
 describe("native menu actions", () => {
@@ -90,13 +94,21 @@ describe("native menu actions", () => {
 
     platform.emitMenuAction("file.open");
     await screen.findByTestId("document-session");
-    expect(screen.queryByTestId("outline-panel")).not.toBeInTheDocument();
+    const outlinePanel = screen.getByTestId("outline-panel");
+    expect(outlinePanel).toHaveAttribute("data-outline-visible", "false");
+    expect(screen.getByTestId("sidebar-dock")).toHaveAttribute("data-open", "false");
 
     platform.emitMenuAction("view.toggleOutline");
-    expect(await screen.findByTestId("outline-panel")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("outline-panel")).toHaveAttribute("data-outline-visible", "true"),
+    );
+    expect(screen.getByTestId("sidebar-dock")).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("sidebar-dock")).toHaveAttribute("data-view", "outline");
 
     platform.emitMenuAction("view.toggleOutline");
-    await waitFor(() => expect(screen.queryByTestId("outline-panel")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("sidebar-dock")).toHaveAttribute("data-open", "false"),
+    );
     expect(document.activeElement?.closest(".cm-editor")).not.toBeNull();
   });
 

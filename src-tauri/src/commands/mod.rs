@@ -8,6 +8,7 @@ pub mod session;
 pub mod settings;
 pub mod update;
 pub mod view;
+pub mod workspace;
 
 /// The single invoke handler registered by the app and by contract tests.
 pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
@@ -16,9 +17,15 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         document::document_open,
         document::document_new,
         document::document_take_pending,
+        document::document_activate,
         document::document_reload,
         document::document_save_as,
         document::document_write_atomic,
+        workspace::workspace_open,
+        workspace::workspace_current,
+        workspace::workspace_list,
+        workspace::workspace_open_document,
+        workspace::workspace_locate_document,
         close::app_close_confirm,
         view::app_set_live_preview,
         about::app_about_info,

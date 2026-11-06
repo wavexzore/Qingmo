@@ -6,9 +6,6 @@ import { ConflictBanner } from "./ConflictBanner";
 import { RecoveryBanner } from "./recovery/RecoveryBanner";
 import { RecoveryDialog } from "./recovery/RecoveryDialog";
 import { EditorHost } from "./EditorHost";
-import { OutlinePanel } from "./outline/OutlinePanel";
-import { outlineVisibilityStore, useOutlineOpen } from "./outline/outlineVisibility";
-import { usePanelPresence } from "./outline/usePanelPresence";
 import { useDocumentSession } from "./DocumentSessionContext";
 import { useEditor } from "./useEditor";
 import { useEditorStatus } from "./useEditorStatus";
@@ -21,11 +18,6 @@ function DocumentEditor() {
   const { coordinator, drafts, recorder, viewState, refreshDrafts, restoreDraft, discardDraft } =
     useDocumentSession();
   const status = useEditorStatus(session);
-  const outlineOpen = useOutlineOpen();
-  const { mounted: outlineMounted, visible: outlineVisible } = usePanelPresence(outlineOpen);
-  const closeOutline = useCallback(() => {
-    outlineVisibilityStore.setOpen(false);
-  }, []);
   const save = useSaveCoordinator(coordinator);
   useExternalDocumentChanges(session, coordinator);
   const [dismissedConflict, setDismissedConflict] = useState<string | null>(null);
@@ -114,14 +106,6 @@ function DocumentEditor() {
       ) : null}
 
       <div className="flex min-h-0 w-full flex-1">
-        {outlineMounted ? (
-          <OutlinePanel
-            session={session}
-            cursorLine={status.cursor?.line ?? 0}
-            onClose={closeOutline}
-            visible={outlineVisible}
-          />
-        ) : null}
         <div className="min-h-0 min-w-0 flex-1">
           <EditorHost
             session={session}

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Outlet, useNavigate } from "react-router-dom";
 
-import type { AppError, FilePayload } from "@qingmo/shared";
+import type { AppError, FilePayload, Result } from "@qingmo/shared";
 
 import { useAppServices } from "../../app/AppServices";
 import { CloseConfirmDialog } from "../../app/CloseConfirmDialog";
@@ -14,6 +14,7 @@ import { buildEditorUiCopy } from "../../i18n/editorCopy";
 import { normalizeLanguage } from "../../i18n/language";
 import { MENU_ACTIONS } from "../../lib/ipc/commands";
 import { AppError as AppErrorClass, normalizeError } from "../../lib/ipc/errors";
+import type { IpcPort } from "../../lib/ipc/port";
 import { isE2eMode } from "../../e2e/bridge";
 import { isTauriRuntime } from "../../lib/platform/runtime";
 import { uiStore } from "../../stores/uiStore";
@@ -22,16 +23,29 @@ import { commandRegistry } from "../commands/CommandRegistry";
 import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
-import { outlineVisibilityStore } from "../editor/outline/outlineVisibility";
+import type { EditorSession } from "../editor/EditorSession";
+import { OutlinePanel } from "../editor/outline/OutlinePanel";
 import { createDocumentSession } from "../editor/session/createDocumentSession";
 import { useEditorLocale } from "../editor/useEditorLocale";
+import { useEditorStatus } from "../editor/useEditorStatus";
 import { useLivePreviewMenu } from "../editor/useLivePreviewMenu";
 import { LogDialog } from "../logs/LogDialog";
 import { UpdateHost } from "../update/UpdateHost";
 import { useUpdateController, useUpdateSnapshot } from "../update/UpdateProvider";
 import { adoptInPlace } from "./adoptInPlace";
 import { openFile } from "./openFile";
+import { openWorkspaceFile } from "./openWorkspaceFile";
 import { newDocument } from "./newDocument";
+import {
+  OutlineCountBadge,
+  SidebarDock,
+  SidebarReopenHandle,
+  type SidebarDockHandle,
+} from "./SidebarDock";
+import { sidebarDockStore, useSidebarDock, type SidebarView } from "./sidebarDockStore";
+import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
+import { workspaceErrorKey } from "./workspaceErrorMessage";
+import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 /**
  * App-level workspace layout. It owns the single `file.open` registration and
@@ -88,6 +102,29 @@ export function WorkspaceLayout() {
   coordinatorRef.current = coordinator;
   const hasSession = session !== null;
   const updateBlocked = closeGuard.closing || closeGuard.prompt !== null;
+  const dock = useSidebarDock();
+  const navigation = useWorkspaceNavigation({
+    ipc,
+    session,
+    isTreeVisible: () => {
+      const snapshot = sidebarDockStore.getSnapshot();
+      return snapshot.open && snapshot.view === "workspace";
+    },
+  });
+  const hasWorkspace = navigation.workspace !== null;
+  const hasOutline = session !== null;
+  const dockAvailable = hasWorkspace || hasOutline;
+  const resolvedView: SidebarView =
+    dock.view === "workspace"
+      ? hasWorkspace
+        ? "workspace"
+        : "outline"
+      : hasOutline
+        ? "outline"
+        : "workspace";
+  const dockRef = useRef<SidebarDockHandle>(null);
+  const reopenRef = useRef<HTMLButtonElement>(null);
+  const workspaceToken = navigation.workspace?.token ?? null;
 
   useThemeCommand();
   useThemeService(session);
@@ -106,6 +143,92 @@ export function WorkspaceLayout() {
     },
     [t, toast],
   );
+
+  const focusAfterDockClose = useCallback(() => {
+    if (sessionRef.current) {
+      sessionRef.current.focusEditor();
+      return;
+    }
+    reopenRef.current?.focus();
+  }, []);
+
+  const closeDock = useCallback(() => {
+    sidebarDockStore.setOpen(false);
+    focusAfterDockClose();
+  }, [focusAfterDockClose]);
+
+  const showDockView = useCallback(
+    (view: SidebarView) => {
+      sidebarDockStore.show(view);
+      if (view === "workspace") {
+        navigation.flushStale();
+      }
+    },
+    [navigation],
+  );
+
+  const handleOutlineClose = useCallback(() => {
+    if (hasWorkspace) {
+      sidebarDockStore.show("workspace");
+      dockRef.current?.focusTab();
+      return;
+    }
+    closeDock();
+  }, [closeDock, hasWorkspace]);
+
+  const toggleWorkspaceSidebar = useCallback(() => {
+    const snapshot = sidebarDockStore.getSnapshot();
+    if (snapshot.open && snapshot.view === "workspace") {
+      closeDock();
+      return;
+    }
+    sidebarDockStore.show("workspace");
+    navigation.flushStale();
+    dockRef.current?.focusActivePanel();
+  }, [closeDock, navigation]);
+
+  const toggleOutline = useCallback(() => {
+    sidebarDockStore.toggleView("outline", hasWorkspace ? "workspace" : null);
+    const next = sidebarDockStore.getSnapshot();
+    if (next.open) {
+      if (next.view === "workspace") {
+        navigation.flushStale();
+      }
+      dockRef.current?.focusActivePanel();
+    } else {
+      focusAfterDockClose();
+    }
+  }, [focusAfterDockClose, hasWorkspace, navigation]);
+
+  const handleReopen = useCallback(() => {
+    const last = sidebarDockStore.getSnapshot().view;
+    const next: SidebarView | null =
+      last === "workspace" && hasWorkspace
+        ? "workspace"
+        : last === "outline" && hasOutline
+          ? "outline"
+          : hasWorkspace
+            ? "workspace"
+            : hasOutline
+              ? "outline"
+              : null;
+    if (!next) {
+      return;
+    }
+    sidebarDockStore.openLast(next);
+    if (next === "workspace") {
+      navigation.flushStale();
+    }
+    dockRef.current?.focusActivePanel();
+  }, [hasOutline, hasWorkspace, navigation]);
+
+  // A workspace inherited at window boot opens the dock once. A user who has
+  // already hidden it keeps it hidden for the rest of this window's life.
+  useEffect(() => {
+    if (workspaceToken && !sidebarDockStore.getSnapshot().everOpened) {
+      sidebarDockStore.show("workspace");
+    }
+  }, [workspaceToken]);
 
   /**
    * Preserves the current session before a harness Open/New replaces it.
@@ -223,68 +346,107 @@ export function WorkspaceLayout() {
     });
   }, [updateController]);
 
+  const openDocumentFrom = useCallback(
+    async (
+      pick: (port: IpcPort) => Promise<Result<FilePayload | null, AppError>>,
+      options: { inPlace?: boolean } = {},
+    ) => {
+      if (openingRef.current) {
+        return;
+      }
+      openingRef.current = true;
+      let release: (() => void) | null = null;
+      try {
+        release = await beginReplacement();
+        // File > Open creates a new window in Tauri and must stay usable even
+        // when the current document cannot be saved. The browser harness and
+        // workspace tree opens replace this window instead.
+        const inPlace = options.inPlace === true || !isTauriRuntime() || isE2eMode();
+        let baseline: string | null = null;
+        if (inPlace) {
+          if (!(await preserveCurrentSession())) {
+            return;
+          }
+          baseline = getCurrentBundle().session?.readText() ?? null;
+        }
+        const previousToken = getCurrentBundle().session?.docToken ?? null;
+        const result = await pick(ipc);
+        if (!result.ok) {
+          if (result.error.code !== "CANCELLED") {
+            toast.push(t(`errors:${result.error.code}`));
+          }
+          return;
+        }
+        if (result.value === null) {
+          // Tauri created a new window for this document; the current session
+          // stays exactly as it was.
+          return;
+        }
+        if (inPlace) {
+          if (!(await adoptOpened(result.value, baseline, previousToken))) {
+            return;
+          }
+        } else {
+          const created = await createDocumentSession(
+            ipc,
+            result.value,
+            buildEditorUiCopy(normalizeLanguage(i18n.language)),
+          );
+          setSession(created.session, { viewState: created.viewState });
+        }
+        navigate("/editor");
+      } finally {
+        release?.();
+        openingRef.current = false;
+      }
+    },
+    [
+      adoptOpened,
+      beginReplacement,
+      getCurrentBundle,
+      i18n.language,
+      ipc,
+      navigate,
+      preserveCurrentSession,
+      setSession,
+      t,
+      toast,
+    ],
+  );
+
   const openDocument = useCallback(async () => {
-    if (openingRef.current) {
-      return;
-    }
-    openingRef.current = true;
-    let release: (() => void) | null = null;
+    await openDocumentFrom(openFile);
+  }, [openDocumentFrom]);
+
+  const openWorkspaceDocument = useCallback(
+    (segments: string[]) => {
+      const token = workspaceToken;
+      if (!token) {
+        return;
+      }
+      // The tree always switches this window, including the native shell.
+      void openDocumentFrom((port) => openWorkspaceFile(port, token, segments), {
+        inPlace: true,
+      });
+    },
+    [openDocumentFrom, workspaceToken],
+  );
+
+  const openWorkspace = useCallback(async () => {
     try {
-      release = await beginReplacement();
-      // Only the browser harness (or the E2E bridge) replaces this window;
-      // native Open creates a new window and must stay usable even when the
-      // current document cannot be saved.
-      const replacesInPlace = !isTauriRuntime() || isE2eMode();
-      let baseline: string | null = null;
-      if (replacesInPlace) {
-        if (!(await preserveCurrentSession())) {
-          return;
-        }
-        baseline = getCurrentBundle().session?.readText() ?? null;
-      }
-      const previousToken = getCurrentBundle().session?.docToken ?? null;
-      const result = await openFile(ipc);
-      if (!result.ok) {
-        if (result.error.code !== "CANCELLED") {
-          toast.push(t(`errors:${result.error.code}`));
-        }
+      const info = await navigation.openWorkspace();
+      if (!info) {
         return;
       }
-      if (result.value === null) {
-        // Tauri created a new window for this document; the current session
-        // stays exactly as it was.
-        return;
+      sidebarDockStore.show("workspace");
+      dockRef.current?.focusActivePanel();
+    } catch (error) {
+      const appError = normalizeError(error);
+      if (appError.code !== "CANCELLED") {
+        toast.push(t(workspaceErrorKey(appError.code)));
       }
-      if (replacesInPlace) {
-        // Browser harness fallback: no native window exists, adopt in place.
-        if (!(await adoptOpened(result.value, baseline, previousToken))) {
-          return;
-        }
-      } else {
-        const created = await createDocumentSession(
-          ipc,
-          result.value,
-          buildEditorUiCopy(normalizeLanguage(i18n.language)),
-        );
-        setSession(created.session, { viewState: created.viewState });
-      }
-      navigate("/editor");
-    } finally {
-      release?.();
-      openingRef.current = false;
     }
-  }, [
-    adoptOpened,
-    beginReplacement,
-    getCurrentBundle,
-    i18n.language,
-    ipc,
-    navigate,
-    preserveCurrentSession,
-    setSession,
-    t,
-    toast,
-  ]);
+  }, [navigation, t, toast]);
 
   const createDocument = useCallback(async () => {
     if (creatingRef.current) {
@@ -363,6 +525,9 @@ export function WorkspaceLayout() {
         case MENU_ACTIONS.fileOpen:
           void openDocument();
           break;
+        case MENU_ACTIONS.fileOpenFolder:
+          void openWorkspace();
+          break;
         case MENU_ACTIONS.fileSave:
           void runMenuCommand("file.save");
           break;
@@ -398,7 +563,15 @@ export function WorkspaceLayout() {
           break;
       }
     });
-  }, [menuEnabled, createDocument, openDocument, openPalette, platform, runMenuCommand]);
+  }, [
+    menuEnabled,
+    createDocument,
+    openDocument,
+    openWorkspace,
+    openPalette,
+    platform,
+    runMenuCommand,
+  ]);
 
   // Native New bypasses the webview; Rust only emits this when it failed.
   useEffect(() => {
@@ -486,15 +659,58 @@ export function WorkspaceLayout() {
       id: "view.toggleOutline",
       titleKey: "commands:view.toggleOutline",
       category: "commands:category.view",
-      run: () => {
-        const open = outlineVisibilityStore.toggle();
-        if (!open) {
-          sessionRef.current?.focusEditor();
-        }
-      },
+      run: toggleOutline,
     });
     return () => disposable.dispose();
-  }, [hasSession]);
+  }, [hasSession, toggleOutline]);
+
+  useEffect(() => {
+    const disposable = commandRegistry.register({
+      id: "workspace.open",
+      titleKey: "commands:workspace.open",
+      category: "commands:category.workspace",
+      run: openWorkspace,
+    });
+    return () => disposable.dispose();
+  }, [openWorkspace]);
+
+  useEffect(() => {
+    if (!hasWorkspace) {
+      return;
+    }
+    const disposables = [
+      commandRegistry.register({
+        id: "workspace.refresh",
+        titleKey: "commands:workspace.refresh",
+        category: "commands:category.workspace",
+        run: () => navigation.refresh({ manual: true }),
+      }),
+      commandRegistry.register({
+        id: "workspace.collapseAll",
+        titleKey: "commands:workspace.collapseAll",
+        category: "commands:category.workspace",
+        run: navigation.collapseAll,
+      }),
+      commandRegistry.register({
+        id: "workspace.toggleSidebar",
+        titleKey: "commands:workspace.toggleSidebar",
+        category: "commands:category.workspace",
+        keybinding: "Mod+B",
+        run: toggleWorkspaceSidebar,
+      }),
+    ];
+    return () => {
+      for (const disposable of disposables) {
+        disposable.dispose();
+      }
+    };
+  }, [
+    hasWorkspace,
+    navigation,
+    navigation.collapseAll,
+    navigation.refresh,
+    toggleWorkspaceSidebar,
+  ]);
 
   return (
     <div className="flex h-dvh flex-col bg-paper">
@@ -503,8 +719,49 @@ export function WorkspaceLayout() {
         dialogOpen={updateDialogOpen}
         onDialogOpenChange={setUpdateDialogOpen}
       />
-      <div className="min-h-0 flex-1">
-        <Outlet />
+      <div className="relative flex min-h-0 flex-1">
+        {dockAvailable ? (
+          <SidebarDock
+            ref={dockRef}
+            open={dock.open}
+            view={resolvedView}
+            hasWorkspace={hasWorkspace}
+            hasOutline={hasOutline}
+            onSelectView={showDockView}
+            onClose={closeDock}
+            outlineBadge={session ? <OutlineCountBadge session={session} /> : null}
+            workspacePanel={
+              hasWorkspace
+                ? ({ active, focusRequest }) => (
+                    <WorkspaceSidebar
+                      navigation={navigation}
+                      active={active}
+                      focusRequest={focusRequest}
+                      onOpenFile={openWorkspaceDocument}
+                    />
+                  )
+                : undefined
+            }
+            outlinePanel={
+              session
+                ? ({ active, focusRequest }) => (
+                    <OutlineTab
+                      session={session}
+                      active={active}
+                      focusRequest={focusRequest}
+                      onClose={handleOutlineClose}
+                    />
+                  )
+                : undefined
+            }
+          />
+        ) : null}
+        <div className="relative min-h-0 min-w-0 flex-1">
+          {dockAvailable && !dock.open && dock.everOpened ? (
+            <SidebarReopenHandle ref={reopenRef} onClick={handleReopen} />
+          ) : null}
+          <WorkspaceContent />
+        </div>
       </div>
       <CommandPalette open={paletteOpen} onClose={closePalette} onError={handleCommandError} />
       <CloseConfirmDialog
@@ -514,5 +771,31 @@ export function WorkspaceLayout() {
       />
       <LogDialog open={logsOpen} onClose={() => setLogsOpen(false)} />
     </div>
+  );
+}
+
+const WorkspaceContent = memo(function WorkspaceContent() {
+  return <Outlet />;
+});
+
+interface OutlineTabProps {
+  session: EditorSession;
+  active: boolean;
+  focusRequest: number;
+  onClose(): void;
+}
+
+function OutlineTab({ session, active, focusRequest, onClose }: OutlineTabProps) {
+  // Inactive tabs still call the hook but do not subscribe to cursor changes.
+  const status = useEditorStatus(session, active);
+  return (
+    <OutlinePanel
+      session={session}
+      cursorLine={status.cursor?.line ?? 0}
+      onClose={onClose}
+      variant="dock"
+      active={active}
+      focusRequest={focusRequest}
+    />
   );
 }

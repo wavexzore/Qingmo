@@ -9,6 +9,8 @@ pub mod startup_window;
 pub mod update_flush;
 pub mod update_manager;
 pub mod window_sessions;
+pub mod workspace_registry;
+pub mod workspace_watcher;
 
 pub use close_guard::{CloseGuard, CloseOutcome};
 pub use document_registry::{DocToken, DocumentRecord, DocumentRegistry};
@@ -21,3 +23,5 @@ pub use startup_window::StartupWindow;
 pub use update_flush::UpdateFlushGate;
 pub use update_manager::UpdateManager;
 pub use window_sessions::WindowSessions;
+pub use workspace_registry::{WorkspaceRecord, WorkspaceRegistry, WorkspaceToken};
+pub use workspace_watcher::WorkspaceWatcher;

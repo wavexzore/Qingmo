@@ -66,51 +66,8 @@ mod tests {
     use super::*;
 
     fn labels(app_name: &str) -> NativeShellLabels {
-        let mut labels: NativeShellLabels = serde_json::from_value(serde_json::json!({
-            "appName": app_name,
-            "about": "about",
-            "settings": "settings",
-            "services": "services",
-            "hideApp": "hide",
-            "hideOthers": "hide others",
-            "showAll": "show all",
-            "quitApp": "quit",
-            "file": "file",
-            "new": "new",
-            "open": "open",
-            "save": "save",
-            "closeWindow": "close",
-            "edit": "edit",
-            "undo": "undo",
-            "redo": "redo",
-            "cut": "cut",
-            "copy": "copy",
-            "paste": "paste",
-            "selectAll": "select all",
-            "view": "view",
-            "livePreview": "live preview",
-            "outline": "outline",
-            "commandPalette": "palette",
-            "toggleTheme": "theme",
-            "logs": "logs",
-            "fullscreen": "fullscreen",
-            "theme": "theme",
-            "themeLight": "light",
-            "themeDark": "dark",
-            "themeSystem": "system",
-            "language": "language",
-            "languageZhCN": "简体中文",
-            "languageEn": "English",
-            "window": "window",
-            "minimize": "minimize",
-            "zoom": "zoom",
-            "maximize": "maximize",
-            "bringAllToFront": "front",
-            "help": "help",
-            "untitledFileName": format!("{app_name}.md"),
-        }))
-        .expect("test labels must deserialize");
-        labels.about = format!("{app_name} about");
+        let mut labels = crate::ipc::dto::test_native_labels(app_name);
+        labels.untitled_file_name = format!("{app_name}.md");
         labels
     }
 

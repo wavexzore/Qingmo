@@ -76,6 +76,53 @@ pub struct SaveResult {
     pub mtime_ms: i64,
 }
 
+/// One open workspace as seen by its owning window.
+///
+/// `root` is display-only and never sent back over IPC; `token` is the only
+/// capability the webview may present.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceInfo {
+    pub token: String,
+    pub root: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceEntryKind {
+    Directory,
+    File,
+    SymlinkDirectory,
+    SymlinkFile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEntry {
+    pub name: String,
+    pub kind: WorkspaceEntryKind,
+    pub expandable: bool,
+    pub openable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceTruncationReason {
+    Listed,
+    Scanned,
+}
+
+/// One directory level below a workspace root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceListing {
+    pub segments: Vec<String>,
+    pub entries: Vec<WorkspaceEntry>,
+    pub truncated: bool,
+    pub truncation_reason: Option<WorkspaceTruncationReason>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ConflictDetails {
@@ -294,6 +341,7 @@ pub struct NativeShellLabels {
     pub file: String,
     pub new: String,
     pub open: String,
+    pub open_folder: String,
     pub save: String,
     pub close_window: String,
     pub edit: String,
@@ -381,7 +429,7 @@ fn validate_untitled_file_name(name: &str) -> Result<(), AppError> {
 
 impl NativeShellLabels {
     /// Menu/title labels only; `untitledFileName` is validated separately.
-    pub fn fields(&self) -> [(&'static str, &str); 40] {
+    pub fn fields(&self) -> [(&'static str, &str); 41] {
         [
             ("appName", &self.app_name),
             ("about", &self.about),
@@ -394,6 +442,7 @@ impl NativeShellLabels {
             ("file", &self.file),
             ("new", &self.new),
             ("open", &self.open),
+            ("openFolder", &self.open_folder),
             ("save", &self.save),
             ("closeWindow", &self.close_window),
             ("edit", &self.edit),
@@ -472,6 +521,7 @@ pub fn test_native_labels(app_name: &str) -> NativeShellLabels {
         file: "File".to_string(),
         new: "New".to_string(),
         open: "Open…".to_string(),
+        open_folder: "Open Folder…".to_string(),
         save: "Save".to_string(),
         close_window: "Close Window".to_string(),
         edit: "Edit".to_string(),

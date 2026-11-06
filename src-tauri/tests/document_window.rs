@@ -9,7 +9,9 @@ use qingmo_lib::commands::document::{
     create_document_window, create_untitled_window, has_editable_window,
 };
 use qingmo_lib::error::AppErrorCode;
-use qingmo_lib::state::{FocusTracker, ShellLocale, StartupWindow, WindowSessions};
+use qingmo_lib::state::{
+    FocusTracker, ShellLocale, StartupWindow, WindowSessions, WorkspaceRegistry,
+};
 use tauri::Manager;
 
 type MockRuntime = tauri::test::MockRuntime;
@@ -20,6 +22,7 @@ fn mock_app() -> tauri::App<MockRuntime> {
         .manage(WindowSessions::new())
         .manage(StartupWindow::new())
         .manage(FocusTracker::new())
+        .manage(WorkspaceRegistry::new())
         .build(tauri::generate_context!())
         .expect("mock app must build")
 }
