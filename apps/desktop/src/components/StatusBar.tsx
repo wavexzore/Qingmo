@@ -52,10 +52,30 @@ const saveStateTone: Record<SaveState, string> = {
   readonly: "bg-ink-faint",
 };
 
-function Item({ label, value }: { label: string; value: string }) {
+function Item({
+  label,
+  value,
+  testId,
+  className = "inline-flex",
+}: {
+  label: string;
+  value: string;
+  testId?: string;
+  className?: string;
+}) {
   return (
-    <span className="inline-flex min-w-0 items-baseline gap-1.5">
-      <span className="text-[10px] uppercase tracking-[0.12em] text-ink-faint">{label}</span>
+    <span
+      data-testid={testId}
+      // The footer is a container: each item opts into wider layouts so a
+      // narrow editor pane hides secondary values instead of wrapping labels.
+      className={cx("min-w-0 items-baseline gap-1.5", className)}
+    >
+      <span
+        data-testid={testId ? `${testId}-label` : undefined}
+        className="shrink-0 whitespace-nowrap text-[10px] uppercase tracking-[0.12em] text-ink-faint"
+      >
+        {label}
+      </span>
       <span className="truncate text-ink-muted">{value}</span>
     </span>
   );
@@ -93,7 +113,7 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
     <footer
       role="status"
       aria-live="polite"
-      className="flex h-[var(--qm-status-height)] items-center gap-4 overflow-hidden border-t border-line bg-surface px-4 text-[11px]"
+      className="flex h-[var(--qm-status-height)] @container items-center gap-4 overflow-hidden border-t border-line bg-surface px-4 text-[11px]"
       data-testid="status-bar"
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -115,21 +135,41 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
       <span className="hidden h-3 w-px shrink-0 bg-line sm:block" aria-hidden="true" />
 
       <div className="hidden min-w-0 flex-1 items-center gap-4 overflow-hidden sm:flex">
-        <Item label={t("common:status.save")} value={saveLabel} />
+        <Item testId="status-save" label={t("common:status.save")} value={saveLabel} />
         {snapshot.saveState === "error" && onRetry ? (
           <button
             type="button"
             data-testid="status-retry"
             onClick={onRetry}
-            className="rounded border border-line px-1.5 py-0.5 text-[10px] text-ink transition-colors hover:border-line-strong hover:bg-accent-soft"
+            className="shrink-0 whitespace-nowrap rounded border border-line px-1.5 py-0.5 text-[10px] text-ink transition-colors hover:border-line-strong hover:bg-accent-soft"
           >
             {t("common:actions.retry")}
           </button>
         ) : null}
-        <Item label={t("common:status.cursor")} value={cursorLabel} />
-        <Item label={t("common:status.encoding")} value={formatEncoding(snapshot.encoding)} />
-        <Item label={t("common:status.eol")} value={formatEol(snapshot.eol)} />
-        <Item label={t("common:status.size")} value={formatBytes(snapshot.size, i18n.language)} />
+        <Item
+          testId="status-cursor"
+          className="hidden @md:inline-flex"
+          label={t("common:status.cursor")}
+          value={cursorLabel}
+        />
+        <Item
+          testId="status-encoding"
+          className="hidden @sm:inline-flex"
+          label={t("common:status.encoding")}
+          value={formatEncoding(snapshot.encoding)}
+        />
+        <Item
+          testId="status-eol"
+          className="hidden @xl:inline-flex"
+          label={t("common:status.eol")}
+          value={formatEol(snapshot.eol)}
+        />
+        <Item
+          testId="status-size"
+          className="hidden @2xl:inline-flex"
+          label={t("common:status.size")}
+          value={formatBytes(snapshot.size, i18n.language)}
+        />
       </div>
 
       <span className="ml-auto flex shrink-0 items-center gap-2">
@@ -139,7 +179,7 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
             title={t("common:status.partialPreviewHint", {
               limit: formatLimit(PREVIEW_FULL_MAX_UNITS),
             })}
-            className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-muted"
+            className="shrink-0 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-muted"
           >
             {t("common:status.partialPreview")}
           </span>
@@ -150,12 +190,14 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
             title={t("common:status.largeFileHint", {
               limit: formatLimit(PREVIEW_PARTIAL_MAX_UNITS),
             })}
-            className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-muted"
+            className="shrink-0 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-muted"
           >
             {t("common:status.largeFile")}
           </span>
         ) : null}
-        <span className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">{modeLabel}</span>
+        <span className="whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-ink-faint">
+          {modeLabel}
+        </span>
       </span>
     </footer>
   );

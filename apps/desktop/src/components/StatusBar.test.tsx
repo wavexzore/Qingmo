@@ -38,4 +38,21 @@ describe("StatusBar formatting", () => {
     expect(screen.getByText("LF")).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
+
+  it("keeps labels on one line and lets narrow panes hide secondary items", () => {
+    render(<StatusBar snapshot={snapshot} />);
+
+    for (const id of [
+      "status-save",
+      "status-cursor",
+      "status-encoding",
+      "status-eol",
+      "status-size",
+    ]) {
+      expect(screen.getByTestId(`${id}-label`)).toHaveClass("whitespace-nowrap");
+    }
+    expect(screen.getByTestId("status-cursor")).toHaveClass("hidden", "@md:inline-flex");
+    expect(screen.getByTestId("status-eol")).toHaveClass("hidden", "@xl:inline-flex");
+    expect(screen.getByTestId("status-size")).toHaveClass("hidden", "@2xl:inline-flex");
+  });
 });

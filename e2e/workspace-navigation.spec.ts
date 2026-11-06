@@ -62,6 +62,56 @@ test("saves the current file before switching from the tree", async ({ page }) =
   await expect.poll(() => getFileText(page, "/work/readme.md")).toContain("switched away");
 });
 
+test("keeps the current tree row selected when a switch save fails", async ({ page }) => {
+  await openWorkspaceApp(page, WORKSPACE);
+
+  await workspaceRow(page, "readme.md").click();
+  await expect(page.getByTestId("status-bar")).toContainText("readme.md");
+  await typeInEditor(page, "\nunsaved");
+  await page.evaluate(() => window.__QINGMO_E2E__?.failSaveAlways("PERMISSION_DENIED"));
+
+  await workspaceRow(page, "notes").click();
+  await expect(workspaceRow(page, "notes/a.md")).toBeVisible();
+  await workspaceRow(page, "notes/a.md").click();
+
+  await expect(page.getByTestId("status-bar")).toContainText("保存失败");
+  await expect(page.getByTestId("status-bar")).toContainText("readme.md");
+  await expect(workspaceRow(page, "readme.md")).toHaveAttribute("aria-selected", "true");
+  await expect(workspaceRow(page, "notes/a.md")).toHaveAttribute("aria-selected", "false");
+  await expect(workspaceRow(page, "readme.md")).toBeFocused();
+});
+
+test("status bar keeps labels on one line in a narrow editor pane", async ({ page }) => {
+  await openWorkspaceApp(page, WORKSPACE);
+  await workspaceRow(page, "readme.md").click();
+  await expect(page.getByTestId("status-bar")).toContainText("readme.md");
+
+  // The 240px dock leaves a 560px editor pane, narrower than the full EOL/size
+  // items need; only the primary items may remain and none may wrap.
+  await page.setViewportSize({ width: 800, height: 700 });
+  await expect(page.getByTestId("status-save")).toBeVisible();
+  await expect(page.getByTestId("status-cursor")).toBeVisible();
+  await expect(page.getByTestId("status-encoding")).toBeVisible();
+  await expect(page.getByTestId("status-eol")).toBeHidden();
+  await expect(page.getByTestId("status-size")).toBeHidden();
+
+  for (const id of ["status-save", "status-cursor", "status-encoding"]) {
+    const label = page.getByTestId(`${id}-label`);
+    await expect(label).toBeVisible();
+    expect(await label.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("nowrap");
+    expect((await label.boundingBox())?.height ?? 0).toBeLessThan(20);
+  }
+  const metrics = await page.getByTestId("status-bar").evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+  }));
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+
+  await page.setViewportSize({ width: 1200, height: 700 });
+  await expect(page.getByTestId("status-eol")).toBeVisible();
+  await expect(page.getByTestId("status-size")).toBeVisible();
+});
+
 test("navigates and opens with the keyboard", async ({ page }) => {
   await openWorkspaceApp(page, WORKSPACE);
 

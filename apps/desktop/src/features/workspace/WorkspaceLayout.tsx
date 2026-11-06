@@ -350,9 +350,11 @@ export function WorkspaceLayout() {
     async (
       pick: (port: IpcPort) => Promise<Result<FilePayload | null, AppError>>,
       options: { inPlace?: boolean } = {},
-    ) => {
+    ): Promise<boolean> => {
       if (openingRef.current) {
-        return;
+        // Another open is already running; keep the optimistic tree selection
+        // rather than rolling it back for a click that was simply ignored.
+        return true;
       }
       openingRef.current = true;
       let release: (() => void) | null = null;
@@ -365,7 +367,7 @@ export function WorkspaceLayout() {
         let baseline: string | null = null;
         if (inPlace) {
           if (!(await preserveCurrentSession())) {
-            return;
+            return false;
           }
           baseline = getCurrentBundle().session?.readText() ?? null;
         }
@@ -374,17 +376,18 @@ export function WorkspaceLayout() {
         if (!result.ok) {
           if (result.error.code !== "CANCELLED") {
             toast.push(t(`errors:${result.error.code}`));
+            return false;
           }
-          return;
+          return true;
         }
         if (result.value === null) {
           // Tauri created a new window for this document; the current session
           // stays exactly as it was.
-          return;
+          return true;
         }
         if (inPlace) {
           if (!(await adoptOpened(result.value, baseline, previousToken))) {
-            return;
+            return false;
           }
         } else {
           const created = await createDocumentSession(
@@ -395,6 +398,7 @@ export function WorkspaceLayout() {
           setSession(created.session, { viewState: created.viewState });
         }
         navigate("/editor");
+        return true;
       } finally {
         release?.();
         openingRef.current = false;
@@ -425,7 +429,7 @@ export function WorkspaceLayout() {
         return;
       }
       // The tree always switches this window, including the native shell.
-      void openDocumentFrom((port) => openWorkspaceFile(port, token, segments), {
+      return openDocumentFrom((port) => openWorkspaceFile(port, token, segments), {
         inPlace: true,
       });
     },

@@ -20,9 +20,9 @@ interface VirtualWorkspaceTreeProps {
   /** Hidden panels keep their cache but skip measurement and row rendering. */
   active?: boolean;
   onFocusKey(key: string | null): void;
-  onSelectKey(key: string): void;
+  onSelectKey(key: string | null): void;
   onToggle(segments: string[]): void;
-  onOpenFile(segments: string[]): void;
+  onOpenFile(segments: string[]): boolean | void | Promise<boolean>;
   onRetry(segments: string[]): void;
 }
 
@@ -55,6 +55,11 @@ export function VirtualWorkspaceTree({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  // Set after an in-place open is rejected; the layout effect returns focus to
+  // the current document's row once the virtualized row is on screen.
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  const currentKeyRef = useRef(currentKey);
+  currentKeyRef.current = currentKey;
 
   useLayoutEffect(() => {
     if (!active) {
@@ -101,6 +106,31 @@ export function VirtualWorkspaceTree({
     element?.scrollIntoView?.({ block: "nearest" });
   }, [active, currentKey]);
 
+  useLayoutEffect(() => {
+    if (restoreTarget === null) {
+      return;
+    }
+    const element = findRow(scrollRef.current, restoreTarget);
+    if (element) {
+      onFocusKey(restoreTarget);
+      element.focus({ preventScroll: true });
+      element.scrollIntoView?.({ block: "nearest" });
+      setRestoreTarget(null);
+      return;
+    }
+    const index = rows.findIndex((row) => row.key === restoreTarget);
+    const container = scrollRef.current;
+    if (index < 0 || !container) {
+      setRestoreTarget(null);
+      return;
+    }
+    // The row scrolled out of the virtual window; center it and let the next
+    // pass (after the scrollTop update renders) focus it.
+    const nextTop = Math.max(0, index * WORKSPACE_ROW_HEIGHT - container.clientHeight / 2);
+    container.scrollTop = nextTop;
+    setScrollTop(nextTop);
+  }, [onFocusKey, restoreTarget, rows, scrollTop]);
+
   const range = useMemo(
     () =>
       active
@@ -119,6 +149,38 @@ export function VirtualWorkspaceTree({
     focusedKey !== null && rows.some((row) => row.key === focusedKey)
       ? focusedKey
       : (rows[0]?.key ?? null);
+
+  const rollbackSelection = useCallback(
+    (fallbackKey: string | null): void => {
+      const target = currentKeyRef.current ?? fallbackKey;
+      onSelectKey(target);
+      if (target) {
+        setRestoreTarget(target);
+      }
+    },
+    [onSelectKey],
+  );
+
+  const openFileWithRollback = useCallback(
+    (segments: string[], fallbackKey: string | null): void => {
+      const result = onOpenFile(segments);
+      if (result === false) {
+        rollbackSelection(fallbackKey);
+        return;
+      }
+      if (!result || typeof result !== "object" || typeof result.then !== "function") {
+        return;
+      }
+      void result
+        .then((opened) => {
+          if (opened === false) {
+            rollbackSelection(fallbackKey);
+          }
+        })
+        .catch(() => rollbackSelection(fallbackKey));
+    },
+    [onOpenFile, rollbackSelection],
+  );
 
   const focusRow = useCallback(
     (key: string): void => {
@@ -208,14 +270,14 @@ export function VirtualWorkspaceTree({
           if (row.expandable) {
             onToggle(row.segments);
           } else if (row.openable) {
-            onOpenFile(row.segments);
+            openFileWithRollback(row.segments, row.key);
           }
           break;
         default:
           break;
       }
     },
-    [activeKey, focusRow, moveFocus, onOpenFile, onToggle, rows],
+    [activeKey, focusRow, moveFocus, onToggle, openFileWithRollback, rows],
   );
 
   return (
@@ -258,12 +320,14 @@ export function VirtualWorkspaceTree({
               }}
               onFocus={() => onFocusKey(row.key)}
               onClick={() => {
+                const fallbackKey = selectedKey;
                 onSelectKey(row.key);
                 if (row.expandable) {
                   onToggle(row.segments);
                 } else if (row.openable) {
                   // Single click opens, matching the Finder-like file tree.
-                  onOpenFile(row.segments);
+                  // A rejected switch restores the current row below.
+                  openFileWithRollback(row.segments, fallbackKey);
                 }
               }}
               className={`flex cursor-default items-center gap-1.5 pr-2 text-sm outline-none transition-colors focus-visible:bg-accent-soft ${

@@ -9,7 +9,7 @@ interface WorkspaceSidebarProps {
   navigation: WorkspaceNavigation;
   active: boolean;
   focusRequest: number;
-  onOpenFile(segments: string[]): void;
+  onOpenFile(segments: string[]): void | Promise<boolean>;
 }
 
 export function WorkspaceSidebar({

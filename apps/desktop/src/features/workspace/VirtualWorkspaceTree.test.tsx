@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -113,6 +113,37 @@ describe("VirtualWorkspaceTree", () => {
     fireEvent.click(rowElement("docs"));
     expect(onToggle).toHaveBeenCalledWith(["docs"]);
     expect(onOpenFile).not.toHaveBeenCalled();
+  });
+
+  it("restores the current row when an in-place open is rejected", async () => {
+    const onOpenFile = vi.fn().mockResolvedValue(false);
+    render(<Harness rows={[NOTE, ROOT_FILE]} onOpenFile={onOpenFile} currentKey="docs/note.md" />);
+
+    fireEvent.focus(rowElement("docs/note.md"));
+    fireEvent.click(rowElement("readme.md"));
+    expect(rowElement("readme.md")).toHaveAttribute("aria-selected", "true");
+
+    await waitFor(() =>
+      expect(rowElement("docs/note.md")).toHaveAttribute("aria-selected", "true"),
+    );
+    expect(rowElement("readme.md")).toHaveAttribute("aria-selected", "false");
+    expect(document.activeElement).toBe(rowElement("docs/note.md"));
+  });
+
+  it.each([
+    ["a synchronous rejection", () => false],
+    ["a rejected promise", () => Promise.reject(new Error("open rejected"))],
+  ])("restores the current row after %s", async (_label, open) => {
+    render(<Harness rows={[NOTE, ROOT_FILE]} onOpenFile={open} currentKey="docs/note.md" />);
+
+    fireEvent.focus(rowElement("docs/note.md"));
+    fireEvent.click(rowElement("readme.md"));
+
+    await waitFor(() =>
+      expect(rowElement("docs/note.md")).toHaveAttribute("aria-selected", "true"),
+    );
+    expect(rowElement("readme.md")).toHaveAttribute("aria-selected", "false");
+    expect(document.activeElement).toBe(rowElement("docs/note.md"));
   });
 
   it("opens a focused file with Enter and Space", () => {

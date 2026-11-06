@@ -345,6 +345,48 @@ describe("blank editor -> editor open flow", () => {
     expect(openSpy).not.toHaveBeenCalled();
   });
 
+  it("restores the tree selection when a switch save fails", async () => {
+    const ipc = workspaceIpc();
+    const captured: { current: EditorSession | null } = { current: null };
+    renderApp(ipc, {
+      onSession: (value) => {
+        captured.current = value;
+      },
+    });
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-workspace-key="readme.md"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-workspace-key="readme.md"]') as HTMLElement);
+    await waitFor(() => expect(captured.current?.getSnapshot().docId).toBe("/docs/readme.md"));
+
+    const view = captured.current?.attachedView;
+    if (!view) {
+      throw new Error("named editor view is not attached");
+    }
+    act(() => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "\nunsaved" } });
+    });
+    await waitFor(() => expect(captured.current?.getSnapshot().dirty).toBe(true));
+
+    ipc.failAlways(COMMANDS.documentWriteAtomic, "PERMISSION_DENIED", "locked");
+    const notes = document.querySelector('[data-workspace-key="notes"]') as HTMLElement;
+    fireEvent.click(notes);
+    await waitFor(() =>
+      expect(document.querySelector('[data-workspace-key="notes/a.md"]')).not.toBeNull(),
+    );
+    const target = document.querySelector('[data-workspace-key="notes/a.md"]') as HTMLElement;
+    fireEvent.focus(target);
+    fireEvent.click(target);
+
+    await waitFor(() => expect(screen.getByTestId("status-bar")).toHaveTextContent("保存失败"));
+    expect(captured.current?.getSnapshot().docId).toBe("/docs/readme.md");
+    const current = document.querySelector('[data-workspace-key="readme.md"]') as HTMLElement;
+    expect(current).toHaveAttribute("aria-selected", "true");
+    expect(target).toHaveAttribute("aria-selected", "false");
+    await waitFor(() => expect(current).toHaveFocus());
+  });
+
   it("opens another file from a dirty untitled document without Save As", async () => {
     const ipc = fileIpc();
     const openSpy = vi.spyOn(ipc, "documentOpen").mockResolvedValue(null as unknown as FilePayload);
