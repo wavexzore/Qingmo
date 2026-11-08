@@ -53,7 +53,7 @@ beforeEach(() => {
 
 describe("AppError normalization", () => {
   it("lists every generated error code exactly once", () => {
-    expect(APP_ERROR_CODES).toHaveLength(20);
+    expect(APP_ERROR_CODES).toHaveLength(22);
     expect(new Set(APP_ERROR_CODES).size).toBe(APP_ERROR_CODES.length);
     for (const code of APP_ERROR_CODES) {
       expect(isAppErrorCode(code)).toBe(true);
@@ -131,7 +131,7 @@ describe("Tauri IpcPort adapter", () => {
         expectedCurrentHash: "hash-0",
       }),
     ).resolves.toEqual(saveResult);
-    await expect(ipc.appCloseConfirm({ allow: false })).resolves.toBeUndefined();
+    await expect(ipc.appCloseConfirm({ allow: false, generation: 1 })).resolves.toBeUndefined();
 
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(1, "document_open", {});
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(2, "document_reload", {
@@ -147,6 +147,7 @@ describe("Tauri IpcPort adapter", () => {
     });
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(5, "app_close_confirm", {
       allow: false,
+      generation: 1,
     });
   });
 
@@ -553,9 +554,12 @@ describe("FakeIpc", () => {
 
   it("records close confirmation decisions", async () => {
     const ipc = new FakeIpc();
-    await ipc.appCloseConfirm({ allow: false });
-    await ipc.appCloseConfirm({ allow: true });
-    expect(ipc.closeConfirmCalls).toEqual([{ allow: false }, { allow: true }]);
+    await ipc.appCloseConfirm({ allow: false, generation: 1 });
+    await ipc.appCloseConfirm({ allow: true, generation: 2 });
+    expect(ipc.closeConfirmCalls).toEqual([
+      { allow: false, generation: 1 },
+      { allow: true, generation: 2 },
+    ]);
   });
 
   it("records locale projections for controller tests", async () => {

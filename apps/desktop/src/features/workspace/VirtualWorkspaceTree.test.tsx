@@ -36,6 +36,8 @@ interface HarnessProps {
   onToggle?: (segments: string[]) => void;
   onOpenFile?: (segments: string[]) => void;
   onRetry?: (segments: string[]) => void;
+  onDeleteFile?: (segments: string[]) => void;
+  onShowTrash?: () => void;
   initialFocused?: string | null;
   currentKey?: string | null;
   active?: boolean;
@@ -46,6 +48,8 @@ function Harness({
   onToggle = () => undefined,
   onOpenFile = () => undefined,
   onRetry = () => undefined,
+  onDeleteFile,
+  onShowTrash,
   initialFocused = rows[0]?.key ?? null,
   currentKey = null,
   active = true,
@@ -64,6 +68,8 @@ function Harness({
       onToggle={onToggle}
       onOpenFile={onOpenFile}
       onRetry={onRetry}
+      onDeleteFile={onDeleteFile}
+      onShowTrash={onShowTrash}
     />
   );
 }
@@ -230,5 +236,36 @@ describe("VirtualWorkspaceTree", () => {
     const button = screen.getByRole("button", { name: "重试读取此目录" });
     fireEvent.keyDown(button, { key: "Enter" });
     expect(onRetry).not.toHaveBeenCalled();
+  });
+});
+
+describe("VirtualWorkspaceTree context menu", () => {
+  it("offers file actions only for files", () => {
+    const onDeleteFile = vi.fn();
+    const onShowTrash = vi.fn();
+    render(<Harness rows={[DOCS, NOTE]} onDeleteFile={onDeleteFile} onShowTrash={onShowTrash} />);
+
+    fireEvent.contextMenu(rowElement("docs"));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(rowElement("docs/note.md"));
+    const menu = screen.getByRole("menu", { name: "文件操作" });
+    expect(menu).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "移入回收站" }));
+    expect(onDeleteFile).toHaveBeenCalledWith(["docs", "note.md"]);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(rowElement("docs/note.md"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开回收站" }));
+    expect(onShowTrash).toHaveBeenCalled();
+  });
+
+  it("closes the menu with Escape", () => {
+    render(<Harness rows={[NOTE]} onDeleteFile={vi.fn()} onShowTrash={vi.fn()} />);
+    fireEvent.contextMenu(rowElement("docs/note.md"));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

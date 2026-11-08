@@ -5,8 +5,8 @@ use tauri::{AppHandle, Manager, State, Url, WebviewUrl, WebviewWindow, WebviewWi
 use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{AppError, AppErrorCode};
-use crate::ipc::dto::{FilePayload, SaveResult};
-use crate::services::AtomicWriter;
+use crate::ipc::dto::{FilePayload, HistoryEntry, HistoryRecord, ImageSaveResult, SaveResult};
+use crate::services::{image_assets, HistoryStore, SearchIndexService};
 use crate::state::document_registry::ensure_supported_extension;
 use crate::state::{
     DocumentRegistry, DocumentWatcher, FocusTracker, StartupWindow, WindowSessions,
@@ -220,8 +220,23 @@ pub async fn create_untitled_window_with_workspace<R: tauri::Runtime>(
     app: AppHandle<R>,
     parent_workspace: Option<WorkspaceToken>,
 ) -> Result<(), AppError> {
+    create_untitled_window_with_label(app, parent_workspace, None).await
+}
+
+/// Creates an untitled window, optionally with a fixed label.
+///
+/// Session restore uses `main` for its first saved window and must bypass the
+/// boot-window reuse rules: there is no `main` window yet.
+pub(crate) async fn create_untitled_window_with_label<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    parent_workspace: Option<WorkspaceToken>,
+    requested_label: Option<String>,
+) -> Result<(), AppError> {
     let startup = app.state::<StartupWindow>();
-    if !startup.claim_document_if_undecided() && startup.is_main_claimed() {
+    if requested_label.is_none()
+        && !startup.claim_document_if_undecided()
+        && startup.is_main_claimed()
+    {
         if let Some(main) = wait_for_main(&app).await {
             startup.mark_opened();
             if let Err(error) = main.set_focus() {
@@ -243,9 +258,21 @@ pub async fn create_untitled_window_with_workspace<R: tauri::Runtime>(
         .map(|labels| labels.app_name)
         .unwrap_or_else(|| "青墨".to_string());
     let title = window_title_for_untitled(&locale.untitled_file_name(), &app_name);
-    let label = format!("doc-{}", uuid::Uuid::new_v4());
+    let label = requested_label.unwrap_or_else(|| format!("doc-{}", uuid::Uuid::new_v4()));
     let sessions = app.state::<WindowSessions>().inner().clone();
     let workspaces = app.state::<WorkspaceRegistry>().inner().clone();
+    if label == "main" {
+        let released = sessions.reopen("main");
+        for token in [released.doc_token, released.previous_doc_token]
+            .into_iter()
+            .flatten()
+        {
+            app.state::<DocumentRegistry>().release(&token);
+        }
+        if let Some(token) = released.workspace_token {
+            workspaces.release(&token);
+        }
+    }
 
     let workspace_token = parent_workspace.and_then(|parent| match workspaces.fork(&parent) {
         Ok((child, _)) => Some(child),
@@ -452,6 +479,21 @@ pub async fn open_path_in_new_window_with_workspace<R: tauri::Runtime>(
     parent_workspace_token: Option<WorkspaceToken>,
     enforce_root: bool,
 ) -> Result<(), AppError> {
+    open_path_in_window_with_label(app, path, parent_workspace_token, enforce_root, None).await
+}
+
+/// Opens a document in a window with an explicit label.
+///
+/// Session restore passes `main` for the first restored window so the app
+/// keeps its primary-window identity; every other caller uses a fresh
+/// `doc-<uuid>` label.
+pub(crate) async fn open_path_in_window_with_label<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    path: PathBuf,
+    parent_workspace_token: Option<WorkspaceToken>,
+    enforce_root: bool,
+    requested_label: Option<String>,
+) -> Result<(), AppError> {
     let registry = app.state::<DocumentRegistry>().inner().clone();
     let sessions = app.state::<WindowSessions>().inner().clone();
     let workspaces = app.state::<WorkspaceRegistry>().inner().clone();
@@ -505,7 +547,21 @@ pub async fn open_path_in_new_window_with_workspace<R: tauri::Runtime>(
         .unwrap_or_else(|| "青墨".to_string());
     let title = window_title_for(Path::new(&payload.path), &app_name);
     let doc_token = payload.doc_token.clone();
-    let label = format!("doc-{}", uuid::Uuid::new_v4());
+    let label = requested_label.unwrap_or_else(|| format!("doc-{}", uuid::Uuid::new_v4()));
+    if label == "main" {
+        // Reusing the main label must not inherit a destroyed window's
+        // tombstone or leftover tokens from a previous generation.
+        let released = sessions.reopen("main");
+        for token in [released.doc_token, released.previous_doc_token]
+            .into_iter()
+            .flatten()
+        {
+            registry.release(&token);
+        }
+        if let Some(token) = released.workspace_token {
+            workspaces.release(&token);
+        }
+    }
 
     if !sessions.stage(&label, payload) {
         registry.release(&doc_token);
@@ -854,16 +910,27 @@ pub async fn document_reload(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn document_write_atomic(
+#[allow(clippy::too_many_arguments)]
+pub async fn document_write_atomic<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
+    app: AppHandle<R>,
     doc_token: String,
     text: String,
     expected_current_hash: Option<String>,
     registry: State<'_, DocumentRegistry>,
+    sessions: State<'_, WindowSessions>,
+    workspaces: State<'_, WorkspaceRegistry>,
 ) -> Result<SaveResult, AppError> {
     let registry = registry.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let record = registry.get(&doc_token)?;
-        AtomicWriter::write(&record, &text, expected_current_hash.as_deref())
+    let label = window.label().to_string();
+    let root = sessions
+        .workspace_for(&label)
+        .and_then(|token| workspaces.get(&token).ok())
+        .map(|record| record.root.clone());
+    let write_registry = registry.clone();
+    let write_token = doc_token.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        write_registry.write_atomic(&write_token, &text, expected_current_hash.as_deref())
     })
     .await
     .map_err(|error| {
@@ -871,7 +938,90 @@ pub async fn document_write_atomic(
             AppErrorCode::Io,
             format!("document write task failed: {error}"),
         )
-    })?
+    })??;
+
+    if let (Some(root), Some(index)) = (root, app.try_state::<SearchIndexService>()) {
+        if let Ok(record) = registry.get(&doc_token) {
+            index.notify_upsert(root, record.canonical_target.clone());
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn document_save_image(
+    doc_token: String,
+    file_name: String,
+    mime: String,
+    data_base64: String,
+    registry: State<'_, DocumentRegistry>,
+) -> Result<ImageSaveResult, AppError> {
+    let record = registry.get(&doc_token)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        image_assets::save_image(&record.canonical_target, &file_name, &mime, &data_base64)
+    })
+    .await
+    .map_err(|error| AppError::new(AppErrorCode::Io, format!("image save task failed: {error}")))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn document_history_list(
+    doc_token: String,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    registry: State<'_, DocumentRegistry>,
+    history: State<'_, HistoryStore>,
+) -> Result<Vec<HistoryEntry>, AppError> {
+    let record = registry.get(&doc_token)?;
+    let history = history.inner().clone();
+    let limit = limit.unwrap_or(50).clamp(1, 100);
+    let offset = offset.unwrap_or(0).min(1000);
+    tauri::async_runtime::spawn_blocking(move || {
+        history.list(&record.canonical_target, limit, offset)
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(
+            AppErrorCode::Io,
+            format!("history list task failed: {error}"),
+        )
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn document_history_read(
+    doc_token: String,
+    entry_id: String,
+    registry: State<'_, DocumentRegistry>,
+    history: State<'_, HistoryStore>,
+) -> Result<HistoryRecord, AppError> {
+    let record = registry.get(&doc_token)?;
+    let history = history.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || history.read(&record.canonical_target, &entry_id))
+        .await
+        .map_err(|error| {
+            AppError::new(
+                AppErrorCode::Io,
+                format!("history read task failed: {error}"),
+            )
+        })?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn document_history_restore(
+    doc_token: String,
+    entry_id: String,
+    registry: State<'_, DocumentRegistry>,
+) -> Result<FilePayload, AppError> {
+    let registry = registry.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || registry.restore_history(&doc_token, &entry_id))
+        .await
+        .map_err(|error| {
+            AppError::new(
+                AppErrorCode::Io,
+                format!("history restore task failed: {error}"),
+            )
+        })?
 }
 
 #[cfg(test)]

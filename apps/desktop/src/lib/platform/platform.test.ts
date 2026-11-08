@@ -26,7 +26,7 @@ describe("FakePlatform", () => {
   it("delivers close reasons and stops after unsubscribe", () => {
     const platform = new FakePlatform();
     const received: string[] = [];
-    const stop = platform.onCloseRequested((reason) => received.push(reason));
+    const stop = platform.onCloseRequested((request) => received.push(request.reason));
 
     platform.emitCloseRequested("exit");
     stop();
@@ -107,7 +107,7 @@ describe("Tauri PlatformPort adapter", () => {
 
     const platform = createTauriPlatform();
     const received: string[] = [];
-    const stop = platform.onCloseRequested((reason) => received.push(reason));
+    const stop = platform.onCloseRequested((request) => received.push(request.reason));
 
     await vi.waitFor(() => {
       expect(tauriMocks.listen).toHaveBeenCalledWith(

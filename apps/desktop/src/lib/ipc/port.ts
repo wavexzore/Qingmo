@@ -7,14 +7,23 @@ import type {
   EditorViewState,
   EditorViewStateInput,
   FilePayload,
+  HistoryEntry,
+  HistoryRecord,
+  ImageSaveResult,
   SaveRequest,
   SaveResult,
+  SearchResponse,
+  TrashEntry,
+  TrashRestoreMode,
+  TrashRestoreResult,
   WorkspaceInfo,
   WorkspaceListing,
 } from "@qingmo/shared";
 
 export interface CloseConfirmRequest {
   allow: boolean;
+  /** Generation from the close request; stale values are rejected by Rust. */
+  generation: number;
 }
 
 export interface LivePreviewRequest {
@@ -70,6 +79,16 @@ export interface IpcPort {
   /** Native Save As; the webview supplies text but never a path. */
   documentSaveAs(text: string): Promise<FilePayload>;
   documentWriteAtomic(request: SaveRequest): Promise<SaveResult>;
+  /** Persists one pasted/dropped image under the document's assets/ folder. */
+  documentSaveImage(request: {
+    docToken: string;
+    fileName: string;
+    mime: string;
+    dataBase64: string;
+  }): Promise<ImageSaveResult>;
+  documentHistoryList(docToken: string, limit?: number, offset?: number): Promise<HistoryEntry[]>;
+  documentHistoryRead(docToken: string, entryId: string): Promise<HistoryRecord>;
+  documentHistoryRestore(docToken: string, entryId: string): Promise<FilePayload>;
   /**
    * Rust reports a different (or missing) disk version for an open document.
    * The payload carries its `docToken`; every window ignores tokens it does
@@ -93,11 +112,30 @@ export interface IpcPort {
   workspaceOpenDocument(workspaceToken: string, segments: string[]): Promise<FilePayload>;
   /** Path segments of this window's current document, or `null`. */
   workspaceLocateDocument(workspaceToken: string, docToken: string): Promise<string[] | null>;
+  workspaceDelete(workspaceToken: string, segments: string[]): Promise<TrashEntry>;
+  workspaceTrashList(workspaceToken: string): Promise<TrashEntry[]>;
+  workspaceTrashRestore(
+    workspaceToken: string,
+    entryId: string,
+    mode: TrashRestoreMode,
+  ): Promise<TrashRestoreResult>;
+  workspaceTrashPurge(workspaceToken: string, entryId: string): Promise<void>;
+  workspaceSearch(
+    workspaceToken: string,
+    query: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<SearchResponse>;
+  workspaceSearchRebuild(workspaceToken: string): Promise<void>;
   /**
    * Subscribes to workspace tree changes for this window. The payload is
    * empty by design; the hook re-lists known directories.
    */
   onWorkspaceChanged(callback: () => void): () => void;
+  onCloseCancelled(callback: (payload: { reason: string; generation: number }) => void): () => void;
+  onWorkspaceIndexStatus(
+    callback: (payload: import("@qingmo/shared").WorkspaceIndexStatusPayload) => void,
+  ): () => void;
   appCloseConfirm(request: CloseConfirmRequest): Promise<void>;
   /** Mirrors this window's Live Preview mode in the native menu bar. */
   appSetLivePreview(request: LivePreviewRequest): Promise<void>;

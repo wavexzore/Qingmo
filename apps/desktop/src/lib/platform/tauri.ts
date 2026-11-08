@@ -49,7 +49,11 @@ export function createTauriPlatform(): PlatformPort {
           if (disposed || event.payload.target !== windowLabel) {
             return;
           }
-          callback(event.payload.reason);
+          callback({
+            reason: event.payload.reason,
+            generation: event.payload.generation,
+            attempt: event.payload.attempt,
+          });
         },
         listenOptions,
       )

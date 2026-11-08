@@ -7,7 +7,12 @@ use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{FilePayload, ReadOnlyReason, TextFormat};
 use crate::services::encoding;
 
-pub const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+/// Opening is capped at 10 MiB so a large file cannot freeze the editor.
+pub const MAX_OPEN_BYTES: u64 = 10 * 1024 * 1024;
+/// Saving allows 6 MiB of headroom for edits that grow a 10 MiB file.
+pub const MAX_WRITE_BYTES: u64 = 16 * 1024 * 1024;
+/// Backwards-compatible alias used by existing read-path callers/tests.
+pub const MAX_FILE_BYTES: u64 = MAX_OPEN_BYTES;
 
 #[derive(Debug)]
 pub struct ParsedFile {
@@ -124,8 +129,12 @@ impl FileService {
 fn file_too_large() -> AppError {
     AppError::new(
         AppErrorCode::FileTooLarge,
-        format!("file exceeds {MAX_FILE_BYTES} bytes"),
+        format!("file exceeds the {MAX_OPEN_BYTES} byte open limit"),
     )
+    .with_details(serde_json::json!({
+        "operation": "open",
+        "limitBytes": MAX_OPEN_BYTES,
+    }))
 }
 
 pub(crate) fn mtime_ms(metadata: &std::fs::Metadata) -> i64 {

@@ -13,7 +13,11 @@ import {
 export interface AdoptInPlaceDeps {
   ipc: Pick<
     IpcPort,
-    "documentActivate" | "documentReload" | "sessionViewStateGet" | "appOpenExternal"
+    | "documentActivate"
+    | "documentReload"
+    | "documentSaveImage"
+    | "sessionViewStateGet"
+    | "appOpenExternal"
   >;
   /** Reads the provider's live session ref (the single source of truth). */
   getCurrentSession(): EditorSession | null;

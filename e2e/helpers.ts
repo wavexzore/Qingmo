@@ -235,7 +235,11 @@ export async function endComposition(page: Page): Promise<void> {
 }
 
 export async function getCloseConfirms(page: Page): Promise<Array<{ allow: boolean }>> {
-  return page.evaluate(() => window.__QINGMO_E2E__?.getCloseConfirms() ?? []);
+  // Generations are asserted by the unit tests; these specs only care about
+  // the ordered allow/cancel decisions.
+  return page.evaluate(() =>
+    (window.__QINGMO_E2E__?.getCloseConfirms() ?? []).map(({ allow }) => ({ allow })),
+  );
 }
 
 /** Live Preview modes reported to the native menu, in call order. */

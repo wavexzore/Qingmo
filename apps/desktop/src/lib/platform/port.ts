@@ -2,9 +2,15 @@ import type { AppError, CloseReason } from "@qingmo/shared";
 
 import type { MenuAction } from "../ipc/commands";
 
+export interface CloseRequest {
+  reason: CloseReason;
+  generation: number;
+  attempt: number;
+}
+
 export interface PlatformPort {
   /** Subscribe to the Rust CloseGuard event. Returns an unsubscribe function. */
-  onCloseRequested(callback: (reason: CloseReason) => void): () => void;
+  onCloseRequested(callback: (request: CloseRequest) => void): () => void;
   /** Subscribe to native menu activations forwarded by Rust. */
   onMenuAction(callback: (action: MenuAction) => void): () => void;
   /** Native New failed after Rust handled it without a webview hop. */

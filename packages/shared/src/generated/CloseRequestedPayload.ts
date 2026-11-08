@@ -7,4 +7,8 @@ import type { CloseReason } from "./CloseReason";
  * `target` lets a window ignore events that were delivered by a global
  * listener but belong to another window.
  */
-export type CloseRequestedPayload = { reason: CloseReason, target: string, };
+export type CloseRequestedPayload = { reason: CloseReason, target: string, generation: number, 
+/**
+ * 1 = first request, 2 = watchdog resend.
+ */
+attempt: number, };

@@ -3,6 +3,7 @@ pub mod document_registry;
 pub mod document_watcher;
 pub mod focus_tracker;
 pub mod preview_modes;
+pub mod session_restore;
 pub mod shell_locale;
 pub mod startup_open_queue;
 pub mod startup_window;
@@ -12,7 +13,7 @@ pub mod window_sessions;
 pub mod workspace_registry;
 pub mod workspace_watcher;
 
-pub use close_guard::{CloseGuard, CloseOutcome};
+pub use close_guard::{CloseBegin, CloseExpiry, CloseGuard, CloseOutcome};
 pub use document_registry::{DocToken, DocumentRecord, DocumentRegistry};
 pub use document_watcher::DocumentWatcher;
 pub use focus_tracker::FocusTracker;

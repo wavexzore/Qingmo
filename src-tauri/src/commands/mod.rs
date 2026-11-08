@@ -4,8 +4,10 @@ pub mod document;
 pub mod external;
 pub mod locale;
 pub mod logs;
+pub mod search;
 pub mod session;
 pub mod settings;
+pub mod trash;
 pub mod update;
 pub mod view;
 pub mod workspace;
@@ -21,11 +23,21 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         document::document_reload,
         document::document_save_as,
         document::document_write_atomic,
+        document::document_save_image,
+        document::document_history_list,
+        document::document_history_read,
+        document::document_history_restore,
         workspace::workspace_open,
         workspace::workspace_current,
         workspace::workspace_list,
         workspace::workspace_open_document,
         workspace::workspace_locate_document,
+        trash::workspace_delete,
+        trash::workspace_trash_list,
+        trash::workspace_trash_restore,
+        trash::workspace_trash_purge,
+        search::workspace_search,
+        search::workspace_search_rebuild,
         close::app_close_confirm,
         view::app_set_live_preview,
         about::app_about_info,

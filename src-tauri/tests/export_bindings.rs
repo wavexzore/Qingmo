@@ -1,11 +1,15 @@
 use qingmo_lib::error::AppError;
 use qingmo_lib::ipc::dto::{
-    AboutInfo, AboutLink, AppLanguage, ApplyLocaleRequest, CloseRequestedPayload, ConflictDetails,
-    DocumentChangeKind, DocumentChangedPayload, DraftKind, DraftMeta, DraftRecord,
-    DraftWriteRequest, EditorViewState, EditorViewStateInput, FilePayload, LogEntry, LogLevel,
-    LogStats, MenuActionPayload, NativeShellLabels, SaveRequest, SaveResult, UpdateFlushRequest,
-    UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot, WorkspaceEntry,
-    WorkspaceEntryKind, WorkspaceInfo, WorkspaceListing, WorkspaceTruncationReason,
+    AboutInfo, AboutLink, AppLanguage, ApplyLocaleRequest, CloseCancelledPayload,
+    CloseRequestedPayload, ConflictDetails, DocumentChangeKind, DocumentChangedPayload, DraftKind,
+    DraftMeta, DraftRecord, DraftWriteRequest, EditorViewState, EditorViewStateInput, FilePayload,
+    HistoryEntry, HistoryRecord, ImageSaveResult, LogEntry, LogLevel, LogStats, MenuActionPayload,
+    NativeShellLabels, SaveRequest, SaveResult, SearchHit, SearchIndexState, SearchMode,
+    SearchResponse, SearchStatus, TrashEntry, TrashEntryState, TrashRestoreMode,
+    TrashRestoreResult, UpdateFlushRequest, UpdateInfo, UpdatePhase, UpdateProgress,
+    UpdateProgressPayload, UpdateSnapshot, WindowBounds, WindowIntent, WorkspaceEntry,
+    WorkspaceEntryKind, WorkspaceIndexStatusPayload, WorkspaceInfo, WorkspaceListing,
+    WorkspaceTruncationReason,
 };
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
@@ -56,4 +60,21 @@ fn export_bindings() {
     WorkspaceTruncationReason::export_all(&config)
         .expect("WorkspaceTruncationReason bindings must export");
     WorkspaceListing::export_all(&config).expect("WorkspaceListing bindings must export");
+    ImageSaveResult::export_all(&config).expect("ImageSaveResult bindings must export");
+    HistoryEntry::export_all(&config).expect("HistoryEntry bindings must export");
+    HistoryRecord::export_all(&config).expect("HistoryRecord bindings must export");
+    TrashEntryState::export_all(&config).expect("TrashEntryState bindings must export");
+    TrashEntry::export_all(&config).expect("TrashEntry bindings must export");
+    TrashRestoreMode::export_all(&config).expect("TrashRestoreMode bindings must export");
+    TrashRestoreResult::export_all(&config).expect("TrashRestoreResult bindings must export");
+    SearchMode::export_all(&config).expect("SearchMode bindings must export");
+    SearchHit::export_all(&config).expect("SearchHit bindings must export");
+    SearchResponse::export_all(&config).expect("SearchResponse bindings must export");
+    SearchIndexState::export_all(&config).expect("SearchIndexState bindings must export");
+    SearchStatus::export_all(&config).expect("SearchStatus bindings must export");
+    WorkspaceIndexStatusPayload::export_all(&config)
+        .expect("WorkspaceIndexStatusPayload bindings must export");
+    WindowBounds::export_all(&config).expect("WindowBounds bindings must export");
+    WindowIntent::export_all(&config).expect("WindowIntent bindings must export");
+    CloseCancelledPayload::export_all(&config).expect("CloseCancelledPayload bindings must export");
 }

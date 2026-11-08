@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type SidebarView = "workspace" | "outline";
+export type SidebarView = "workspace" | "outline" | "search";
 
 export interface SidebarDockSnapshot {
   open: boolean;

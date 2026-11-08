@@ -29,6 +29,7 @@ interface SidebarDockProps {
   onClose(): void;
   workspacePanel?: ((state: PanelState) => ReactNode) | undefined;
   outlinePanel?: ((state: PanelState) => ReactNode) | undefined;
+  searchPanel?: ((state: PanelState) => ReactNode) | undefined;
   outlineBadge?: ReactNode | undefined;
 }
 
@@ -37,7 +38,7 @@ interface PanelState {
   focusRequest: number;
 }
 
-const TAB_ORDER: SidebarView[] = ["workspace", "outline"];
+const ALL_TABS: SidebarView[] = ["workspace", "outline", "search"];
 
 export const SidebarDock = forwardRef<SidebarDockHandle, SidebarDockProps>(function SidebarDock(
   {
@@ -49,11 +50,17 @@ export const SidebarDock = forwardRef<SidebarDockHandle, SidebarDockProps>(funct
     onClose,
     workspacePanel,
     outlinePanel,
+    searchPanel,
     outlineBadge,
   },
   ref,
 ) {
   const { t } = useTranslation(["workspace"]);
+  const availableTabs = ALL_TABS.filter((candidate) => {
+    if (candidate === "workspace") return hasWorkspace;
+    if (candidate === "outline") return hasOutline;
+    return Boolean(searchPanel);
+  });
   const [focusRequest, setFocusRequest] = useState(0);
   const [tabFocusRequest, setTabFocusRequest] = useState(0);
   const tabRefs = useRef<Partial<Record<SidebarView, HTMLButtonElement | null>>>({});
@@ -82,19 +89,19 @@ export const SidebarDock = forwardRef<SidebarDockHandle, SidebarDockProps>(funct
   }, [tabFocusRequest, view]);
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (!hasWorkspace || !hasOutline) {
+    if (availableTabs.length < 2) {
       return;
     }
-    const index = TAB_ORDER.indexOf(view);
+    const index = availableTabs.indexOf(view);
     let next: SidebarView | null = null;
     if (event.key === "ArrowRight") {
-      next = TAB_ORDER[(index + 1) % TAB_ORDER.length] ?? null;
+      next = availableTabs[(index + 1) % availableTabs.length] ?? null;
     } else if (event.key === "ArrowLeft") {
-      next = TAB_ORDER[(index - 1 + TAB_ORDER.length) % TAB_ORDER.length] ?? null;
+      next = availableTabs[(index - 1 + availableTabs.length) % availableTabs.length] ?? null;
     } else if (event.key === "Home") {
-      next = TAB_ORDER[0] ?? null;
+      next = availableTabs[0] ?? null;
     } else if (event.key === "End") {
-      next = TAB_ORDER[TAB_ORDER.length - 1] ?? null;
+      next = availableTabs[availableTabs.length - 1] ?? null;
     }
     if (next) {
       event.preventDefault();
@@ -137,7 +144,7 @@ export const SidebarDock = forwardRef<SidebarDockHandle, SidebarDockProps>(funct
     >
       <div className="flex h-full w-60 flex-col">
         <header className="flex h-10 shrink-0 items-center border-b border-line">
-          {hasWorkspace && hasOutline ? (
+          {availableTabs.length >= 2 ? (
             <div
               role="tablist"
               aria-label={t("workspace:dock.region")}
@@ -163,10 +170,25 @@ export const SidebarDock = forwardRef<SidebarDockHandle, SidebarDockProps>(funct
                   tabRefs.current.outline = element;
                 }}
               />
+              {searchPanel ? (
+                <DockTab
+                  id="search"
+                  active={view === "search"}
+                  label={t("workspace:dock.searchTab")}
+                  onSelect={() => onSelectView("search")}
+                  tabRef={(element) => {
+                    tabRefs.current.search = element;
+                  }}
+                />
+              ) : null}
             </div>
           ) : (
             <h2 className="min-w-0 flex-1 truncate px-3 text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">
-              {hasWorkspace ? t("workspace:dock.workspaceTab") : t("workspace:dock.outlineTab")}
+              {view === "search"
+                ? t("workspace:dock.searchTab")
+                : hasWorkspace
+                  ? t("workspace:dock.workspaceTab")
+                  : t("workspace:dock.outlineTab")}
             </h2>
           )}
           <button
@@ -200,7 +222,7 @@ export const SidebarDock = forwardRef<SidebarDockHandle, SidebarDockProps>(funct
             <div
               role="tabpanel"
               id="sidebar-dock-panel-outline"
-              aria-labelledby={hasWorkspace ? "sidebar-dock-tab-outline" : undefined}
+              aria-labelledby={availableTabs.length >= 2 ? "sidebar-dock-tab-outline" : undefined}
               hidden={view !== "outline"}
               inert={view !== "outline" || undefined}
               className={panelClass(view === "outline")}
@@ -208,6 +230,21 @@ export const SidebarDock = forwardRef<SidebarDockHandle, SidebarDockProps>(funct
               {outlinePanel?.({
                 active: open && view === "outline",
                 focusRequest: open && view === "outline" ? focusRequest : 0,
+              })}
+            </div>
+          ) : null}
+          {searchPanel ? (
+            <div
+              role="tabpanel"
+              id="sidebar-dock-panel-search"
+              aria-labelledby={availableTabs.length >= 2 ? "sidebar-dock-tab-search" : undefined}
+              hidden={view !== "search"}
+              inert={view !== "search" || undefined}
+              className={panelClass(view === "search")}
+            >
+              {searchPanel({
+                active: open && view === "search",
+                focusRequest: open && view === "search" ? focusRequest : 0,
               })}
             </div>
           ) : null}

@@ -11,14 +11,21 @@ rust-version = "1.90"
 name = "qingmo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Test-only embedded WebDriver server + execute/mocking plugin. Never
+# enabled in release builds; see scripts/ci/test-tauri.sh.
+e2e-webdriver = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]
+
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 atomic-write-file = "0.3.1"
+base64 = "0.22"
 blake3 = "1.8.7"
 encoding_rs = "0.8.42"
 notify-debouncer-full = "0.7"
+rusqlite = { version = "0.37", features = ["bundled", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2.12.5", features = ["protocol-asset"] }
@@ -26,6 +33,8 @@ tauri-plugin-dialog = "2.8.3"
 tauri-plugin-opener = "2.7.2"
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "=2.14.0"
+tauri-plugin-wdio = { version = "1.5.1", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1.5.1", optional = true }
 time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 tracing = "0.1"

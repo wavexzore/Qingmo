@@ -11,11 +11,21 @@ pub const COMMANDS: &[&str] = &[
     "document_reload",
     "document_save_as",
     "document_write_atomic",
+    "document_save_image",
+    "document_history_list",
+    "document_history_read",
+    "document_history_restore",
     "workspace_open",
     "workspace_current",
     "workspace_list",
     "workspace_open_document",
     "workspace_locate_document",
+    "workspace_delete",
+    "workspace_trash_list",
+    "workspace_trash_restore",
+    "workspace_trash_purge",
+    "workspace_search",
+    "workspace_search_rebuild",
     "app_close_confirm",
     "app_set_live_preview",
     "app_about_info",
@@ -44,6 +54,8 @@ pub const COMMANDS: &[&str] = &[
 ];
 
 pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";
+pub const EVENT_CLOSE_CANCELLED: &str = "app://close-cancelled";
+pub const EVENT_WORKSPACE_INDEX_STATUS: &str = "app://workspace-index-status";
 pub const EVENT_UPDATE_STATE: &str = "app://update-state";
 pub const EVENT_UPDATE_PROGRESS: &str = "app://update-progress";
 /// Another window must save before the update restarts the app.
@@ -59,6 +71,7 @@ pub const EVENT_WORKSPACE_CHANGED: &str = "app://workspace-changed";
 
 pub const EVENTS: &[&str] = &[
     EVENT_CLOSE_REQUESTED,
+    EVENT_CLOSE_CANCELLED,
     EVENT_UPDATE_STATE,
     EVENT_UPDATE_PROGRESS,
     EVENT_UPDATE_FLUSH_REQUEST,
@@ -66,6 +79,7 @@ pub const EVENTS: &[&str] = &[
     EVENT_DOCUMENT_CHANGED,
     EVENT_DOCUMENT_NEW_FAILED,
     EVENT_WORKSPACE_CHANGED,
+    EVENT_WORKSPACE_INDEX_STATUS,
 ];
 
 /// Menu item ids forwarded to the webview, except `file.new`.

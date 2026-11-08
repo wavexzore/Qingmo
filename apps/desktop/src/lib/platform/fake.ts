@@ -1,20 +1,20 @@
 import type { AppError, CloseReason } from "@qingmo/shared";
 
 import type { MenuAction } from "../ipc/commands";
-import type { PlatformPort } from "./port";
+import type { CloseRequest, PlatformPort } from "./port";
 
 /**
  * Browser-test platform. Close and blur events are explicit because a browser
  * page cannot observe the native window lifecycle used by Tauri.
  */
 export class FakePlatform implements PlatformPort {
-  private readonly closeListeners = new Set<(reason: CloseReason) => void>();
+  private readonly closeListeners = new Set<(request: CloseRequest) => void>();
   private readonly menuListeners = new Set<(action: MenuAction) => void>();
   private readonly newFailedListeners = new Set<(error: AppError) => void>();
   private readonly blurListeners = new Set<() => void>();
   private composing = false;
 
-  onCloseRequested(callback: (reason: CloseReason) => void): () => void {
+  onCloseRequested(callback: (request: CloseRequest) => void): () => void {
     this.closeListeners.add(callback);
     return () => {
       this.closeListeners.delete(callback);
@@ -50,9 +50,9 @@ export class FakePlatform implements PlatformPort {
     this.composing = composing;
   }
 
-  emitCloseRequested(reason: CloseReason = "window"): void {
+  emitCloseRequested(reason: CloseReason = "window", generation = 1, attempt = 1): void {
     for (const listener of [...this.closeListeners]) {
-      listener(reason);
+      listener({ reason, generation, attempt });
     }
   }
 

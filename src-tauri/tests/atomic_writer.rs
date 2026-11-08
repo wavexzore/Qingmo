@@ -5,7 +5,7 @@ use std::fs;
 use common::{encode_utf16, open_file, save, temp_siblings, write_file};
 use qingmo_lib::error::AppErrorCode;
 use qingmo_lib::ipc::dto::LineEnding;
-use qingmo_lib::services::file_service::MAX_FILE_BYTES;
+use qingmo_lib::services::file_service::MAX_WRITE_BYTES;
 use qingmo_lib::state::DocumentRegistry;
 use tempfile::TempDir;
 
@@ -149,7 +149,7 @@ fn rejects_cr_nul_and_oversized_text_without_touching_the_file() {
     let nul = save(&registry, &payload.doc_token, "a\0b", None).expect_err("NUL must fail");
     assert_eq!(nul.code, AppErrorCode::Io);
 
-    let oversized = "a".repeat(MAX_FILE_BYTES as usize + 1);
+    let oversized = "a".repeat(MAX_WRITE_BYTES as usize + 1);
     let too_large =
         save(&registry, &payload.doc_token, &oversized, None).expect_err("oversize must fail");
     assert_eq!(too_large.code, AppErrorCode::FileTooLarge);
@@ -165,14 +165,14 @@ fn enforces_the_encoded_size_limit() {
 
     let crlf_target = write_file(&dir, "crlf-limit.md", b"old\r\n");
     let crlf_payload = open_file(&registry, crlf_target);
-    let crlf_text = format!("{}\n", "a".repeat(MAX_FILE_BYTES as usize - 1));
+    let crlf_text = format!("{}\n", "a".repeat(MAX_WRITE_BYTES as usize));
     let error = save(&registry, &crlf_payload.doc_token, &crlf_text, None)
         .expect_err("CRLF expansion must exceed the limit");
     assert_eq!(error.code, AppErrorCode::FileTooLarge);
 
     let utf16_target = write_file(&dir, "utf16-limit.md", &encode_utf16("old\n", true, true));
     let utf16_payload = open_file(&registry, utf16_target);
-    let utf16_text = "a".repeat((MAX_FILE_BYTES / 2) as usize + 1);
+    let utf16_text = "a".repeat((MAX_WRITE_BYTES / 2) as usize + 1);
     let error = save(&registry, &utf16_payload.doc_token, &utf16_text, None)
         .expect_err("UTF-16 expansion must exceed the limit");
     assert_eq!(error.code, AppErrorCode::FileTooLarge);

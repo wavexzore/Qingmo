@@ -4,8 +4,10 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{FilePayload, LineEnding, ReadOnlyReason, TextEncoding, TextFormat};
-use crate::services::atomic_writer::write_formatted;
-use crate::services::file_service::{FileService, ParsedFile};
+use crate::services::atomic_writer::{write_formatted, AtomicWriter};
+use crate::services::file_lock::FileLockStore;
+use crate::services::file_service::{FileService, ParsedFile, MAX_OPEN_BYTES};
+use crate::services::history_store::HistoryStore;
 
 /// Opaque IPC handle. It is intentionally not a document identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -66,9 +68,16 @@ impl DocumentRecord {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct DocumentServices {
+    history: Option<HistoryStore>,
+    locks: Option<FileLockStore>,
+}
+
 #[derive(Debug, Default)]
 struct RegistryInner {
     docs: RwLock<HashMap<DocToken, Arc<DocumentRecord>>>,
+    services: RwLock<DocumentServices>,
 }
 
 /// Registry of documents owned by open windows.
@@ -83,6 +92,42 @@ pub struct DocumentRegistry {
 impl DocumentRegistry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Installs the optional history/lock services after app data is known.
+    /// Safe to call once during setup; later calls replace the handles.
+    pub fn configure_services(&self, history: Option<HistoryStore>, locks: Option<FileLockStore>) {
+        if let Ok(mut services) = self.inner.services.write() {
+            *services = DocumentServices { history, locks };
+        }
+    }
+
+    fn services(&self) -> DocumentServices {
+        self.inner
+            .services
+            .read()
+            .map(|services| services.clone())
+            .unwrap_or_default()
+    }
+
+    /// Whether any window currently owns this canonical path.
+    pub fn is_path_open(&self, path: &Path) -> bool {
+        let Ok(docs) = self.inner.docs.read() else {
+            return true;
+        };
+        docs.values().any(|record| record.canonical_target == path)
+    }
+
+    pub fn canonical_paths(&self) -> Vec<PathBuf> {
+        self.inner
+            .docs
+            .read()
+            .map(|docs| {
+                docs.values()
+                    .map(|record| record.canonical_target.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Opens a path that was already chosen by the Rust-side dialog.
@@ -132,6 +177,12 @@ impl DocumentRegistry {
         }
         ensure_supported_extension(&canonical_target)?;
 
+        let services = self.services();
+        let _lock = services
+            .locks
+            .as_ref()
+            .map(|locks| locks.acquire(&canonical_target))
+            .transpose()?;
         let parsed = FileService::read(&canonical_target)?;
         let token = DocToken::new();
         let record = Arc::new(DocumentRecord {
@@ -164,15 +215,53 @@ impl DocumentRegistry {
         let canonical_target = resolve_save_target(&selected)?;
         ensure_save_extension(&canonical_target)?;
 
-        let format = match FileService::read(&canonical_target) {
-            Ok(parsed) => parsed.format,
-            Err(error) if error.code == AppErrorCode::NotFound => TextFormat {
-                encoding: TextEncoding::Utf8,
-                has_bom: false,
-                eol: LineEnding::Lf,
-            },
+        let services = self.services();
+        let _lock = services
+            .locks
+            .as_ref()
+            .map(|locks| locks.acquire_target(&canonical_target))
+            .transpose()?;
+        if self.is_path_open(&canonical_target) {
+            return Err(AppError::new(
+                AppErrorCode::Busy,
+                "the save-as target is already open in another window",
+            ));
+        }
+
+        let (format, existing) = match FileService::read(&canonical_target) {
+            Ok(parsed) => {
+                if parsed.size > MAX_OPEN_BYTES {
+                    return Err(AppError::new(
+                        AppErrorCode::FileTooLarge,
+                        "the save-as target exceeds the 10 MiB open limit",
+                    )
+                    .with_details(serde_json::json!({
+                        "operation": "open",
+                        "limitBytes": MAX_OPEN_BYTES,
+                    })));
+                }
+                let bytes =
+                    std::fs::read(&canonical_target).map_err(|error| AppError::from_io(&error))?;
+                let hash = blake3::hash(&bytes).to_hex().to_string();
+                (parsed.format, Some((bytes, hash)))
+            }
+            Err(error) if error.code == AppErrorCode::NotFound => (
+                TextFormat {
+                    encoding: TextEncoding::Utf8,
+                    has_bom: false,
+                    eol: LineEnding::Lf,
+                },
+                None,
+            ),
             Err(error) => return Err(error),
         };
+
+        if let (Some(history), Some((bytes, hash))) = (services.history.as_ref(), existing.as_ref())
+        {
+            if let Err(error) = history.capture(&canonical_target, bytes, hash, false) {
+                tracing::warn!(%error, "failed to capture save-as history");
+            }
+        }
 
         let result = write_formatted(&canonical_target, &format, text_lf)?;
         let text_units = text_lf.encode_utf16().count() as u64;
@@ -205,6 +294,57 @@ impl DocumentRegistry {
             hash: result.hash,
             size: result.size,
             text_units,
+            mtime_ms: result.mtime_ms,
+            read_only: false,
+            read_only_reason: None,
+        })
+    }
+
+    pub fn write_atomic(
+        &self,
+        token: &str,
+        text_lf: &str,
+        expected_current_hash: Option<&str>,
+    ) -> Result<crate::ipc::dto::SaveResult, AppError> {
+        let record = self.get(token)?;
+        let services = self.services();
+        AtomicWriter::write_with_services(
+            &record,
+            text_lf,
+            expected_current_hash,
+            services.history.as_ref(),
+            services.locks.as_ref(),
+            false,
+        )
+    }
+
+    pub fn restore_history(&self, token: &str, entry_id: &str) -> Result<FilePayload, AppError> {
+        let record = self.get(token)?;
+        let services = self.services();
+        let history = services
+            .history
+            .as_ref()
+            .ok_or_else(|| AppError::new(AppErrorCode::Io, "history storage is unavailable"))?;
+        let snapshot = history.read_raw(&record.canonical_target, entry_id)?;
+        let decoded = crate::services::encoding::decode(&snapshot.0)?;
+        let result = AtomicWriter::write_with_format(
+            &record,
+            &decoded.text,
+            None,
+            Some(&snapshot.1),
+            Some(history),
+            services.locks.as_ref(),
+            true,
+        )?;
+        Ok(FilePayload {
+            doc_token: token.to_string(),
+            path: path_to_display(&record.canonical_target),
+            text: decoded.text.clone(),
+            format: snapshot.1,
+            mixed_eol: false,
+            hash: result.hash,
+            size: result.size,
+            text_units: decoded.text.encode_utf16().count() as u64,
             mtime_ms: result.mtime_ms,
             read_only: false,
             read_only_reason: None,

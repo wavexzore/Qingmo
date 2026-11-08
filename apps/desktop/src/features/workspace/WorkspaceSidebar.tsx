@@ -10,6 +10,8 @@ interface WorkspaceSidebarProps {
   active: boolean;
   focusRequest: number;
   onOpenFile(segments: string[]): void | Promise<boolean>;
+  onDeleteFile?: ((segments: string[]) => void) | undefined;
+  onShowTrash?: (() => void) | undefined;
 }
 
 export function WorkspaceSidebar({
@@ -17,6 +19,8 @@ export function WorkspaceSidebar({
   active,
   focusRequest,
   onOpenFile,
+  onDeleteFile,
+  onShowTrash,
 }: WorkspaceSidebarProps) {
   const { t } = useTranslation(["workspace"]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -106,6 +110,8 @@ export function WorkspaceSidebar({
           onToggle={navigation.toggle}
           onOpenFile={onOpenFile}
           onRetry={navigation.retry}
+          onDeleteFile={onDeleteFile}
+          onShowTrash={onShowTrash}
         />
       )}
 

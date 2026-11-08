@@ -24,6 +24,7 @@ import { useCommandKeybindings } from "../commands/keybindings";
 import { useThemeCommand } from "../commands/themeCommand";
 import { useDocumentSession } from "../editor/DocumentSessionContext";
 import type { EditorSession } from "../editor/EditorSession";
+import { HistoryDialog } from "../editor/history/HistoryDialog";
 import { OutlinePanel } from "../editor/outline/OutlinePanel";
 import { createDocumentSession } from "../editor/session/createDocumentSession";
 import { useEditorLocale } from "../editor/useEditorLocale";
@@ -45,6 +46,8 @@ import {
 import { sidebarDockStore, useSidebarDock, type SidebarView } from "./sidebarDockStore";
 import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
 import { workspaceErrorKey } from "./workspaceErrorMessage";
+import { SearchPanel } from "./SearchPanel";
+import { TrashDialog } from "./TrashDialog";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 /**
@@ -80,6 +83,13 @@ export function WorkspaceLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    segments: string[];
+    name: string;
+  } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const openingRef = useRef(false);
   const creatingRef = useRef(false);
   // Open and New both replace (or retire) this window's session in the
@@ -115,13 +125,23 @@ export function WorkspaceLayout() {
   const hasOutline = session !== null;
   const dockAvailable = hasWorkspace || hasOutline;
   const resolvedView: SidebarView =
-    dock.view === "workspace"
+    dock.view === "search"
       ? hasWorkspace
-        ? "workspace"
-        : "outline"
-      : hasOutline
-        ? "outline"
-        : "workspace";
+        ? "search"
+        : hasOutline
+          ? "outline"
+          : "workspace"
+      : dock.view === "workspace"
+        ? hasWorkspace
+          ? "workspace"
+          : hasOutline
+            ? "outline"
+            : "workspace"
+        : hasOutline
+          ? "outline"
+          : hasWorkspace
+            ? "workspace"
+            : "outline";
   const dockRef = useRef<SidebarDockHandle>(null);
   const reopenRef = useRef<HTMLButtonElement>(null);
   const workspaceToken = navigation.workspace?.token ?? null;
@@ -436,6 +456,23 @@ export function WorkspaceLayout() {
     [openDocumentFrom, workspaceToken],
   );
 
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete || !workspaceToken) {
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      await ipc.workspaceDelete(workspaceToken, pendingDelete.segments);
+      setPendingDelete(null);
+      await navigation.refresh({ manual: true });
+    } catch (error) {
+      const appError = normalizeError(error);
+      toast.push(t(`errors:${appError.code}`));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [ipc, navigation, pendingDelete, t, toast, workspaceToken]);
+
   const openWorkspace = useCallback(async () => {
     try {
       const info = await navigation.openWorkspace();
@@ -716,6 +753,48 @@ export function WorkspaceLayout() {
     toggleWorkspaceSidebar,
   ]);
 
+  useEffect(() => {
+    const disposable = commandRegistry.register({
+      id: "workspace.search",
+      titleKey: "commands:workspace.search",
+      category: "commands:category.workspace",
+      keybinding: "Mod+Shift+F",
+      when: () => hasWorkspace,
+      run: () => {
+        sidebarDockStore.show("search");
+        dockRef.current?.focusActivePanel();
+      },
+    });
+    return () => disposable.dispose();
+  }, [hasWorkspace]);
+
+  useEffect(() => {
+    if (!session || session.isUntitled) {
+      return;
+    }
+    const disposable = commandRegistry.register({
+      id: "document.history",
+      titleKey: "commands:document.history",
+      category: "commands:category.file",
+      keybinding: "Mod+Shift+H",
+      run: () => setHistoryOpen(true),
+    });
+    return () => disposable.dispose();
+  }, [session]);
+
+  useEffect(() => {
+    if (!hasWorkspace) {
+      return;
+    }
+    const disposable = commandRegistry.register({
+      id: "workspace.trash",
+      titleKey: "commands:workspace.trash",
+      category: "commands:category.workspace",
+      run: () => setTrashOpen(true),
+    });
+    return () => disposable.dispose();
+  }, [hasWorkspace]);
+
   return (
     <div className="flex h-dvh flex-col bg-paper">
       <UpdateHost
@@ -742,6 +821,13 @@ export function WorkspaceLayout() {
                       active={active}
                       focusRequest={focusRequest}
                       onOpenFile={openWorkspaceDocument}
+                      onDeleteFile={(segments) =>
+                        setPendingDelete({
+                          segments,
+                          name: segments[segments.length - 1] ?? "",
+                        })
+                      }
+                      onShowTrash={() => setTrashOpen(true)}
                     />
                   )
                 : undefined
@@ -754,6 +840,19 @@ export function WorkspaceLayout() {
                       active={active}
                       focusRequest={focusRequest}
                       onClose={handleOutlineClose}
+                    />
+                  )
+                : undefined
+            }
+            searchPanel={
+              hasWorkspace && workspaceToken
+                ? ({ active, focusRequest }) => (
+                    <SearchPanel
+                      ipc={ipc}
+                      workspaceToken={workspaceToken}
+                      active={active}
+                      focusRequest={focusRequest}
+                      onOpenFile={openWorkspaceDocument}
                     />
                   )
                 : undefined
@@ -774,6 +873,61 @@ export function WorkspaceLayout() {
         onCancel={closeGuard.cancelClose}
       />
       <LogDialog open={logsOpen} onClose={() => setLogsOpen(false)} />
+      {session && !session.isUntitled ? (
+        <HistoryDialog
+          open={historyOpen}
+          docToken={session.getSnapshot().docToken}
+          ipc={ipc}
+          onClose={() => setHistoryOpen(false)}
+          onRestore={(payload) => {
+            session.replacePayload(payload);
+          }}
+        />
+      ) : null}
+      {pendingDelete ? (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label={t("workspace:menu.confirmTitle")}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-4 shadow-xl">
+            <h2 className="text-sm font-semibold text-ink">{t("workspace:menu.confirmTitle")}</h2>
+            <p className="mt-2 text-xs text-ink-muted">
+              {t("workspace:menu.confirmBody", { name: pendingDelete.name })}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => setPendingDelete(null)}
+                className="rounded border border-line px-3 py-1.5 text-xs text-ink-muted hover:bg-surface-raised disabled:opacity-40"
+              >
+                {t("workspace:menu.cancel")}
+              </button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => void confirmDelete()}
+                className="rounded bg-danger px-3 py-1.5 text-xs text-white disabled:opacity-40"
+              >
+                {t("workspace:menu.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {hasWorkspace && workspaceToken ? (
+        <TrashDialog
+          open={trashOpen}
+          workspaceToken={workspaceToken}
+          ipc={ipc}
+          onClose={() => setTrashOpen(false)}
+          onChanged={() => {
+            void navigation.refresh({ manual: true });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

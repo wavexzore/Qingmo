@@ -1,0 +1,6 @@
+{
+  "identifier": "e2e",
+  "description": "WDIO-only permissions. This capability is referenced by tauri.e2e.conf.json and never by the release configuration.",
+  "windows": ["main", "doc-*", "about", "settings", "recovery"],
+  "permissions": ["wdio:default", "wdio-webdriver:default", "core:window:allow-close"]
+}

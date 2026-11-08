@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::Duration;
 
 use notify_debouncer_full::notify::event::{EventKind, ModifyKind};
@@ -11,6 +11,7 @@ use notify_debouncer_full::{
 use tauri::{AppHandle, Emitter};
 
 use crate::ipc::contract::EVENT_WORKSPACE_CHANGED;
+use crate::services::search_index::SearchIndexService;
 use crate::services::workspace_service::is_ignored_relative_path;
 use crate::state::workspace_registry::WorkspaceRegistry;
 use crate::state::WindowSessions;
@@ -129,6 +130,7 @@ struct BuildContext {
     sink: Arc<dyn WorkspaceEventSink>,
     sessions: WindowSessions,
     registry: WorkspaceRegistry,
+    index: Arc<RwLock<Option<SearchIndexService>>>,
     inner: Arc<Mutex<Inner>>,
 }
 
@@ -170,11 +172,19 @@ impl WorkspaceWatcher {
                 sink,
                 sessions,
                 registry,
+                index: Arc::new(RwLock::new(None)),
                 inner: Arc::new(Mutex::new(Inner::default())),
             },
             factory,
             scheduler,
             sync_lock: Mutex::new(()),
+        }
+    }
+
+    /// Attaches the search index as a second consumer of the same batches.
+    pub fn attach_index(&self, index: SearchIndexService) {
+        if let Ok(mut slot) = self.ctx.index.write() {
+            *slot = Some(index);
         }
     }
 
@@ -347,12 +357,14 @@ fn build_root(
     let handler_sessions = context.sessions.clone();
     let handler_registry = context.registry.clone();
     let handler_sink = Arc::clone(&context.sink);
+    let handler_index = Arc::clone(&context.index);
     let handler = Arc::new(move |result: DebounceEventResult| {
         handle_events(
             weak.clone(),
             &handler_sessions,
             &handler_registry,
             handler_sink.as_ref(),
+            handler_index.as_ref(),
             &handler_root,
             generation,
             result,
@@ -413,11 +425,13 @@ fn build_root(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_events(
     inner: Weak<Mutex<Inner>>,
     sessions: &WindowSessions,
     registry: &WorkspaceRegistry,
     sink: &dyn WorkspaceEventSink,
+    index: &RwLock<Option<SearchIndexService>>,
     root: &Path,
     generation: u64,
     result: DebounceEventResult,
@@ -438,6 +452,36 @@ fn handle_events(
             };
             if !current {
                 return;
+            }
+            if let Some(index) = index.read().ok().and_then(|index| index.clone()) {
+                let mut handled = false;
+                for event in &events {
+                    match event.event.kind {
+                        EventKind::Modify(ModifyKind::Name(_)) if event.paths.len() < 2 => {
+                            index.notify_rescan(root.to_path_buf());
+                            handled = true;
+                        }
+                        EventKind::Remove(_) => {
+                            for path in &event.paths {
+                                if is_indexable(root, path) {
+                                    index.remove_path(root, path);
+                                    handled = true;
+                                }
+                            }
+                        }
+                        _ => {
+                            for path in &event.paths {
+                                if is_indexable(root, path) {
+                                    index.notify_upsert(root.to_path_buf(), path.clone());
+                                    handled = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if !handled && !events.is_empty() {
+                    index.notify_rescan(root.to_path_buf());
+                }
             }
             if events.iter().any(|event| should_refresh(event, root)) {
                 emit_to_root(sessions, registry, sink, root);
@@ -486,6 +530,22 @@ fn emit_to_root(
 }
 
 /// Whether one debounced event can change a visible tree row.
+fn is_indexable(root: &Path, path: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    if is_ignored_relative_path(relative) {
+        return false;
+    }
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("md")
+                || extension.eq_ignore_ascii_case("markdown")
+                || extension.eq_ignore_ascii_case("mdx")
+        })
+}
+
 pub fn should_refresh(event: &DebouncedEvent, root: &Path) -> bool {
     should_refresh_event(&event.event, root)
 }

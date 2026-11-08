@@ -9,11 +9,18 @@ import type {
   EditorViewState,
   EditorViewStateInput,
   FilePayload,
+  HistoryEntry,
+  HistoryRecord,
+  ImageSaveResult,
   JsonValue,
   ReadOnlyReason,
   SaveRequest,
   SaveResult,
+  SearchResponse,
   TextFormat,
+  TrashEntry,
+  TrashRestoreMode,
+  TrashRestoreResult,
   WorkspaceEntry,
   WorkspaceInfo,
   WorkspaceListing,
@@ -147,6 +154,16 @@ export class FakeIpc implements IpcPort {
   private readonly commandDelays = new Map<CommandName, number>();
   private readonly documentChangedListeners = new Set<(change: DocumentChangedPayload) => void>();
   private readonly workspaceChangedListeners = new Set<() => void>();
+  private readonly closeCancelledListeners = new Set<
+    (payload: { reason: string; generation: number }) => void
+  >();
+  private readonly indexStatusListeners = new Set<
+    (payload: import("@qingmo/shared").WorkspaceIndexStatusPayload) => void
+  >();
+  private readonly history = new Map<string, HistoryEntry[]>();
+  private readonly historyBodies = new Map<string, HistoryRecord>();
+  private readonly trash = new Map<string, TrashEntry>();
+  private historyClock = 1;
   private readonly viewStates = new Map<string, EditorViewState>();
   private readonly drafts = new Map<string, DraftRecord>();
   private active: { token: string; path: string } | null = null;
@@ -268,6 +285,30 @@ export class FakeIpc implements IpcPort {
     return () => {
       this.workspaceChangedListeners.delete(callback);
     };
+  }
+
+  onCloseCancelled(
+    callback: (payload: { reason: string; generation: number }) => void,
+  ): () => void {
+    this.closeCancelledListeners.add(callback);
+    return () => {
+      this.closeCancelledListeners.delete(callback);
+    };
+  }
+
+  onWorkspaceIndexStatus(
+    callback: (payload: import("@qingmo/shared").WorkspaceIndexStatusPayload) => void,
+  ): () => void {
+    this.indexStatusListeners.add(callback);
+    return () => {
+      this.indexStatusListeners.delete(callback);
+    };
+  }
+
+  emitCloseCancelled(reason: string, generation: number): void {
+    for (const listener of [...this.closeCancelledListeners]) {
+      listener({ reason, generation });
+    }
   }
 
   getFile(path: string): FakeFileSnapshot | undefined {
@@ -424,6 +465,107 @@ export class FakeIpc implements IpcPort {
       return null;
     }
     return relative.every(isValidWorkspaceSegment) ? relative : null;
+  }
+
+  async workspaceDelete(workspaceToken: string, segments: string[]): Promise<TrashEntry> {
+    await this.wait(COMMANDS.workspaceDelete);
+    this.maybeThrow(COMMANDS.workspaceDelete);
+    this.record(COMMANDS.workspaceDelete, { workspaceToken, segments });
+    const workspace = this.requireWorkspace(workspaceToken);
+    const path = [workspace.root, ...segments].join("/");
+    const record = this.records.get(path);
+    if (!record) throw new AppError("NOT_FOUND", "file not found");
+    this.records.delete(path);
+    const entry: TrashEntry = {
+      id: crypto.randomUUID(),
+      relativePath: segments.join("/"),
+      deletedAtMs: this.tick(),
+      sizeBytes: record.size,
+      state: "active",
+    };
+    this.trash.set(entry.id, entry);
+    return entry;
+  }
+
+  async workspaceTrashList(workspaceToken: string): Promise<TrashEntry[]> {
+    await this.wait(COMMANDS.workspaceTrashList);
+    this.maybeThrow(COMMANDS.workspaceTrashList);
+    this.record(COMMANDS.workspaceTrashList, { workspaceToken });
+    this.requireWorkspace(workspaceToken);
+    return [...this.trash.values()];
+  }
+
+  async workspaceTrashRestore(
+    workspaceToken: string,
+    entryId: string,
+    mode: TrashRestoreMode,
+  ): Promise<TrashRestoreResult> {
+    await this.wait(COMMANDS.workspaceTrashRestore);
+    this.maybeThrow(COMMANDS.workspaceTrashRestore);
+    this.record(COMMANDS.workspaceTrashRestore, { workspaceToken, entryId, mode });
+    const workspace = this.requireWorkspace(workspaceToken);
+    const entry = this.trash.get(entryId);
+    if (!entry) throw new AppError("NOT_FOUND", "trash entry not found");
+    const target = [workspace.root, entry.relativePath].join("/");
+    this.records.set(target, {
+      path: target,
+      text: "",
+      format: { encoding: "utf8", hasBom: false, eol: "lf" },
+      readOnlyReason: null,
+      baseHash: fakeHash(""),
+      diskHash: fakeHash(""),
+      size: 0,
+      mtimeMs: this.tick(),
+    });
+    this.trash.delete(entryId);
+    return { relativePath: entry.relativePath, mode };
+  }
+
+  async workspaceTrashPurge(workspaceToken: string, entryId: string): Promise<void> {
+    await this.wait(COMMANDS.workspaceTrashPurge);
+    this.maybeThrow(COMMANDS.workspaceTrashPurge);
+    this.record(COMMANDS.workspaceTrashPurge, { workspaceToken, entryId });
+    this.requireWorkspace(workspaceToken);
+    this.trash.delete(entryId);
+  }
+
+  async workspaceSearch(
+    workspaceToken: string,
+    query: string,
+    limit = 30,
+    offset = 0,
+  ): Promise<SearchResponse> {
+    await this.wait(COMMANDS.workspaceSearch);
+    this.maybeThrow(COMMANDS.workspaceSearch);
+    this.record(COMMANDS.workspaceSearch, { workspaceToken, query, limit, offset });
+    const workspace = this.requireWorkspace(workspaceToken);
+    const needle = query.trim().toLowerCase();
+    const results = [...this.records.values()]
+      .filter((record) => record.path.startsWith(`${workspace.root}/`))
+      .filter((record) => !needle || record.text.toLowerCase().includes(needle))
+      .map((record) => ({
+        path: record.path.slice(workspace.root.length + 1),
+        title: record.path.split("/").pop() ?? record.path,
+        snippet: record.text.slice(0, 160),
+        score: 0,
+        mtimeMs: record.mtimeMs,
+      }))
+      .sort((left, right) => right.mtimeMs - left.mtimeMs);
+    return {
+      results: results.slice(offset, offset + limit),
+      hasMore: results.length > offset + limit,
+      indexing: false,
+      truncated: false,
+      tookMs: 0,
+      mode: "trigram",
+    };
+  }
+
+  async workspaceSearchRebuild(workspaceToken: string): Promise<void> {
+    await this.wait(COMMANDS.workspaceSearchRebuild);
+    this.maybeThrow(COMMANDS.workspaceSearchRebuild);
+    this.record(COMMANDS.workspaceSearchRebuild, { workspaceToken });
+    this.requireWorkspace(workspaceToken);
   }
 
   setDelay(milliseconds: number): void {
@@ -586,6 +728,59 @@ export class FakeIpc implements IpcPort {
     return this.toPayload(record, docToken);
   }
 
+  async documentSaveImage(request: {
+    docToken: string;
+    fileName: string;
+    mime: string;
+    dataBase64: string;
+  }): Promise<ImageSaveResult> {
+    await this.wait(COMMANDS.documentSaveImage);
+    this.maybeThrow(COMMANDS.documentSaveImage);
+    this.record(COMMANDS.documentSaveImage, request);
+    this.requireActive(request.docToken, COMMANDS.documentSaveImage);
+    const stem = request.fileName.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_-]+/g, "-");
+    const extension = request.mime === "image/jpeg" ? "jpg" : (request.mime.split("/")[1] ?? "png");
+    const relativePath = `assets/${stem}.${extension}`;
+    const size = Math.floor((request.dataBase64.length * 3) / 4);
+    return {
+      relativePath,
+      markdown: `![${stem}](${relativePath})`,
+      sizeBytes: size,
+      mime: request.mime,
+    };
+  }
+
+  async documentHistoryList(docToken: string, limit = 50, offset = 0): Promise<HistoryEntry[]> {
+    await this.wait(COMMANDS.documentHistoryList);
+    this.maybeThrow(COMMANDS.documentHistoryList);
+    this.record(COMMANDS.documentHistoryList, { docToken, limit, offset });
+    return (this.history.get(docToken) ?? []).slice(offset, offset + limit);
+  }
+
+  async documentHistoryRead(docToken: string, entryId: string): Promise<HistoryRecord> {
+    await this.wait(COMMANDS.documentHistoryRead);
+    this.maybeThrow(COMMANDS.documentHistoryRead);
+    this.record(COMMANDS.documentHistoryRead, { docToken, entryId });
+    const record = this.historyBodies.get(entryId);
+    if (!record) throw new AppError("NOT_FOUND", "history entry not found");
+    return record;
+  }
+
+  async documentHistoryRestore(docToken: string, entryId: string): Promise<FilePayload> {
+    await this.wait(COMMANDS.documentHistoryRestore);
+    this.maybeThrow(COMMANDS.documentHistoryRestore);
+    this.record(COMMANDS.documentHistoryRestore, { docToken, entryId });
+    const snapshot = this.historyBodies.get(entryId);
+    const record = this.requireActive(docToken, COMMANDS.documentHistoryRestore);
+    if (!snapshot) throw new AppError("NOT_FOUND", "history entry not found");
+    record.text = snapshot.text;
+    record.diskHash = fakeHash(snapshot.text);
+    record.baseHash = record.diskHash;
+    record.size = byteLength(snapshot.text);
+    record.mtimeMs = this.tick();
+    return this.toPayload(record, docToken);
+  }
+
   async documentWriteAtomic(request: SaveRequest): Promise<SaveResult> {
     await this.wait(COMMANDS.documentWriteAtomic);
     this.maybeThrow(COMMANDS.documentWriteAtomic);
@@ -616,6 +811,25 @@ export class FakeIpc implements IpcPort {
       };
     }
 
+    const previousText = record.text;
+    if (previousText !== request.text) {
+      const entryId = `${this.historyClock++}-${newHash.slice(0, 8)}`;
+      const entry: HistoryEntry = {
+        id: entryId,
+        hash: record.diskHash,
+        sizeBytes: record.size,
+        createdAtMs: this.tick(),
+        appVersion: "0.1.4",
+      };
+      this.history.set(request.docToken, [entry, ...(this.history.get(request.docToken) ?? [])]);
+      this.historyBodies.set(entryId, {
+        id: entryId,
+        text: previousText,
+        format: copyFormat(record.format),
+        hash: record.diskHash,
+        createdAtMs: entry.createdAtMs,
+      });
+    }
     record.text = request.text;
     record.diskHash = newHash;
     record.baseHash = newHash;
@@ -632,7 +846,7 @@ export class FakeIpc implements IpcPort {
   async appCloseConfirm(request: CloseConfirmRequest): Promise<void> {
     await this.wait(COMMANDS.appCloseConfirm);
     this.maybeThrow(COMMANDS.appCloseConfirm);
-    this.closeConfirmCalls.push({ allow: request.allow });
+    this.closeConfirmCalls.push({ allow: request.allow, generation: request.generation });
   }
 
   async appSetLivePreview(request: LivePreviewRequest): Promise<void> {

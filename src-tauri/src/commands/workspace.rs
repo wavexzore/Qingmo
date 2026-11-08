@@ -18,6 +18,21 @@ pub(crate) fn sync_workspace_watchers<R: tauri::Runtime>(app: &AppHandle<R>) {
     if let Some(watcher) = app.try_state::<WorkspaceWatcher>() {
         watcher.sync_watchers();
     }
+    if let Some(index) = app.try_state::<crate::services::SearchIndexService>() {
+        let sessions = app.state::<WindowSessions>();
+        let workspaces = app.state::<WorkspaceRegistry>();
+        let roots = sessions
+            .workspace_entries()
+            .into_iter()
+            .filter_map(|(_, token)| {
+                workspaces
+                    .get(&token)
+                    .ok()
+                    .map(|record| record.root.clone())
+            })
+            .collect::<std::collections::HashSet<_>>();
+        index.sync_roots(roots);
+    }
 }
 
 fn cancelled() -> AppError {
@@ -99,7 +114,7 @@ fn clear_stale_token(
     false
 }
 
-fn authorized_token(
+pub(crate) fn authorized_token(
     sessions: &WindowSessions,
     workspaces: &WorkspaceRegistry,
     label: &str,

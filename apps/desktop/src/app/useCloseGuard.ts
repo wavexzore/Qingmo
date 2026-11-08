@@ -25,7 +25,7 @@ export interface CloseGuardState {
 }
 
 export interface UseCloseGuardOptions {
-  ipc: Pick<IpcPort, "appCloseConfirm">;
+  ipc: Pick<IpcPort, "appCloseConfirm"> & Partial<Pick<IpcPort, "onCloseCancelled">>;
   platform: PlatformPort;
   coordinator: SaveCoordinator | null;
   /** Optional view-state recorder flushed before an allowed close. */
@@ -58,6 +58,7 @@ export function useCloseGuard({
   const viewStateRef = useRef<ViewStateRecorder | null>(viewState);
   const journalRef = useRef<DraftJournal | null>(journal);
   const closingRef = useRef(false);
+  const generationRef = useRef(0);
   coordinatorRef.current = coordinator;
   viewStateRef.current = viewState;
   journalRef.current = journal;
@@ -78,7 +79,7 @@ export function useCloseGuard({
           console.warn("failed to flush the view state before closing", error);
         }
       }
-      await ipc.appCloseConfirm({ allow });
+      await ipc.appCloseConfirm({ allow, generation: generationRef.current });
       setPrompt(null);
     },
     [ipc],
@@ -150,10 +151,26 @@ export function useCloseGuard({
   );
 
   useEffect(() => {
-    return platform.onCloseRequested((reason) => {
-      void requestClose(reason);
+    return platform.onCloseRequested((request) => {
+      // A stale resend must not reopen a prompt the user already answered.
+      if (request.generation < generationRef.current) {
+        return;
+      }
+      generationRef.current = request.generation;
+      void requestClose(request.reason);
     });
   }, [platform, requestClose]);
+
+  useEffect(() => {
+    if (!ipc.onCloseCancelled) {
+      return;
+    }
+    return ipc.onCloseCancelled((payload) => {
+      if (payload.generation >= generationRef.current) {
+        setPrompt(null);
+      }
+    });
+  }, [ipc]);
 
   useEffect(() => {
     let deferred = false;

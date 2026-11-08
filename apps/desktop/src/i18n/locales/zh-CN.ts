@@ -290,7 +290,7 @@ export const errors = {
   NOT_FOUND: "文件不存在或已被移动。",
   NOT_A_FILE: "所选路径不是普通文件。",
   UNSUPPORTED_EXTENSION: "只支持 .md 与 .markdown 文件。",
-  FILE_TOO_LARGE: "内容过大：文件上限 10 MiB，崩溃草稿上限 2 MiB。",
+  FILE_TOO_LARGE: "内容过大：文件打开上限 10 MiB、保存上限 16 MiB；崩溃草稿上限 2 MiB。",
   UNSUPPORTED_ENCODING: "仅支持 UTF-8 或带 BOM 的 UTF-16。",
   CONFLICT: "文件已被外部修改，请先确认版本。",
   PERMISSION_DENIED: "没有读取或写入该文件的权限。",
@@ -305,6 +305,8 @@ export const errors = {
   UPDATE_UNSUPPORTED: "当前系统或架构不支持自动更新。",
   UPDATE_NOT_READY: "更新尚未准备好安装。",
   INVALID_LOCALE: "界面语言数据无效，已保留当前语言。",
+  SEARCH_TIMEOUT: "搜索耗时过长，请缩小查询范围。",
+  INDEX_DISABLED: "搜索索引不可用，请重新打开文件夹以重建索引。",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {
@@ -483,7 +485,12 @@ export const commandLabels = {
     open: "打开文件",
     save: "保存文件",
   },
+  document: {
+    history: "版本历史",
+  },
   workspace: {
+    search: "搜索工作区",
+    trash: "回收站",
     open: "打开文件夹",
     refresh: "刷新工作区",
     collapseAll: "折叠全部目录",
@@ -561,6 +568,7 @@ export const workspace = {
   dock: {
     workspaceTab: "工作区",
     outlineTab: "大纲",
+    searchTab: "搜索",
     region: "侧栏视图",
     hide: "隐藏侧栏",
     reopen: "显示侧栏",
@@ -572,6 +580,15 @@ export const workspace = {
     retry: "重试",
     empty: "空文件夹",
   },
+  menu: {
+    label: "文件操作",
+    delete: "移入回收站",
+    trash: "打开回收站",
+    confirmTitle: "移入回收站？",
+    confirmBody: "“{{name}}”将移入青墨回收站，之后可以恢复。",
+    cancel: "取消",
+    confirm: "移入回收站",
+  },
   tree: {
     region: "工作区文件树",
     retry: "重试读取此目录",
@@ -582,6 +599,13 @@ export const workspace = {
     listed: "仅显示前 10,000 项，请进子目录查看。",
     scanned: "目录项过多，仅显示部分结果，排序可能不完整。",
   },
+  search: {
+    label: "搜索当前工作区",
+    placeholder: "搜索文件…",
+    results: "搜索结果",
+    indexing: "正在建立搜索索引…",
+    empty: "没有匹配的文档。",
+  },
   error: {
     expired: "工作区已失效，请重新打开文件夹。",
     outside: "该路径不在工作区内。",
@@ -591,6 +615,27 @@ export const workspace = {
     permission: "没有访问这个位置的权限。",
     io: "读取工作区失败，请重试。",
   },
+} as const;
+
+export const history = {
+  title: "版本历史",
+  close: "关闭",
+  loading: "正在加载版本…",
+  empty: "还没有历史版本。",
+  previewHint: "选择一个版本进行预览。",
+  cancel: "取消",
+  restore: "恢复此版本",
+} as const;
+
+export const trash = {
+  title: "回收站",
+  close: "关闭",
+  loading: "正在加载回收站…",
+  empty: "回收站为空。",
+  orphaned: "孤立条目",
+  restore: "恢复",
+  restoreCopy: "恢复为副本",
+  purge: "永久删除",
 } as const;
 
 export const zhCN = {
@@ -604,4 +649,6 @@ export const zhCN = {
   logs,
   menu,
   workspace,
+  history,
+  trash,
 };

@@ -800,6 +800,7 @@ fn focus_or_create_main_window<R: Runtime>(app: &AppHandle<R>) {
 /// Early requests still wait for `setup`: a cold first launch must finish
 /// installing its window services before a document can open.
 #[cfg(desktop)]
+#[cfg(all(desktop, not(feature = "e2e-webdriver")))]
 fn handle_second_instance<R: Runtime>(app: &AppHandle<R>, args: Vec<String>, cwd: String) {
     let cwd = if cwd.is_empty() {
         std::env::current_dir().unwrap_or_default()
@@ -837,10 +838,16 @@ pub fn run() {
     // The second launch must be detected before any other plugin or setup
     // work runs; the plugin exits that process and reports its arguments to
     // the instance already running.
-    #[cfg(desktop)]
+    // The E2E binary runs alongside a user's installed app and must not
+    // forward its launch to that process.
+    #[cfg(all(desktop, not(feature = "e2e-webdriver")))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
         handle_second_instance(app, args, cwd);
     }));
+    #[cfg(feature = "e2e-webdriver")]
+    let builder = builder
+        .plugin(tauri_plugin_wdio::init())
+        .plugin(tauri_plugin_wdio_webdriver::init());
     let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -1003,40 +1010,110 @@ pub fn run() {
                 sessions,
                 workspaces,
             ));
-            // Session storage is optional: a broken data directory disables
-            // drafts/view state but must never block startup or fall back to
-            // /tmp, which would leak plaintext drafts outside the app sandbox.
-            let session_store = match app.path().app_local_data_dir() {
-                Ok(dir) => match services::SessionStore::open(dir.join("session")) {
+            // Storage is optional: a broken data directory disables persistence
+            // but must never block startup or fall back to /tmp, which would
+            // leak plaintext drafts outside the app sandbox.
+            let local_data = app.path().app_local_data_dir().ok();
+            let session_store = match local_data.as_ref() {
+                Some(dir) => match services::SessionStore::open(dir.join("session")) {
                     Ok(store) => store,
                     Err(error) => {
                         tracing::warn!(%error, "session storage is unavailable; drafts and view state are disabled");
                         services::SessionStore::disabled()
                     }
                 },
-                Err(error) => {
-                    tracing::warn!(%error, "application data directory is unavailable; session storage is disabled");
+                None => {
+                    tracing::warn!("application data directory is unavailable; session storage is disabled");
                     services::SessionStore::disabled()
                 }
             };
-            if session_store.is_ready() {
-                let gc_store = session_store.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let report = gc_store.gc();
-                    if report.drafts_removed > 0
-                        || report.view_entries_removed > 0
-                        || report.corrupt_files_removed > 0
-                    {
-                        tracing::info!(
-                            drafts = report.drafts_removed,
-                            view_entries = report.view_entries_removed,
-                            corrupt = report.corrupt_files_removed,
-                            "session storage garbage-collected"
-                        );
-                    }
-                });
+            let history = match local_data.as_ref() {
+                Some(dir) => services::HistoryStore::open(dir.join("history"))
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(%error, "history storage is unavailable");
+                        services::HistoryStore::disabled()
+                    }),
+                None => services::HistoryStore::disabled(),
+            };
+            let trash = match local_data.as_ref() {
+                Some(dir) => services::TrashStore::open(dir.join("trash"))
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(%error, "trash storage is unavailable");
+                        services::TrashStore::disabled()
+                    }),
+                None => services::TrashStore::disabled(),
+            };
+            let locks = match local_data.as_ref() {
+                Some(dir) => services::FileLockStore::open(dir.join("locks"))
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(%error, "file lock storage is unavailable");
+                        services::FileLockStore::disabled()
+                    }),
+                None => services::FileLockStore::disabled(),
+            };
+            let search_index = match local_data.as_ref() {
+                Some(dir) => services::SearchIndexService::open(dir.join("index"))
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(%error, "search index is unavailable");
+                        services::SearchIndexService::disabled()
+                    }),
+                None => services::SearchIndexService::disabled(),
+            };
+            app.state::<state::DocumentRegistry>()
+                .configure_services(Some(history.clone()), Some(locks.clone()));
+            app.manage(history.clone());
+            app.manage(trash.clone());
+            app.manage(locks.clone());
+            app.manage(search_index.clone());
+            if let Some(watcher) = app.try_state::<state::WorkspaceWatcher>() {
+                watcher.attach_index(search_index.clone());
             }
-            app.manage(session_store);
+            app.manage(session_store.clone());
+
+            // Unified storage governance: each child fails independently.
+            let gc_session = session_store.clone();
+            let gc_history = history.clone();
+            let gc_trash = trash.clone();
+            let gc_index = search_index.clone();
+            let gc_locks = locks.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let report = services::storage_gc::run(
+                    &gc_session,
+                    &gc_history,
+                    &gc_trash,
+                    &gc_index,
+                    &[],
+                    Some(&gc_locks),
+                );
+                tracing::info!(
+                    drafts = report.drafts_removed,
+                    views = report.view_entries_removed,
+                    history = report.history_entries_removed,
+                    trash = report.trash_removed,
+                    index = report.index_workspaces_removed,
+                    errors = report.errors.len(),
+                    "storage garbage-collected"
+                );
+            });
+
+            // Restore window intent before the 300ms blank-window timer can
+            // claim the launch. An OS open that is still queued owns the
+            // launch; the queue drains just below.
+            if session_store.is_ready()
+                && !session_store.windows_get().is_empty()
+                && !app.state::<state::StartupOpenQueue>().has_pending()
+            {
+                let startup = app.state::<state::StartupWindow>();
+                if startup.claim_restore_if_undecided() {
+                    let handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = state::session_restore::restore_windows(handle).await;
+                    });
+                }
+            }
+            // The active root set can only be known after windows exist; each
+            // workspace open already calls sync_watchers, which also syncs the
+            // index. Nothing to do at setup beyond registering the service.
             tracing::info!(
                 version = %app.package_info().version,
                 log_dir = %services::logging::dir().display(),
@@ -1055,6 +1132,15 @@ pub fn run() {
             app.manage(state::UpdateManager::new(
                 app.package_info().version.to_string(),
             ));
+            // Test builds can pin one document to open at launch. Claiming
+            // the launch first keeps the 300ms blank-main timer from
+            // competing with the document window.
+            #[cfg(feature = "e2e-webdriver")]
+            if let Ok(path) = std::env::var("QINGMO_E2E_OPEN") {
+                app.state::<state::StartupWindow>().mark_opened();
+                app.state::<state::StartupOpenQueue>()
+                    .push(std::path::PathBuf::from(path));
+            }
             // macOS can deliver an OS open request before this hook runs. By
             // now every service those windows need exists, so replay the paths
             // that were parked instead of letting the first document race the

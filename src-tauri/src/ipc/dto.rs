@@ -178,6 +178,17 @@ pub enum CloseReason {
 pub struct CloseRequestedPayload {
     pub reason: CloseReason,
     pub target: String,
+    pub generation: u64,
+    /// 1 = first request, 2 = watchdog resend.
+    pub attempt: u32,
+}
+
+/// Payload of `app://close-cancelled`; no filename or body is included.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseCancelledPayload {
+    pub reason: CloseReason,
+    pub generation: u64,
 }
 
 /// Payload of `app://menu-action`.
@@ -675,3 +686,154 @@ impl DraftRecord {
 
 pub const DRAFT_SCHEMA_VERSION: u32 = 1;
 pub const VIEW_STATE_SCHEMA_VERSION: u32 = 1;
+
+/// Debug/build metadata attached to one history snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageSaveResult {
+    pub relative_path: String,
+    pub markdown: String,
+    pub size_bytes: u64,
+    pub mime: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntry {
+    pub id: String,
+    pub hash: String,
+    pub size_bytes: u64,
+    pub created_at_ms: i64,
+    pub app_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryRecord {
+    pub id: String,
+    pub text: String,
+    pub format: TextFormat,
+    pub hash: String,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum TrashEntryState {
+    Active,
+    Orphaned,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashEntry {
+    pub id: String,
+    pub relative_path: String,
+    pub deleted_at_ms: i64,
+    pub size_bytes: u64,
+    pub state: TrashEntryState,
+    #[ts(optional)]
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum TrashRestoreMode {
+    Original,
+    Copy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashRestoreResult {
+    pub relative_path: String,
+    pub mode: TrashRestoreMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchMode {
+    Trigram,
+    Short,
+    Mixed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub path: String,
+    pub title: String,
+    pub snippet: String,
+    pub score: f64,
+    pub mtime_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResponse {
+    pub results: Vec<SearchHit>,
+    pub has_more: bool,
+    pub indexing: bool,
+    pub truncated: bool,
+    pub took_ms: u64,
+    pub mode: SearchMode,
+    #[ts(optional)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchIndexState {
+    Idle,
+    Indexing,
+    Degraded,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchStatus {
+    pub root: String,
+    pub state: SearchIndexState,
+    pub indexed: u64,
+    pub total: u64,
+    pub truncated: bool,
+    #[ts(optional)]
+    pub error: Option<String>,
+}
+
+/// Payload of `app://workspace-index-status`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceIndexStatusPayload {
+    pub root: String,
+    pub state: SearchIndexState,
+    pub indexed: u64,
+    pub total: u64,
+    pub truncated: bool,
+    #[ts(optional)]
+    pub error: Option<String>,
+}
+
+/// One window intent persisted in `session/windows.json`.
+///
+/// Deliberately contains no token, label, body, cursor or scroll position.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub maximized: bool,
+    pub scale_factor: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowIntent {
+    pub bounds: WindowBounds,
+    pub workspace_root: Option<String>,
+    pub document_path: Option<String>,
+    pub untitled: bool,
+}

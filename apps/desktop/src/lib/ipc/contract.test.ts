@@ -12,7 +12,7 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the thirty-seven command names stable", () => {
+  it("keeps the forty-seven command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
       "document_new",
@@ -21,11 +21,21 @@ describe("IPC contract mirror", () => {
       "document_reload",
       "document_save_as",
       "document_write_atomic",
+      "document_save_image",
+      "document_history_list",
+      "document_history_read",
+      "document_history_restore",
       "workspace_open",
       "workspace_current",
       "workspace_list",
       "workspace_open_document",
       "workspace_locate_document",
+      "workspace_delete",
+      "workspace_trash_list",
+      "workspace_trash_restore",
+      "workspace_trash_purge",
+      "workspace_search",
+      "workspace_search_rebuild",
       "app_close_confirm",
       "app_set_live_preview",
       "app_about_info",
@@ -52,7 +62,7 @@ describe("IPC contract mirror", () => {
       "session_draft_read",
       "session_draft_discard",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(37);
+    expect(new Set(COMMAND_NAMES).size).toBe(47);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
@@ -69,14 +79,20 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.workspaceLocateDocument]).toBe(
       "allow-workspace-locate-document",
     );
+    expect(COMMAND_PERMISSIONS[COMMANDS.documentSaveImage]).toBe("allow-document-save-image");
+    expect(COMMAND_PERMISSIONS[COMMANDS.documentHistoryRestore]).toBe(
+      "allow-document-history-restore",
+    );
+    expect(COMMAND_PERMISSIONS[COMMANDS.workspaceSearch]).toBe("allow-workspace-search");
     expect(COMMAND_PERMISSIONS[COMMANDS.appAboutOpenLink]).toBe("allow-app-about-open-link");
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionViewStateGet]).toBe("allow-session-view-state-get");
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionDraftDiscard]).toBe("allow-session-draft-discard");
   });
 
-  it("keeps the seven events stable", () => {
+  it("keeps the ten events stable", () => {
     expect(EVENT_NAMES).toEqual([
       "app://close-requested",
+      "app://close-cancelled",
       "app://update-state",
       "app://update-progress",
       "app://update-flush-request",
@@ -84,6 +100,7 @@ describe("IPC contract mirror", () => {
       "app://document-changed",
       "app://document-new-failed",
       "app://workspace-changed",
+      "app://workspace-index-status",
     ]);
     expect(EVENTS.closeRequested).toBe("app://close-requested");
     expect(EVENTS.updateState).toBe("app://update-state");
@@ -93,6 +110,8 @@ describe("IPC contract mirror", () => {
     expect(EVENTS.documentChanged).toBe("app://document-changed");
     expect(EVENTS.documentNewFailed).toBe("app://document-new-failed");
     expect(EVENTS.workspaceChanged).toBe("app://workspace-changed");
+    expect(EVENTS.closeCancelled).toBe("app://close-cancelled");
+    expect(EVENTS.workspaceIndexStatus).toBe("app://workspace-index-status");
   });
 
   it("exposes every native menu action once", () => {

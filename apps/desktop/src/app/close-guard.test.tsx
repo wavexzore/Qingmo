@@ -122,7 +122,7 @@ describe("useCloseGuard", () => {
     });
 
     await waitFor(() => {
-      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true }]);
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true, generation: 1 }]);
     });
     expect(write).not.toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
@@ -138,7 +138,7 @@ describe("useCloseGuard", () => {
     });
 
     await waitFor(() => {
-      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true }]);
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true, generation: 1 }]);
     });
     expect(harness.ipc.getFile(PATH)?.text).toBe("hello\n!");
     expect(harness.session.getSnapshot().saveState).toBe("clean");
@@ -164,7 +164,7 @@ describe("useCloseGuard", () => {
 
     fireEvent.click(screen.getByTestId("close-cancel"));
     await waitFor(() => {
-      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: false }]);
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: false, generation: 1 }]);
     });
     expect(saveAs).not.toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
@@ -227,7 +227,7 @@ describe("useCloseGuard", () => {
     fireEvent.click(await screen.findByTestId("close-confirm"));
 
     await waitFor(() => {
-      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true }]);
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true, generation: 1 }]);
     });
     expect(saveAs).not.toHaveBeenCalled();
   });
@@ -248,7 +248,7 @@ describe("useCloseGuard", () => {
 
     fireEvent.click(screen.getByTestId("close-anyway"));
     await waitFor(() => {
-      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true }]);
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true, generation: 1 }]);
     });
   });
 
@@ -266,7 +266,7 @@ describe("useCloseGuard", () => {
     fireEvent.click(screen.getByTestId("close-cancel"));
 
     await waitFor(() => {
-      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: false }]);
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: false, generation: 1 }]);
     });
     expect(harness.ipc.getFile(PATH)?.text).toBe("external\n");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
@@ -330,7 +330,7 @@ describe("useCloseGuard", () => {
     });
 
     await waitFor(() => {
-      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true }]);
+      expect(harness.ipc.closeConfirmCalls).toEqual([{ allow: true, generation: 1 }]);
     });
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(harness.ipc.closeConfirmCalls).toHaveLength(1);

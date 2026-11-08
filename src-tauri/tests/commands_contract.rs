@@ -53,18 +53,20 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 37);
+    assert_eq!(COMMANDS.len(), 47);
     assert_eq!(
         EVENTS,
         &[
             "app://close-requested",
+            "app://close-cancelled",
             "app://update-state",
             "app://update-progress",
             "app://update-flush-request",
             "app://menu-action",
             "app://document-changed",
             "app://document-new-failed",
-            "app://workspace-changed"
+            "app://workspace-changed",
+            "app://workspace-index-status"
         ]
     );
 
@@ -456,20 +458,33 @@ fn invoke_handler_registers_every_contract_command() {
     .expect("log listing must work without the plugin");
     assert!(entries.is_array());
 
-    let error = invoke(&webview, "app_close_confirm", json!({"allow": false}))
-        .expect_err("a confirmation without a pending close request must fail");
+    let error = invoke(
+        &webview,
+        "app_close_confirm",
+        json!({"allow": false, "generation": 1}),
+    )
+    .expect_err("a confirmation without a pending close request must fail");
     assert_eq!(
         error["code"], "BUSY",
         "app_close_confirm must reject an unarmed guard: {error}"
     );
 
     let guard = app.state::<CloseGuard>();
-    assert!(guard.begin(CloseReason::Window, ["main".to_string()]));
-    let response = invoke(&webview, "app_close_confirm", json!({"allow": false}))
-        .expect("cancelling a pending close request must succeed");
+    assert!(guard
+        .begin(CloseReason::Window, ["main".to_string()])
+        .is_some());
+    let generation = guard.pending_generation().expect("pending generation");
+    let response = invoke(
+        &webview,
+        "app_close_confirm",
+        json!({"allow": false, "generation": generation}),
+    )
+    .expect("cancelling a pending close request must succeed");
     assert_eq!(response, Value::Null);
     assert_eq!(guard.pending(), None);
-    assert!(guard.begin(CloseReason::Exit, ["main".to_string()]));
+    assert!(guard
+        .begin(CloseReason::Exit, ["main".to_string()])
+        .is_some());
     guard.cancel();
 
     let mut invalid_labels = valid_labels();

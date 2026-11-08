@@ -24,6 +24,9 @@ interface VirtualWorkspaceTreeProps {
   onToggle(segments: string[]): void;
   onOpenFile(segments: string[]): boolean | void | Promise<boolean>;
   onRetry(segments: string[]): void;
+  /** Opens the confirmation flow for moving one file to the app trash. */
+  onDeleteFile?: ((segments: string[]) => void) | undefined;
+  onShowTrash?: (() => void) | undefined;
 }
 
 function kindIcon(row: FlatRow): string {
@@ -50,6 +53,8 @@ export function VirtualWorkspaceTree({
   onToggle,
   onOpenFile,
   onRetry,
+  onDeleteFile,
+  onShowTrash,
 }: VirtualWorkspaceTreeProps) {
   const { t } = useTranslation(["workspace"]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -58,6 +63,11 @@ export function VirtualWorkspaceTree({
   // Set after an in-place open is rejected; the layout effect returns focus to
   // the current document's row once the virtualized row is on screen.
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    segments: string[];
+  } | null>(null);
   const currentKeyRef = useRef(currentKey);
   currentKeyRef.current = currentKey;
 
@@ -97,6 +107,34 @@ export function VirtualWorkspaceTree({
     const parent = parentKey === null ? undefined : rows.find((row) => row.key === parentKey);
     onFocusKey(parent?.key ?? rows[0]?.key ?? null);
   }, [focusedKey, onFocusKey, rows]);
+
+  useEffect(() => {
+    if (!menu) {
+      return;
+    }
+    const close = (event: Event) => {
+      if (
+        event.target instanceof Node &&
+        scrollRef.current?.querySelector("[data-workspace-menu]")?.contains(event.target)
+      ) {
+        return;
+      }
+      setMenu(null);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenu(null);
+      }
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [menu]);
 
   useEffect(() => {
     if (!active || !currentKey) {
@@ -319,6 +357,18 @@ export function VirtualWorkspaceTree({
                 paddingLeft: `${8 + row.depth * 14}px`,
               }}
               onFocus={() => onFocusKey(row.key)}
+              onContextMenu={(event) => {
+                if (row.kind !== "file" && row.kind !== "symlinkFile") {
+                  return;
+                }
+                event.preventDefault();
+                onSelectKey(row.key);
+                setMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  segments: row.segments,
+                });
+              }}
               onClick={() => {
                 const fallbackKey = selectedKey;
                 onSelectKey(row.key);
@@ -373,6 +423,42 @@ export function VirtualWorkspaceTree({
           );
         })}
       </div>
+      {menu ? (
+        <div
+          role="menu"
+          data-workspace-menu="true"
+          aria-label={t("workspace:menu.label")}
+          style={{ position: "fixed", left: menu.x, top: menu.y }}
+          className="z-50 min-w-40 rounded border border-line bg-surface py-1 shadow-xl"
+        >
+          {onDeleteFile ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                onDeleteFile(menu.segments);
+              }}
+              className="block w-full px-3 py-1.5 text-left text-xs text-danger hover:bg-surface-raised"
+            >
+              {t("workspace:menu.delete")}
+            </button>
+          ) : null}
+          {onShowTrash ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                onShowTrash();
+              }}
+              className="block w-full px-3 py-1.5 text-left text-xs text-ink hover:bg-surface-raised"
+            >
+              {t("workspace:menu.trash")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

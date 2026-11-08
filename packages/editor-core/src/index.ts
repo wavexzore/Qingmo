@@ -28,6 +28,11 @@ export {
   type EditorUiCopy,
   type LocalizeWidgetOptions,
 } from "./i18n";
+export {
+  attachments,
+  type AttachmentsOptions,
+  type ImageAttachment,
+} from "./extensions/attachments";
 export { basicExtensions, createBasicExtensions } from "./extensions/basic";
 export { codeLanguages, languageForFilename } from "./extensions/languages";
 export { markdownExtensions, qingmoHighlightStyle } from "./extensions/markdown";

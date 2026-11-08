@@ -31,6 +31,13 @@ test-results/
 playwright-report/
 blob-report/
 
+# WDIO log capture and soak evidence (repo root only; the app also has a
+# `src/features/logs` directory that Tailwind must keep scanning)
+/logs/
+
+# Raw generated benchmark databases
+bench/results/.raw/
+
 third_party/
 AGENTS.md
 .gitignore

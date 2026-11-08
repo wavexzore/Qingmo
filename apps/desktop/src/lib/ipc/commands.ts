@@ -10,11 +10,18 @@ import type {
   EditorViewState,
   EditorViewStateInput,
   FilePayload,
+  HistoryEntry,
+  HistoryRecord,
+  ImageSaveResult,
   LogEntry,
   LogLevel,
   LogStats,
   SaveRequest,
   SaveResult,
+  SearchResponse,
+  TrashEntry,
+  TrashRestoreMode,
+  TrashRestoreResult,
   UpdateProgressPayload,
   UpdateSnapshot,
   WorkspaceInfo,
@@ -34,11 +41,21 @@ export const COMMANDS = {
   documentReload: "document_reload",
   documentSaveAs: "document_save_as",
   documentWriteAtomic: "document_write_atomic",
+  documentSaveImage: "document_save_image",
+  documentHistoryList: "document_history_list",
+  documentHistoryRead: "document_history_read",
+  documentHistoryRestore: "document_history_restore",
   workspaceOpen: "workspace_open",
   workspaceCurrent: "workspace_current",
   workspaceList: "workspace_list",
   workspaceOpenDocument: "workspace_open_document",
   workspaceLocateDocument: "workspace_locate_document",
+  workspaceDelete: "workspace_delete",
+  workspaceTrashList: "workspace_trash_list",
+  workspaceTrashRestore: "workspace_trash_restore",
+  workspaceTrashPurge: "workspace_trash_purge",
+  workspaceSearch: "workspace_search",
+  workspaceSearchRebuild: "workspace_search_rebuild",
   appCloseConfirm: "app_close_confirm",
   appSetLivePreview: "app_set_live_preview",
   appAboutInfo: "app_about_info",
@@ -76,11 +93,21 @@ export const COMMAND_NAMES = [
   COMMANDS.documentReload,
   COMMANDS.documentSaveAs,
   COMMANDS.documentWriteAtomic,
+  COMMANDS.documentSaveImage,
+  COMMANDS.documentHistoryList,
+  COMMANDS.documentHistoryRead,
+  COMMANDS.documentHistoryRestore,
   COMMANDS.workspaceOpen,
   COMMANDS.workspaceCurrent,
   COMMANDS.workspaceList,
   COMMANDS.workspaceOpenDocument,
   COMMANDS.workspaceLocateDocument,
+  COMMANDS.workspaceDelete,
+  COMMANDS.workspaceTrashList,
+  COMMANDS.workspaceTrashRestore,
+  COMMANDS.workspaceTrashPurge,
+  COMMANDS.workspaceSearch,
+  COMMANDS.workspaceSearchRebuild,
   COMMANDS.appCloseConfirm,
   COMMANDS.appSetLivePreview,
   COMMANDS.appAboutInfo,
@@ -110,6 +137,7 @@ export const COMMAND_NAMES = [
 
 export const EVENTS = {
   closeRequested: "app://close-requested",
+  closeCancelled: "app://close-cancelled",
   updateState: "app://update-state",
   updateProgress: "app://update-progress",
   updateFlushRequest: "app://update-flush-request",
@@ -117,12 +145,14 @@ export const EVENTS = {
   documentChanged: "app://document-changed",
   documentNewFailed: "app://document-new-failed",
   workspaceChanged: "app://workspace-changed",
+  workspaceIndexStatus: "app://workspace-index-status",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
 
 export const EVENT_NAMES = [
   EVENTS.closeRequested,
+  EVENTS.closeCancelled,
   EVENTS.updateState,
   EVENTS.updateProgress,
   EVENTS.updateFlushRequest,
@@ -130,6 +160,7 @@ export const EVENT_NAMES = [
   EVENTS.documentChanged,
   EVENTS.documentNewFailed,
   EVENTS.workspaceChanged,
+  EVENTS.workspaceIndexStatus,
 ] as const satisfies readonly EventName[];
 
 /**
@@ -186,12 +217,40 @@ export interface CommandRequestMap {
   [COMMANDS.documentReload]: { docToken: string };
   [COMMANDS.documentSaveAs]: { text: string };
   [COMMANDS.documentWriteAtomic]: SaveRequest;
+  [COMMANDS.documentSaveImage]: {
+    docToken: string;
+    fileName: string;
+    mime: string;
+    dataBase64: string;
+  };
+  [COMMANDS.documentHistoryList]: {
+    docToken: string;
+    limit?: number;
+    offset?: number;
+  };
+  [COMMANDS.documentHistoryRead]: { docToken: string; entryId: string };
+  [COMMANDS.documentHistoryRestore]: { docToken: string; entryId: string };
   [COMMANDS.workspaceOpen]: Record<string, never>;
   [COMMANDS.workspaceCurrent]: Record<string, never>;
   [COMMANDS.workspaceList]: { workspaceToken: string; dirSegments: string[] };
   [COMMANDS.workspaceOpenDocument]: { workspaceToken: string; segments: string[] };
   [COMMANDS.workspaceLocateDocument]: { workspaceToken: string; docToken: string };
-  [COMMANDS.appCloseConfirm]: { allow: boolean };
+  [COMMANDS.workspaceDelete]: { workspaceToken: string; segments: string[] };
+  [COMMANDS.workspaceTrashList]: { workspaceToken: string };
+  [COMMANDS.workspaceTrashRestore]: {
+    workspaceToken: string;
+    entryId: string;
+    mode: TrashRestoreMode;
+  };
+  [COMMANDS.workspaceTrashPurge]: { workspaceToken: string; entryId: string };
+  [COMMANDS.workspaceSearch]: {
+    workspaceToken: string;
+    query: string;
+    limit?: number;
+    offset?: number;
+  };
+  [COMMANDS.workspaceSearchRebuild]: { workspaceToken: string };
+  [COMMANDS.appCloseConfirm]: { allow: boolean; generation: number };
   [COMMANDS.appSetLivePreview]: { livePreview: boolean };
   [COMMANDS.appAboutInfo]: Record<string, never>;
   [COMMANDS.appAboutClose]: Record<string, never>;
@@ -226,11 +285,21 @@ export interface CommandResponseMap {
   [COMMANDS.documentReload]: FilePayload;
   [COMMANDS.documentSaveAs]: FilePayload;
   [COMMANDS.documentWriteAtomic]: SaveResult;
+  [COMMANDS.documentSaveImage]: ImageSaveResult;
+  [COMMANDS.documentHistoryList]: HistoryEntry[];
+  [COMMANDS.documentHistoryRead]: HistoryRecord;
+  [COMMANDS.documentHistoryRestore]: FilePayload;
   [COMMANDS.workspaceOpen]: WorkspaceInfo;
   [COMMANDS.workspaceCurrent]: WorkspaceInfo | null;
   [COMMANDS.workspaceList]: WorkspaceListing;
   [COMMANDS.workspaceOpenDocument]: FilePayload;
   [COMMANDS.workspaceLocateDocument]: string[] | null;
+  [COMMANDS.workspaceDelete]: TrashEntry;
+  [COMMANDS.workspaceTrashList]: TrashEntry[];
+  [COMMANDS.workspaceTrashRestore]: TrashRestoreResult;
+  [COMMANDS.workspaceTrashPurge]: null;
+  [COMMANDS.workspaceSearch]: SearchResponse;
+  [COMMANDS.workspaceSearchRebuild]: null;
   [COMMANDS.appCloseConfirm]: null;
   [COMMANDS.appSetLivePreview]: null;
   [COMMANDS.appAboutInfo]: AboutInfo;
@@ -276,11 +345,21 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.documentReload]: commandPermission(COMMANDS.documentReload),
   [COMMANDS.documentSaveAs]: commandPermission(COMMANDS.documentSaveAs),
   [COMMANDS.documentWriteAtomic]: commandPermission(COMMANDS.documentWriteAtomic),
+  [COMMANDS.documentSaveImage]: commandPermission(COMMANDS.documentSaveImage),
+  [COMMANDS.documentHistoryList]: commandPermission(COMMANDS.documentHistoryList),
+  [COMMANDS.documentHistoryRead]: commandPermission(COMMANDS.documentHistoryRead),
+  [COMMANDS.documentHistoryRestore]: commandPermission(COMMANDS.documentHistoryRestore),
   [COMMANDS.workspaceOpen]: commandPermission(COMMANDS.workspaceOpen),
   [COMMANDS.workspaceCurrent]: commandPermission(COMMANDS.workspaceCurrent),
   [COMMANDS.workspaceList]: commandPermission(COMMANDS.workspaceList),
   [COMMANDS.workspaceOpenDocument]: commandPermission(COMMANDS.workspaceOpenDocument),
   [COMMANDS.workspaceLocateDocument]: commandPermission(COMMANDS.workspaceLocateDocument),
+  [COMMANDS.workspaceDelete]: commandPermission(COMMANDS.workspaceDelete),
+  [COMMANDS.workspaceTrashList]: commandPermission(COMMANDS.workspaceTrashList),
+  [COMMANDS.workspaceTrashRestore]: commandPermission(COMMANDS.workspaceTrashRestore),
+  [COMMANDS.workspaceTrashPurge]: commandPermission(COMMANDS.workspaceTrashPurge),
+  [COMMANDS.workspaceSearch]: commandPermission(COMMANDS.workspaceSearch),
+  [COMMANDS.workspaceSearchRebuild]: commandPermission(COMMANDS.workspaceSearchRebuild),
   [COMMANDS.appCloseConfirm]: commandPermission(COMMANDS.appCloseConfirm),
   [COMMANDS.appSetLivePreview]: commandPermission(COMMANDS.appSetLivePreview),
   [COMMANDS.appAboutInfo]: commandPermission(COMMANDS.appAboutInfo),

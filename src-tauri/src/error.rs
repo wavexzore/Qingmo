@@ -28,6 +28,8 @@ pub enum AppErrorCode {
     UpdateUnsupported,
     UpdateNotReady,
     InvalidLocale,
+    SearchTimeout,
+    IndexDisabled,
 }
 
 /// The only error shape returned by the four P1 commands.

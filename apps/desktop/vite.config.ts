@@ -4,10 +4,26 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
+const wdioBuild = process.env.VITE_WDIO_PLUGIN === "1";
+const fakeStubs = [
+  ["ipc/fake", "ipc/fake.stub.ts"],
+  ["platform/fake", "platform/fake.stub.ts"],
+  ["log/fake", "log/fake.stub.ts"],
+  ["update/fake", "update/fake.stub.ts"],
+].map(([module, stub]) => ({
+  find: new RegExp(`^.*/lib/${module}$`),
+  replacement: fileURLToPath(new URL(`./src/lib/${stub}`, import.meta.url)),
+}));
 const hmr = host ? { protocol: "ws" as const, host, port: 1421 } : null;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // The real in-memory adapters are test/Playwright-only. The WDIO bundle
+  // must exercise the production IpcPort, so replace them with throwing stubs
+  // that Rollup can drop once the native branches are selected.
+  resolve: {
+    alias: wdioBuild ? fakeStubs : [],
+  },
   clearScreen: false,
   server: {
     port: 1420,

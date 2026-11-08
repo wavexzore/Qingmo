@@ -163,12 +163,24 @@ describe("openFile", () => {
       documentReload: vi.fn(),
       documentSaveAs: vi.fn(),
       documentWriteAtomic: vi.fn(),
+      documentSaveImage: vi.fn(),
+      documentHistoryList: vi.fn(),
+      documentHistoryRead: vi.fn(),
+      documentHistoryRestore: vi.fn(),
       workspaceOpen: vi.fn(),
       workspaceCurrent: vi.fn(),
       workspaceList: vi.fn(),
       workspaceOpenDocument: vi.fn(),
       workspaceLocateDocument: vi.fn(),
+      workspaceDelete: vi.fn(),
+      workspaceTrashList: vi.fn(),
+      workspaceTrashRestore: vi.fn(),
+      workspaceTrashPurge: vi.fn(),
+      workspaceSearch: vi.fn(),
+      workspaceSearchRebuild: vi.fn(),
       onWorkspaceChanged: vi.fn(() => () => undefined),
+      onCloseCancelled: vi.fn(() => () => undefined),
+      onWorkspaceIndexStatus: vi.fn(() => () => undefined),
       onDocumentChanged: vi.fn(() => () => undefined),
       appCloseConfirm: vi.fn(),
       appSetLivePreview: vi.fn(),
@@ -517,7 +529,7 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(9);
+    expect(options).toHaveLength(10);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("新建文件"),

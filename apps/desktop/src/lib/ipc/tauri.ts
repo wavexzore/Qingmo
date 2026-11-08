@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DocumentChangedPayload } from "@qingmo/shared";
+import type { DocumentChangedPayload, WorkspaceIndexStatusPayload } from "@qingmo/shared";
 
 import { normalizeError } from "./errors";
 import {
@@ -51,6 +51,22 @@ export function createTauriIpc(): IpcPort {
     documentWriteAtomic(request) {
       return invokeCommand(COMMANDS.documentWriteAtomic, request);
     },
+    documentSaveImage(request) {
+      return invokeCommand(COMMANDS.documentSaveImage, request);
+    },
+    documentHistoryList(docToken, limit, offset) {
+      return invokeCommand(COMMANDS.documentHistoryList, {
+        docToken,
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
+    },
+    documentHistoryRead(docToken, entryId) {
+      return invokeCommand(COMMANDS.documentHistoryRead, { docToken, entryId });
+    },
+    documentHistoryRestore(docToken, entryId) {
+      return invokeCommand(COMMANDS.documentHistoryRestore, { docToken, entryId });
+    },
     workspaceOpen() {
       return invokeCommand(COMMANDS.workspaceOpen, {});
     },
@@ -65,6 +81,29 @@ export function createTauriIpc(): IpcPort {
     },
     workspaceLocateDocument(workspaceToken, docToken) {
       return invokeCommand(COMMANDS.workspaceLocateDocument, { workspaceToken, docToken });
+    },
+    workspaceDelete(workspaceToken, segments) {
+      return invokeCommand(COMMANDS.workspaceDelete, { workspaceToken, segments });
+    },
+    workspaceTrashList(workspaceToken) {
+      return invokeCommand(COMMANDS.workspaceTrashList, { workspaceToken });
+    },
+    workspaceTrashRestore(workspaceToken, entryId, mode) {
+      return invokeCommand(COMMANDS.workspaceTrashRestore, { workspaceToken, entryId, mode });
+    },
+    async workspaceTrashPurge(workspaceToken, entryId) {
+      await invokeCommand(COMMANDS.workspaceTrashPurge, { workspaceToken, entryId });
+    },
+    workspaceSearch(workspaceToken, query, limit, offset) {
+      return invokeCommand(COMMANDS.workspaceSearch, {
+        workspaceToken,
+        query,
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
+    },
+    async workspaceSearchRebuild(workspaceToken) {
+      await invokeCommand(COMMANDS.workspaceSearchRebuild, { workspaceToken });
     },
     onDocumentChanged(callback) {
       let disposed = false;
@@ -88,6 +127,40 @@ export function createTauriIpc(): IpcPort {
           console.error("failed to subscribe to app://document-changed", normalizeError(error));
         });
 
+      return () => {
+        disposed = true;
+        unlisten?.();
+        unlisten = undefined;
+      };
+    },
+    onCloseCancelled(callback) {
+      let disposed = false;
+      let unlisten: UnlistenFn | undefined;
+      void listen<{ reason: string; generation: number }>(EVENTS.closeCancelled, (event) => {
+        if (!disposed) callback(event.payload);
+      })
+        .then((stop) => {
+          if (disposed) stop();
+          else unlisten = stop;
+        })
+        .catch(() => undefined);
+      return () => {
+        disposed = true;
+        unlisten?.();
+        unlisten = undefined;
+      };
+    },
+    onWorkspaceIndexStatus(callback) {
+      let disposed = false;
+      let unlisten: UnlistenFn | undefined;
+      void listen<WorkspaceIndexStatusPayload>(EVENTS.workspaceIndexStatus, (event) => {
+        if (!disposed) callback(event.payload);
+      })
+        .then((stop) => {
+          if (disposed) stop();
+          else unlisten = stop;
+        })
+        .catch(() => undefined);
       return () => {
         disposed = true;
         unlisten?.();

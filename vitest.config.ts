@@ -5,7 +5,15 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./apps/desktop/src/test/setup.ts"],
     restoreMocks: true,
-    // Playwright specs live under `e2e/` and must never be collected by Vitest.
-    exclude: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "e2e/**", "src-tauri/**"],
+    // Playwright/WDIO specs live under `e2e/` and `e2e-tauri/`; Vitest must
+    // never collect them (they import @wdio/globals at module scope).
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/coverage/**",
+      "e2e/**",
+      "e2e-tauri/**",
+      "src-tauri/**",
+    ],
   },
 });

@@ -6,13 +6,16 @@ use atomic_write_file::AtomicWriteFile;
 
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{ConflictDetails, LineEnding, SaveResult, TextEncoding, TextFormat};
-use crate::services::file_service::{mtime_ms, MAX_FILE_BYTES};
+use crate::services::file_lock::{FileLockGuard, FileLockStore};
+use crate::services::file_service::{mtime_ms, MAX_WRITE_BYTES};
+use crate::services::history_store::HistoryStore;
 use crate::state::DocumentRecord;
 
 struct CurrentDisk {
     hash: String,
     size: u64,
     mtime_ms: i64,
+    bytes: Vec<u8>,
 }
 
 /// The only implementation that writes document bytes to disk.
@@ -23,11 +26,52 @@ struct CurrentDisk {
 pub struct AtomicWriter;
 
 impl AtomicWriter {
+    /// Compatibility entry point used by unit tests that do not configure app
+    /// services. Production commands use [`Self::write_with_services`].
     pub fn write(
         record: &DocumentRecord,
         text_lf: &str,
         expected_current_hash: Option<&str>,
     ) -> Result<SaveResult, AppError> {
+        Self::write_with_services(record, text_lf, expected_current_hash, None, None, false)
+    }
+
+    /// The single write path with optional sidecar lock, history capture and a
+    /// format override used by history restore.
+    pub fn write_with_services(
+        record: &DocumentRecord,
+        text_lf: &str,
+        expected_current_hash: Option<&str>,
+        history: Option<&HistoryStore>,
+        locks: Option<&FileLockStore>,
+        force_history: bool,
+    ) -> Result<SaveResult, AppError> {
+        Self::write_with_format(
+            record,
+            text_lf,
+            expected_current_hash,
+            None,
+            history,
+            locks,
+            force_history,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_with_format(
+        record: &DocumentRecord,
+        text_lf: &str,
+        expected_current_hash: Option<&str>,
+        format_override: Option<&TextFormat>,
+        history: Option<&HistoryStore>,
+        locks: Option<&FileLockStore>,
+        force_history: bool,
+    ) -> Result<SaveResult, AppError> {
+        // Global lock order: path FileLock -> registry map (already resolved by
+        // the caller) -> DocState -> HistoryStore internal mutex.
+        let _lock: Option<FileLockGuard> = locks
+            .map(|store| store.acquire(&record.canonical_target))
+            .transpose()?;
         let mut state = record.lock_state()?;
 
         if let Some(reason) = state.read_only {
@@ -46,7 +90,8 @@ impl AtomicWriter {
         }
 
         validate_text(text_lf)?;
-        let encoded = encode(&state.format, text_lf)?;
+        let format = format_override.unwrap_or(&state.format).clone();
+        let encoded = encode(&format, text_lf)?;
         let new_hash = blake3::hash(&encoded).to_hex().to_string();
 
         if current.hash == new_hash && current.size == encoded.len() as u64 {
@@ -55,6 +100,7 @@ impl AtomicWriter {
             state.base_hash = current.hash.clone();
             state.disk_size = current.size;
             state.mtime_ms = current.mtime_ms;
+            state.format = format;
             return Ok(SaveResult {
                 hash: current.hash,
                 size: current.size,
@@ -62,10 +108,23 @@ impl AtomicWriter {
             });
         }
 
-        let result = write_formatted(&record.canonical_target, &state.format, text_lf)?;
+        if let Some(history) = history {
+            if let Err(error) = history.capture(
+                &record.canonical_target,
+                &current.bytes,
+                &current.hash,
+                force_history,
+            ) {
+                // History is a safety net, never a save blocker.
+                tracing::warn!(%error, "failed to capture document history");
+            }
+        }
+
+        let result = write_formatted(&record.canonical_target, &format, text_lf)?;
         state.base_hash = result.hash.clone();
         state.disk_size = result.size;
         state.mtime_ms = result.mtime_ms;
+        state.format = format;
         Ok(result)
     }
 }
@@ -81,6 +140,9 @@ pub(crate) fn write_formatted(
     text_lf: &str,
 ) -> Result<SaveResult, AppError> {
     validate_text(text_lf)?;
+    if encoded_len(format, text_lf)? > MAX_WRITE_BYTES {
+        return Err(file_too_large());
+    }
     let encoded = encode(format, text_lf)?;
 
     let mut file = AtomicWriteFile::options()
@@ -135,9 +197,16 @@ fn read_current(record: &DocumentRecord) -> Result<CurrentDisk, AppError> {
     })?;
 
     let metadata = file.metadata().map_err(|error| AppError::from_io(&error))?;
+    // A file that grew past the write ceiling cannot be the base of a save.
+    // Check the size before reading so a multi-gigabyte external append does
+    // not occupy the path lock while it is hashed.
+    if metadata.len() > MAX_WRITE_BYTES {
+        return Err(file_too_large());
+    }
 
     let mut hasher = blake3::Hasher::new();
     let mut size = 0u64;
+    let mut bytes = Vec::with_capacity(metadata.len().min(MAX_WRITE_BYTES) as usize);
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file
@@ -147,13 +216,18 @@ fn read_current(record: &DocumentRecord) -> Result<CurrentDisk, AppError> {
             break;
         }
         hasher.update(&buffer[..read]);
+        bytes.extend_from_slice(&buffer[..read]);
         size += read as u64;
+        if size > MAX_WRITE_BYTES {
+            return Err(file_too_large());
+        }
     }
 
     Ok(CurrentDisk {
         hash: hasher.finalize().to_hex().to_string(),
         size,
         mtime_ms: mtime_ms(&metadata),
+        bytes,
     })
 }
 
@@ -170,10 +244,33 @@ fn validate_text(text_lf: &str) -> Result<(), AppError> {
             "save text must not contain NUL characters",
         ));
     }
-    if text_lf.len() as u64 > MAX_FILE_BYTES {
-        return Err(file_too_large());
-    }
     Ok(())
+}
+
+/// Exact encoded size without allocating the output buffer.
+fn encoded_len(format: &TextFormat, text_lf: &str) -> Result<u64, AppError> {
+    let newline_count = text_lf.bytes().filter(|byte| *byte == b'\n').count() as u64;
+    let crlf_extra = if format.eol == LineEnding::Crlf {
+        newline_count
+    } else {
+        0
+    };
+    match format.encoding {
+        TextEncoding::Utf8 => {
+            let bom = if format.has_bom { 3 } else { 0 };
+            Ok(bom + text_lf.len() as u64 + crlf_extra)
+        }
+        TextEncoding::Utf16Le | TextEncoding::Utf16Be => {
+            if !format.has_bom {
+                return Err(AppError::new(
+                    AppErrorCode::UnsupportedEncoding,
+                    "UTF-16 document has no BOM; refusing to write an ambiguous file",
+                ));
+            }
+            let units = text_lf.encode_utf16().count() as u64;
+            Ok(2 + units * 2 + crlf_extra * 2)
+        }
+    }
 }
 
 fn encode(format: &TextFormat, text_lf: &str) -> Result<Vec<u8>, AppError> {
@@ -210,7 +307,7 @@ fn encode(format: &TextFormat, text_lf: &str) -> Result<Vec<u8>, AppError> {
         }
     }
 
-    if bytes.len() as u64 > MAX_FILE_BYTES {
+    if bytes.len() as u64 > MAX_WRITE_BYTES {
         return Err(file_too_large());
     }
     Ok(bytes)
@@ -240,8 +337,12 @@ fn conflict_error(current: &CurrentDisk) -> AppError {
 fn file_too_large() -> AppError {
     AppError::new(
         AppErrorCode::FileTooLarge,
-        format!("file exceeds {MAX_FILE_BYTES} bytes"),
+        format!("file exceeds the {MAX_WRITE_BYTES} byte save limit"),
     )
+    .with_details(serde_json::json!({
+        "operation": "save",
+        "limitBytes": MAX_WRITE_BYTES,
+    }))
 }
 
 /// Debug-build-only fault injection used by
@@ -285,9 +386,14 @@ mod tests {
             validate_text("a\0b").expect_err("NUL must fail").code,
             AppErrorCode::Io
         );
-        let oversized = "a".repeat(MAX_FILE_BYTES as usize + 1);
+        let oversized = "a".repeat(MAX_WRITE_BYTES as usize + 1);
+        let format = TextFormat {
+            encoding: TextEncoding::Utf8,
+            has_bom: false,
+            eol: LineEnding::Lf,
+        };
         assert_eq!(
-            validate_text(&oversized)
+            encode(&format, &oversized)
                 .expect_err("oversize must fail")
                 .code,
             AppErrorCode::FileTooLarge

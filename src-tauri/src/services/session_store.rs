@@ -29,11 +29,15 @@ use uuid::Uuid;
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{
     DraftKind, DraftMeta, DraftRecord, DraftWriteRequest, EditorViewState, EditorViewStateInput,
-    DRAFT_SCHEMA_VERSION, VIEW_STATE_SCHEMA_VERSION,
+    WindowIntent, DRAFT_SCHEMA_VERSION, VIEW_STATE_SCHEMA_VERSION,
 };
 
 pub const VIEW_STATE_FILE: &str = "view-state.json";
+pub const WINDOWS_FILE: &str = "windows.json";
 pub const DRAFTS_DIR: &str = "drafts";
+pub const WINDOWS_MAX: usize = 20;
+pub const WINDOWS_FILE_MAX_BYTES: u64 = 256 * 1024;
+pub const WINDOWS_SCHEMA_VERSION: u32 = 1;
 pub const MAX_PATH_CHARS: usize = 4096;
 pub const MAX_TITLE_CHARS: usize = 200;
 pub const VIEW_FILE_MAX_BYTES: u64 = 1024 * 1024;
@@ -70,6 +74,14 @@ impl Default for ViewStateFile {
 #[derive(Debug, Default)]
 struct StoreState {
     view: ViewStateFile,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowsFile {
+    schema_version: u32,
+    saved_at_ms: i64,
+    windows: Vec<WindowIntent>,
 }
 
 /// Counters returned by an explicit GC pass.
@@ -305,6 +317,69 @@ impl SessionStore {
         }
     }
 
+    /// Reads window intents for startup restore.
+    ///
+    /// A corrupt/oversized/unknown-version file is backed up and treated as
+    /// empty; it must never block startup.
+    pub fn windows_get(&self) -> Vec<WindowIntent> {
+        if !self.inner.ready {
+            return Vec::new();
+        }
+        let file = self.inner.root.join(WINDOWS_FILE);
+        let Ok(metadata) = fs::metadata(&file) else {
+            return Vec::new();
+        };
+        if metadata.len() > WINDOWS_FILE_MAX_BYTES {
+            backup_windows(&file);
+            return Vec::new();
+        }
+        let Ok(bytes) = fs::read(&file) else {
+            return Vec::new();
+        };
+        let Ok(parsed) = serde_json::from_slice::<WindowsFile>(&bytes) else {
+            backup_windows(&file);
+            return Vec::new();
+        };
+        if parsed.schema_version != WINDOWS_SCHEMA_VERSION {
+            backup_windows(&file);
+            return Vec::new();
+        }
+        parsed
+            .windows
+            .into_iter()
+            .filter(valid_window_intent)
+            .take(WINDOWS_MAX)
+            .collect()
+    }
+
+    /// Replaces the window intent file atomically.
+    pub fn windows_set(&self, windows: &[WindowIntent]) -> Result<(), AppError> {
+        if !self.inner.ready {
+            return Err(unavailable());
+        }
+        let mut valid = windows
+            .iter()
+            .filter(|intent| valid_window_intent(intent))
+            .take(WINDOWS_MAX)
+            .cloned()
+            .collect::<Vec<_>>();
+        let file = WindowsFile {
+            schema_version: WINDOWS_SCHEMA_VERSION,
+            saved_at_ms: now_ms(),
+            windows: std::mem::take(&mut valid),
+        };
+        let bytes = serde_json::to_vec(&file)
+            .map_err(|error| AppError::new(AppErrorCode::Io, error.to_string()))?;
+        if bytes.len() as u64 > WINDOWS_FILE_MAX_BYTES {
+            return Err(AppError::new(
+                AppErrorCode::FileTooLarge,
+                "windows.json exceeds 256 KiB",
+            ));
+        }
+        let _state = self.lock()?;
+        write_private_atomic(&self.inner.root.join(WINDOWS_FILE), &bytes)
+    }
+
     fn lock(&self) -> Result<MutexGuard<'_, StoreState>, AppError> {
         self.inner
             .state
@@ -439,6 +514,46 @@ impl SessionStore {
         }
         removed
     }
+}
+
+fn valid_window_intent(intent: &WindowIntent) -> bool {
+    let bounds = &intent.bounds;
+    if !bounds.x.is_finite()
+        || !bounds.y.is_finite()
+        || !bounds.width.is_finite()
+        || !bounds.height.is_finite()
+        || bounds.width <= 0.0
+        || bounds.height <= 0.0
+        || !bounds.scale_factor.is_finite()
+        || bounds.scale_factor <= 0.0
+        || bounds.width > 100_000.0
+        || bounds.height > 100_000.0
+    {
+        return false;
+    }
+    if intent.untitled {
+        return intent.document_path.is_none();
+    }
+    if let Some(document) = intent.document_path.as_deref() {
+        if !Path::new(document).is_absolute() {
+            return false;
+        }
+        if let Some(root) = intent.workspace_root.as_deref() {
+            let root = Path::new(root);
+            if !root.is_absolute() || !Path::new(document).starts_with(root) {
+                return false;
+            }
+        }
+    }
+    intent
+        .workspace_root
+        .as_deref()
+        .is_none_or(|root| Path::new(root).is_absolute())
+}
+
+fn backup_windows(path: &Path) {
+    let backup = path.with_extension(format!("corrupt-{}", now_ms()));
+    let _ = fs::rename(path, backup);
 }
 
 fn unavailable() -> AppError {

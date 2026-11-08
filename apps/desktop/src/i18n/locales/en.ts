@@ -296,7 +296,8 @@ export const errors = {
   NOT_FOUND: "The file does not exist or was moved.",
   NOT_A_FILE: "The selected path is not a regular file.",
   UNSUPPORTED_EXTENSION: "Only .md and .markdown files are supported.",
-  FILE_TOO_LARGE: "Content too large: the file limit is 10 MiB, the crash-draft limit 2 MiB.",
+  FILE_TOO_LARGE:
+    "Content too large: files open up to 10 MiB and save up to 16 MiB; crash drafts are capped at 2 MiB.",
   UNSUPPORTED_ENCODING: "Only UTF-8 or UTF-16 with a BOM is supported.",
   CONFLICT: "The file changed on disk; confirm the version first.",
   PERMISSION_DENIED: "You do not have permission to read or write this file.",
@@ -312,6 +313,8 @@ export const errors = {
   UPDATE_UNSUPPORTED: "Automatic updates are not supported on this system or architecture.",
   UPDATE_NOT_READY: "The update is not ready to install.",
   INVALID_LOCALE: "The interface language data is invalid; the current language was kept.",
+  SEARCH_TIMEOUT: "The search took too long. Try a narrower query.",
+  INDEX_DISABLED: "The search index is unavailable; reopen the folder to rebuild it.",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {
@@ -492,7 +495,12 @@ export const commandLabels = {
     open: "Open file",
     save: "Save file",
   },
+  document: {
+    history: "Version history",
+  },
   workspace: {
+    search: "Search Workspace",
+    trash: "Trash",
     open: "Open Folder",
     refresh: "Refresh Workspace",
     collapseAll: "Collapse All Folders",
@@ -573,6 +581,7 @@ export const workspace = {
   dock: {
     workspaceTab: "Workspace",
     outlineTab: "Outline",
+    searchTab: "Search",
     region: "Sidebar views",
     hide: "Hide sidebar",
     reopen: "Show sidebar",
@@ -584,6 +593,15 @@ export const workspace = {
     retry: "Retry",
     empty: "Empty folder",
   },
+  menu: {
+    label: "File actions",
+    delete: "Move to Trash",
+    trash: "Show Trash",
+    confirmTitle: "Move to Trash?",
+    confirmBody: '"{{name}}" will be moved to Qingmo\'s trash and can be restored later.',
+    cancel: "Cancel",
+    confirm: "Move to Trash",
+  },
   tree: {
     region: "Workspace file tree",
     retry: "Retry this directory",
@@ -594,6 +612,13 @@ export const workspace = {
     listed: "Only the first 10,000 items are shown; open a subfolder.",
     scanned: "This folder has too many entries; results may be incomplete.",
   },
+  search: {
+    label: "Search this workspace",
+    placeholder: "Search files…",
+    results: "Search results",
+    indexing: "Building the search index…",
+    empty: "No matching documents.",
+  },
   error: {
     expired: "This workspace is no longer valid. Open the folder again.",
     outside: "That path is outside the workspace.",
@@ -603,6 +628,27 @@ export const workspace = {
     permission: "You do not have permission to read this location.",
     io: "Could not read the workspace. Try again.",
   },
+} as const;
+
+export const history = {
+  title: "Version history",
+  close: "Close",
+  loading: "Loading versions…",
+  empty: "No saved versions yet.",
+  previewHint: "Choose a version to preview it.",
+  cancel: "Cancel",
+  restore: "Restore this version",
+} as const;
+
+export const trash = {
+  title: "Trash",
+  close: "Close",
+  loading: "Loading trash…",
+  empty: "Trash is empty.",
+  orphaned: "orphaned",
+  restore: "Restore",
+  restoreCopy: "Restore as copy",
+  purge: "Delete forever",
 } as const;
 
 export const en = {
@@ -616,4 +662,6 @@ export const en = {
   logs,
   menu,
   workspace,
+  history,
+  trash,
 };

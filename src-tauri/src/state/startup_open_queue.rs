@@ -49,6 +49,12 @@ impl StartupOpenQueue {
         self.lock().ready
     }
 
+    /// Whether an OS open is waiting for the drain; restore must not claim in
+    /// that case or it would create a window the OS request should own.
+    pub fn has_pending(&self) -> bool {
+        !self.lock().pending.is_empty()
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, QueueState> {
         self.state
             .lock()

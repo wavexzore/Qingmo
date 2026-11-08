@@ -10,6 +10,8 @@ enum LaunchState {
     MainReady,
     /// A document (OS open or New) owns the launch.
     Document,
+    /// `windows.json` owns the launch and is restoring document windows.
+    Restore,
 }
 
 /// Decides who creates the first window.
@@ -34,6 +36,34 @@ impl StartupWindow {
     /// Records that a document already owns the launch.
     pub fn mark_opened(&self) {
         *self.lock() = LaunchState::Document;
+    }
+
+    /// Claims the launch for window restore when no OS open/New did.
+    pub fn claim_restore_if_undecided(&self) -> bool {
+        let mut state = self.lock();
+        if *state != LaunchState::Undecided {
+            return false;
+        }
+        *state = LaunchState::Restore;
+        true
+    }
+
+    /// CAS `Restore -> Main` after every restore window failed.
+    ///
+    /// The caller must immediately create the fallback main window; putting
+    /// the state back to `Undecided` would let the boot timer claim again.
+    pub fn mark_restore_failed(&self) -> bool {
+        let mut state = self.lock();
+        if *state == LaunchState::Restore {
+            *state = LaunchState::Main;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_restoring(&self) -> bool {
+        *self.lock() == LaunchState::Restore
     }
 
     /// Claims the fallback main window when nothing did so yet.

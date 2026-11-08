@@ -15,6 +15,8 @@ const EXPECTED_NAMESPACES = [
   "logs",
   "menu",
   "workspace",
+  "history",
+  "trash",
 ] as const;
 
 function flattenKeys(tree: ResourceTree, prefix = ""): string[] {

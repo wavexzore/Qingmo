@@ -20,6 +20,8 @@ type MockWebview = tauri::WebviewWindow<tauri::test::MockRuntime>;
 fn mock_webview(registry: DocumentRegistry) -> (MockApp, MockWebview) {
     let app = tauri::test::mock_builder()
         .manage(registry)
+        .manage(qingmo_lib::state::WindowSessions::new())
+        .manage(qingmo_lib::state::WorkspaceRegistry::new())
         .invoke_handler(qingmo_lib::commands::handler())
         .build(tauri::generate_context!())
         .expect("mock app must build");
