@@ -18,11 +18,11 @@
 schema_version: "1.0"
 feature_id: "p0-p1-closure"
 feature_name: "P0/P1 收尾与可信基础加固"
-status: "done"                 # T-001~T-015 已实施；VERDICT PASS（B-001~B-005 PARTIAL）
+status: "done"                 # T-001~T-015 已实施并提交；VERDICT PASS（B-002/B-003 PARTIAL）
 current_task: "T-015（已完成）"
 last_completed_task: "T-015"
-next_action: "等待用户明确同意后提交；提交后复跑 pnpm ci:local、记录 Windows/Linux CI URL、执行 VoiceOver 14 项与 C-021。"
-verification_status: "pass"      # PARTIAL 项见 B-001~B-005
+next_action: "记录 Windows/Linux CI URL、执行 VoiceOver 14 项。"
+verification_status: "pass"      # PARTIAL 项见 B-002/B-003
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
@@ -66,13 +66,13 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 > **状态更新规则：** 每完成一个任务，同步更新 `current_task`、`last_completed_task`、`next_action`、`verification_status`、`code_calibration_status` 和 `last_updated`。任何 Q 决策变化必须同步 `01 §6` 和 `02`。
 >
-> **状态口径：** README `status=done`、`01` 的 `状态=done`、`02` 的 `VERDICT=PASS` 一致：T-001~T-015 已实施并通过自动化验收；B-001~B-005 为外部环境/未提交工作区/人工验收缺口，恢复动作见 `02 §7`。提交仍需用户明确同意。
+> **状态口径：** README `status=done`、`01` 的 `状态=done`、`02` 的 `VERDICT=PASS` 一致：T-001~T-015 已实施并提交，自动化验收通过；B-002/B-003 为外部环境/人工验收缺口，恢复动作见 `02 §7`。B-001/B-004/B-005 已关闭。
 
 ---
 
 ## 1. 一句话结论
 
-P0/P1 收尾已完成 T-001~T-015：以 **权威 DocumentId + live/by_file/legacyPaths + FileIdentity 句柄复核 + 统一 16 MiB + 虚拟树焦点/ARIA** 为最小可信切片，并补齐 rename 配对、trash/恢复、token 生命周期、回滚工具与 ADR-0010。自动化验证通过（Rust all-targets、Vitest 877、Playwright 160+4、真实 Tauri WDIO 7）；B-001~B-005 为提交后 CI、Windows/Linux run URL、VoiceOver、GitNexus 映射与 xlarge 手动测量的 PARTIAL 项。
+P0/P1 收尾已完成 T-001~T-015：以 **权威 DocumentId + live/by_file/legacyPaths + FileIdentity 句柄复核 + 统一 16 MiB + 虚拟树焦点/ARIA** 为最小可信切片，并补齐 rename 配对、trash/恢复、token 生命周期、回滚工具与 ADR-0010。自动化验证通过（Rust all-targets、Vitest 882、Playwright 160+4、真实 Tauri WDIO 7、提交后 ci:local 全绿）；B-002/B-003 为 Windows/Linux run URL 与 VoiceOver 的 PARTIAL 项，B-001/B-004/B-005 已关闭。
 
 ---
 
@@ -332,10 +332,10 @@ document_write_atomic
 | AC-006 | reload 在并发保存时等待锁；history raw 篡改被拒绝；trash 同卷/跨卷恢复成功；恶意 entry 不能越界 | T-009,T-010 | C-009/C-010 | PASS |
 | AC-007 | 10k 单目录首帧 treeitem <= 40；End/Home 可聚焦并滚动；`aria-current` 正确；VoiceOver 14 项通过 | T-011,T-012 | C-011/C-012 + 手工 | PASS（自动项）；VoiceOver PARTIAL+B-003 |
 | AC-008 | Windows 定向 `cargo test` 通过或 PARTIAL+B-ID；Linux `--all-targets` 通过；symlink 负例通过 | T-013 | C-013 | PARTIAL+B-002 |
-| AC-009 | `pnpm ci:local` 全绿；`pnpm ci:tauri` 通过或 PARTIAL+B-ID | T-015 | C-015/C-016 | PASS（ci:generated PARTIAL+B-001；ci:tauri PASS） |
+| AC-009 | `pnpm ci:local` 全绿；`pnpm ci:tauri` 通过或 PARTIAL+B-ID | T-015 | C-015/C-016 | PASS（ci:local 与 ci:tauri 均 PASS） |
 | AC-010 | 未新增配置项/数据表；唯一新增数据文件已在 Q-002 获批；无第二套身份/写盘/watcher/路径解析 | T-002,T-005,T-008,T-015 | C-020（退出码 0 + 人工审计） | PASS |
 
-> 说明：`PARTIAL` 仅用于外部环境/未提交工作区/人工验收缺口，功能与自动化证据见 `02 §4`。最终 VERDICT 为 `PASS`（附 B-001~B-005）。
+> 说明：`PARTIAL` 仅用于外部环境/人工验收缺口，功能与自动化证据见 `02 §4`。最终 VERDICT 为 `PASS`（附 B-002/B-003；B-001/B-004/B-005 已关闭）。
 
 ---
 
@@ -429,3 +429,4 @@ node .gitnexus/run.cjs detect-changes --scope all --repo .
 | 2026-11-09T23:59:00+08:00 | 升级 v1.9：R13 修复；identity_pending legacy/degraded Deleted、02 口径；R14 待执行 | OpenCode Agent | `05-多轮评审记录.md` |
 | 2026-11-09T23:59:00+08:00 | R14 窄复核通过；随后 T-001~T-015 实施完成 | OpenCode Agent | `05-多轮评审记录.md` |
 | 2026-11-09T23:30:00+08:00 | T-015 收口：ADR-0010、BLUEPRINT/roadmap、VERDICT PASS；B-001~B-005 PARTIAL | OpenCode Agent | `02 §4/§15`；`05 R15` |
+| 2026-11-10T01:20:00+08:00 | 提交 117 文件后复跑 `pnpm ci:local` 全绿；`ci:generated` 通过，B-001 关闭；剩余 B-002/B-003 | OpenCode Agent | `02 §4/§15`；C-015 |
