@@ -140,10 +140,14 @@ pub async fn workspace_open<R: tauri::Runtime>(
     app: AppHandle<R>,
     sessions: State<'_, WindowSessions>,
     workspaces: State<'_, WorkspaceRegistry>,
+    trash: State<'_, crate::services::TrashStore>,
+    locks: State<'_, crate::services::FileLockStore>,
 ) -> Result<WorkspaceInfo, AppError> {
     let label = window.label().to_string();
     let sessions = sessions.inner().clone();
     let workspaces = workspaces.inner().clone();
+    let trash = trash.inner().clone();
+    let locks = locks.inner().clone();
     // Capture the write generation before the dialog. A main-window rebuild or
     // a concurrent switch makes this request stale instead of overwriting it.
     let epoch = sessions.epoch(&label);
@@ -181,6 +185,22 @@ pub async fn workspace_open<R: tauri::Runtime>(
                 .map(|record| record.root.clone());
             if let Some(previous) = previous {
                 workspaces.release(&previous);
+            }
+            // Pending trash entries are retried only after the window really
+            // owns this canonical root. A failure keeps the payload and never
+            // rejects the workspace open.
+            let recovery_root = record.root.clone();
+            let recovery = tauri::async_runtime::spawn_blocking(move || {
+                trash.recover_for_root(&recovery_root, Some(&locks))
+            })
+            .await
+            .unwrap_or_default();
+            if recovery.recovered > 0 || recovery.orphaned > 0 {
+                tracing::info!(
+                    recovered = recovery.recovered,
+                    orphaned = recovery.orphaned,
+                    "retried pending trash entries for an opened workspace"
+                );
             }
             if previous_root.as_deref() == Some(record.root.as_path()) {
                 if let Some(watcher) = app.try_state::<WorkspaceWatcher>() {
@@ -337,7 +357,11 @@ pub fn workspace_locate_document<R: tauri::Runtime>(
     let Ok(document) = documents.get(&doc_token) else {
         return Ok(None);
     };
-    let Ok(relative) = document.canonical_target.strip_prefix(&record.root) else {
+    let Ok(relative) = document.canonical_target().and_then(|path| {
+        path.strip_prefix(&record.root)
+            .map(std::path::Path::to_path_buf)
+            .map_err(|_| AppError::new(AppErrorCode::OutsideScope, "outside workspace"))
+    }) else {
         return Ok(None);
     };
     if relative.as_os_str().is_empty() {

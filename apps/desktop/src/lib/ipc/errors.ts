@@ -28,6 +28,7 @@ export const APP_ERROR_CODES = [
   "INVALID_LOCALE",
   "SEARCH_TIMEOUT",
   "INDEX_DISABLED",
+  "IDENTITY_DEGRADED",
 ] as const satisfies readonly AppErrorCode[];
 
 const APP_ERROR_CODE_SET: ReadonlySet<string> = new Set(APP_ERROR_CODES);

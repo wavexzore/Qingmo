@@ -507,6 +507,12 @@ export class SaveCoordinator {
 
     try {
       const result = await write;
+      if (result.docToken !== this.session.docToken) {
+        // Save As or an in-window switch replaced the session while this
+        // write was in flight. The bytes belong to the previous document, so
+        // the result must never update the current editor baseline.
+        return { kind: "success", result };
+      }
       this.session.applySaveResult(result);
       this.retryAttempts = 0;
       this.retryable = false;
@@ -560,6 +566,8 @@ export class SaveCoordinator {
           hash: payload.hash,
           size: payload.size,
           mtimeMs: payload.mtimeMs,
+          docToken: payload.docToken,
+          generation: 0,
         },
       };
     } catch (error) {

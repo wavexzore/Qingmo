@@ -59,6 +59,33 @@ describe("EditorSession", () => {
     expect(snapshot.version).toBe(0);
   });
 
+  it("relocates path metadata without changing the token or buffer", () => {
+    const session = EditorSession.create(payload());
+    const before = session.getSnapshot();
+
+    session.relocate("/docs/renamed.md");
+
+    const after = session.getSnapshot();
+    expect(after.docId).toBe("/docs/renamed.md");
+    expect(after.fileName).toBe("renamed.md");
+    expect(after.docToken).toBe(before.docToken);
+    expect(after.version).toBe(before.version + 1);
+    expect(session.readText()).toBe("# Hello\n\nbody\n");
+  });
+
+  it("ignores relocation for an untitled session or an empty path", () => {
+    const untitled = EditorSession.createUntitled("draft", { initialText: "x" });
+    const before = untitled.getSnapshot();
+    untitled.relocate("/docs/renamed.md");
+    expect(untitled.getSnapshot().docId).toBe(before.docId);
+
+    const named = EditorSession.create(payload());
+    const namedBefore = named.getSnapshot();
+    named.relocate("");
+    expect(named.getSnapshot().docId).toBe(namedBefore.docId);
+    expect(named.getSnapshot().version).toBe(namedBefore.version);
+  });
+
   it("installs an image resolver when Save As binds a draft to a path", () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,

@@ -1,7 +1,7 @@
 {
   "capturedAt": "2026-10-26T18:34:00+08:00",
   "method": "AX 标题+编辑器就绪轮询（open 上界）；编辑后等待“等待保存”再 Cmd+S，轮询“已同步”（save 上界）；ps -o rss= 记录打开后 RSS。每档 3 次，取中位数。",
-  "environment": "macOS 26 arm64 / Apple M3 Max / pnpm tauri dev（debug build）",
+  "environment": "macOS 26 arm64 / Apple M3 Max；除 xlargeRelease 外均为 pnpm tauri dev（debug build）",
   "fixtures": {
     "small": {
       "openMs": 328.3,
@@ -55,6 +55,34 @@
         { "openMs": 853.2, "saveMs": 500.2, "rssMb": 250.1 }
       ],
       "notes": "10 MiB，状态栏显示“大文档 · 预览关闭/源码”；精确 10MiB 插入会被拒绝（保存失败），改为前向删除 1 字符后保存成功（10MiB-1）。"
+    },
+    "xlarge": {
+      "capturedAt": "2026-11-10T00:18:00+08:00",
+      "build": "debug",
+      "openMs": 1954.9,
+      "saveMs": 1853.8,
+      "rssMb": 403.9,
+      "livePreview": false,
+      "runs": [
+        { "openMs": 1977.4, "saveMs": 1831.1, "rssMb": 403.9 },
+        { "openMs": 1954.9, "saveMs": 1889.9, "rssMb": 399.9 },
+        { "openMs": 1902.6, "saveMs": 1853.8, "rssMb": 429.9 }
+      ],
+      "notes": "16 MiB，状态栏显示“大文档 · 源码模式”；每次运行前重启 debug 应用，open 从原生 Open 按下到焦点窗口标题/状态栏/编辑器就绪，save 从前向删除 1 字符后的 Cmd+S 到“已同步”。debug build 的 open 中位数 1954.9ms 超过 1500ms 目标，作为开发构建上界保留；release 证据见 xlargeRelease。"
+    },
+    "xlargeRelease": {
+      "capturedAt": "2026-11-10T00:36:00+08:00",
+      "build": "release",
+      "openMs": 615.0,
+      "saveMs": 205.2,
+      "rssMb": 352.5,
+      "livePreview": false,
+      "runs": [
+        { "openMs": 615.0, "saveMs": 205.2, "rssMb": 334.3 },
+        { "openMs": 641.4, "saveMs": 205.2, "rssMb": 352.5 },
+        { "openMs": 595.7, "saveMs": 222.0, "rssMb": 362.9 }
+      ],
+      "notes": "16 MiB，release build（tauri build --release --no-bundle，独立 identifier com.wavexzore.qingmo.releasebench）；每次运行前重启 app；open 从原生 Open 按下到焦点窗口标题/状态栏/编辑器就绪，save 从前向删除 1 字符后的 Cmd+S 到“已同步”。open 中位数 615.0ms、RSS 352.5MB，均低于 C-021 目标（1500ms/1100MB）。"
     }
   }
 }

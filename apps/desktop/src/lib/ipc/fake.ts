@@ -2,6 +2,7 @@ import type {
   AppErrorCode,
   ApplyLocaleRequest,
   DocumentChangedPayload,
+  DocumentRelocatedPayload,
   DraftKind,
   DraftMeta,
   DraftRecord,
@@ -35,7 +36,7 @@ import type {
   LivePreviewRequest,
 } from "./port";
 
-export const FAKE_MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const FAKE_MAX_FILE_BYTES = 16 * 1024 * 1024;
 export const FAKE_MAX_DRAFT_BYTES = 2 * 1024 * 1024;
 const FAKE_MAX_DRAFT_COUNT = 20;
 const FAKE_MAX_DRAFT_TOTAL_BYTES = 8 * 1024 * 1024;
@@ -153,6 +154,9 @@ export class FakeIpc implements IpcPort {
   private readonly persistentErrors = new Map<CommandName, AppError>();
   private readonly commandDelays = new Map<CommandName, number>();
   private readonly documentChangedListeners = new Set<(change: DocumentChangedPayload) => void>();
+  private readonly documentRelocatedListeners = new Set<
+    (relocated: DocumentRelocatedPayload) => void
+  >();
   private readonly workspaceChangedListeners = new Set<() => void>();
   private readonly closeCancelledListeners = new Set<
     (payload: { reason: string; generation: number }) => void
@@ -181,7 +185,11 @@ export class FakeIpc implements IpcPort {
 
   readonly closeConfirmCalls: CloseConfirmRequest[] = [];
   readonly livePreviewCalls: boolean[] = [];
-  readonly viewStateWrites: Array<{ path: string; state: EditorViewState }> = [];
+  readonly viewStateWrites: Array<{
+    path: string;
+    state: EditorViewState;
+    docToken?: string;
+  }> = [];
   readonly draftWrites: DraftWriteRequest[] = [];
   readonly localeCalls: ApplyLocaleRequest[] = [];
   readonly openedLinks: string[] = [];
@@ -271,6 +279,20 @@ export class FakeIpc implements IpcPort {
     return () => {
       this.documentChangedListeners.delete(callback);
     };
+  }
+
+  onDocumentRelocated(callback: (relocated: DocumentRelocatedPayload) => void): () => void {
+    this.documentRelocatedListeners.add(callback);
+    return () => {
+      this.documentRelocatedListeners.delete(callback);
+    };
+  }
+
+  /** Simulates a native file rename while a document is open. */
+  emitDocumentRelocated(relocated: DocumentRelocatedPayload): void {
+    for (const listener of [...this.documentRelocatedListeners]) {
+      listener(relocated);
+    }
   }
 
   /** Simulates a debounced Rust workspace watcher batch. */
@@ -808,6 +830,8 @@ export class FakeIpc implements IpcPort {
         hash: record.diskHash,
         size: record.size,
         mtimeMs: record.mtimeMs,
+        docToken: request.docToken,
+        generation: 0,
       };
     }
 
@@ -840,6 +864,8 @@ export class FakeIpc implements IpcPort {
       hash: record.diskHash,
       size: record.size,
       mtimeMs: record.mtimeMs,
+      docToken: request.docToken,
+      generation: 0,
     };
   }
 
@@ -1018,14 +1044,21 @@ export class FakeIpc implements IpcPort {
     this.drafts.set(record.id, { ...record });
   }
 
-  async sessionViewStateGet(path: string): Promise<EditorViewState | null> {
+  async sessionViewStateGet(path: string, docToken?: string): Promise<EditorViewState | null> {
     await this.wait(COMMANDS.sessionViewStateGet);
     this.maybeThrow(COMMANDS.sessionViewStateGet);
+    // The fake keys by path; Rust resolves docToken to a stable DocumentId.
+    // Accept and record it so adapter/recorder tests can assert forwarding.
+    void docToken;
     const state = this.viewStates.get(path);
     return state ? { ...state } : null;
   }
 
-  async sessionViewStateSet(path: string, state: EditorViewStateInput): Promise<void> {
+  async sessionViewStateSet(
+    path: string,
+    state: EditorViewStateInput,
+    docToken?: string,
+  ): Promise<void> {
     await this.wait(COMMANDS.sessionViewStateSet);
     this.maybeThrow(COMMANDS.sessionViewStateSet);
     if (!path) {
@@ -1050,7 +1083,11 @@ export class FakeIpc implements IpcPort {
       }
     }
     this.viewStates.set(path, entry);
-    this.viewStateWrites.push({ path, state: entry });
+    this.viewStateWrites.push({
+      path,
+      state: entry,
+      ...(docToken ? { docToken } : {}),
+    });
   }
 
   async sessionDraftWrite(request: DraftWriteRequest): Promise<DraftMeta> {

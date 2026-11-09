@@ -29,6 +29,7 @@ fn intent(root: &std::path::Path, index: usize) -> WindowIntent {
                 .to_string_lossy()
                 .to_string(),
         ),
+        document_id: None,
         untitled: false,
     }
 }

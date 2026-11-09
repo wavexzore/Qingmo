@@ -1,6 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DocumentChangedPayload, WorkspaceIndexStatusPayload } from "@qingmo/shared";
+import type {
+  DocumentChangedPayload,
+  DocumentRelocatedPayload,
+  WorkspaceIndexStatusPayload,
+} from "@qingmo/shared";
 
 import { normalizeError } from "./errors";
 import {
@@ -133,6 +137,32 @@ export function createTauriIpc(): IpcPort {
         unlisten = undefined;
       };
     },
+    onDocumentRelocated(callback) {
+      let disposed = false;
+      let unlisten: UnlistenFn | undefined;
+
+      void listen<DocumentRelocatedPayload>(EVENTS.documentRelocated, (event) => {
+        if (!disposed) {
+          callback(event.payload);
+        }
+      })
+        .then((stop) => {
+          if (disposed) {
+            stop();
+          } else {
+            unlisten = stop;
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("failed to subscribe to app://document-relocated", normalizeError(error));
+        });
+
+      return () => {
+        disposed = true;
+        unlisten?.();
+        unlisten = undefined;
+      };
+    },
     onCloseCancelled(callback) {
       let disposed = false;
       let unlisten: UnlistenFn | undefined;
@@ -207,11 +237,18 @@ export function createTauriIpc(): IpcPort {
     async appOpenExternal(href) {
       await invokeCommand(COMMANDS.appOpenExternal, { href });
     },
-    sessionViewStateGet(path) {
-      return invokeCommand(COMMANDS.sessionViewStateGet, { path });
+    sessionViewStateGet(path, docToken) {
+      return invokeCommand(COMMANDS.sessionViewStateGet, {
+        path,
+        ...(docToken ? { docToken } : {}),
+      });
     },
-    async sessionViewStateSet(path, state) {
-      await invokeCommand(COMMANDS.sessionViewStateSet, { path, state });
+    async sessionViewStateSet(path, state, docToken) {
+      await invokeCommand(COMMANDS.sessionViewStateSet, {
+        path,
+        state,
+        ...(docToken ? { docToken } : {}),
+      });
     },
     sessionDraftWrite(request) {
       return invokeCommand(COMMANDS.sessionDraftWrite, { request });

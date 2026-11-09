@@ -297,7 +297,7 @@ export const errors = {
   NOT_A_FILE: "The selected path is not a regular file.",
   UNSUPPORTED_EXTENSION: "Only .md and .markdown files are supported.",
   FILE_TOO_LARGE:
-    "Content too large: files open up to 10 MiB and save up to 16 MiB; crash drafts are capped at 2 MiB.",
+    "Content too large: files open and save up to 16 MiB; crash drafts are capped at 2 MiB.",
   UNSUPPORTED_ENCODING: "Only UTF-8 or UTF-16 with a BOM is supported.",
   CONFLICT: "The file changed on disk; confirm the version first.",
   PERMISSION_DENIED: "You do not have permission to read or write this file.",
@@ -315,6 +315,7 @@ export const errors = {
   INVALID_LOCALE: "The interface language data is invalid; the current language was kept.",
   SEARCH_TIMEOUT: "The search took too long. Try a narrower query.",
   INDEX_DISABLED: "The search index is unavailable; reopen the folder to rebuild it.",
+  IDENTITY_DEGRADED: "The document identity store is read-only; compatibility paths are in use.",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {
@@ -607,6 +608,10 @@ export const workspace = {
     retry: "Retry this directory",
     truncatedRow: "Only the first 10,000 items are shown here; open a subfolder",
     rowError: "This directory could not be read",
+    kindDirectory: "folder",
+    kindFile: "file",
+    kindSymlinkDirectory: "linked folder",
+    kindSymlinkFile: "linked file",
   },
   truncated: {
     listed: "Only the first 10,000 items are shown; open a subfolder.",

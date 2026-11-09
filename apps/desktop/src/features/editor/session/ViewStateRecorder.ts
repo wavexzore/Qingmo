@@ -114,7 +114,7 @@ export class ViewStateRecorder {
     const state = captured.state;
     this.chain = this.chain.then(async () => {
       try {
-        await this.ipc.sessionViewStateSet(path, state);
+        await this.ipc.sessionViewStateSet(path, state, this.session.docToken);
       } catch (error) {
         // A failed write must be retried by the next schedule; keep the
         // editor usable and log once per recorder.

@@ -1,6 +1,7 @@
 import type {
   ApplyLocaleRequest,
   DocumentChangedPayload,
+  DocumentRelocatedPayload,
   DraftMeta,
   DraftRecord,
   DraftWriteRequest,
@@ -95,6 +96,8 @@ export interface IpcPort {
    * not own. Returns an unsubscribe function.
    */
   onDocumentChanged(callback: (change: DocumentChangedPayload) => void): () => void;
+  /** A rename moved the open document; the payload carries its new path. */
+  onDocumentRelocated(callback: (relocated: DocumentRelocatedPayload) => void): () => void;
   /**
    * Opens a folder through the native dialog. The returned token identifies
    * this window's workspace; it is never persisted and never shared.
@@ -147,8 +150,8 @@ export interface IpcPort {
    */
   appOpenExternal(href: string): Promise<void>;
   /** Persisted view state for a named document; `null` when unknown. */
-  sessionViewStateGet(path: string): Promise<EditorViewState | null>;
-  sessionViewStateSet(path: string, state: EditorViewStateInput): Promise<void>;
+  sessionViewStateGet(path: string, docToken?: string): Promise<EditorViewState | null>;
+  sessionViewStateSet(path: string, state: EditorViewStateInput, docToken?: string): Promise<void>;
   /** Creates or updates a crash draft; the returned id is owned by the caller. */
   sessionDraftWrite(request: DraftWriteRequest): Promise<DraftMeta>;
   /** Main window only: metadata for every recoverable draft. */

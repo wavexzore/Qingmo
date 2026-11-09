@@ -64,26 +64,49 @@ export async function ensureDocumentWindow(): Promise<string> {
 }
 
 /**
+ * Canonical text used to compare the disk fixture with the rendered editor.
+ *
+ * The live-preview extension hides markdown syntax (image source, heading
+ * markers) inside the editor DOM, so `getText` returns `WDIObase` for the
+ * fixture's `# WDIO ... ![pixel](...)`. Strip the same syntax from the file
+ * content before comparing; whitespace is not stable across renderers either.
+ */
+function canonicalDocument(text: string): string {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/#/g, "")
+    .replace(/\s+/g, "");
+}
+
+/**
  * Writes the fixture and waits for the real file watcher to reload it.
  *
  * The app may launch before or after `before`, so a single write can race the
  * watcher registration; rewriting retriggers the event without changing the
- * desired bytes.
+ * desired bytes. The comparison must be exact: a previous run leaves the edit
+ * token in the fixture, and a substring check would accept that stale buffer
+ * before the reload lands.
  */
 export async function resetFixture(content = BASE_DOCUMENT): Promise<void> {
   await ensureDocumentWindow();
   fs.writeFileSync(fixture, content);
+  const expected = canonicalDocument(content);
   await browser.waitUntil(
     async () => {
       const text = await (await $(".cm-content")).getText();
-      if (text.includes("WDIO") && text.includes("base")) {
+      if (canonicalDocument(text) === expected) {
         return true;
       }
       fs.writeFileSync(fixture, content);
       return false;
     },
-    { timeout: 30_000, interval: 1000, timeoutMsg: "the fixture did not reload" },
+    { timeout: 30_000, interval: 500, timeoutMsg: "the fixture did not reload" },
   );
+  // Park the cursor at the document start. The live preview reveals markdown
+  // source on the cursor line; a reload restores the previous run's cursor on
+  // the image line, which hides the rendered <img> the image spec asserts.
+  await (await $(".cm-content")).click();
+  await browser.keys(["Meta", "ArrowUp"]);
 }
 
 export function readFixture(): string {

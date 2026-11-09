@@ -20,6 +20,29 @@ const DOCUMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(15);
 /// Document token sentinel used by the webview for a document without a path.
 pub(crate) const UNTITLED_DOC_TOKEN: &str = "untitled";
 
+fn invalid_token() -> AppError {
+    AppError::new(AppErrorCode::InvalidPath, "invalid or expired docToken")
+}
+
+/// Resolves a document command's token only when this window currently owns
+/// it and the record is still editable. The error text never reveals whether
+/// the token exists for another window.
+fn require_current_document(
+    sessions: &WindowSessions,
+    registry: &DocumentRegistry,
+    label: &str,
+    token: &str,
+) -> Result<std::sync::Arc<crate::state::DocumentRecord>, AppError> {
+    if !sessions.owns_current_document(label, token) {
+        return Err(invalid_token());
+    }
+    let record = registry.get(token)?;
+    if !record.is_active() {
+        return Err(invalid_token());
+    }
+    Ok(record)
+}
+
 /// The one native title format for every document window.
 ///
 /// The macOS window is the document surface, so the file name (or the
@@ -313,6 +336,28 @@ const ASSET_SCOPE_ANCESTORS: usize = 3;
 
 /// Grants the asset protocol read access needed by one document.
 ///
+/// Picks the path the search index should use for one open document.
+///
+/// A symlink row is indexed by its link path (the visible name); the canonical
+/// target is only a fallback. A path that is inside the root but no longer
+/// indexable is returned so `upsert_path` removes its stale row.
+fn document_index_path(root: &Path, record: &crate::state::DocumentRecord) -> Option<PathBuf> {
+    let paths = record.paths().ok()?;
+    if crate::services::workspace_service::is_indexable_current(root, &paths.raw_path) {
+        return Some(paths.raw_path);
+    }
+    if crate::services::workspace_service::is_indexable_current(root, &paths.canonical_target) {
+        return Some(paths.canonical_target);
+    }
+    if paths.raw_path.starts_with(root) {
+        return Some(paths.raw_path);
+    }
+    if paths.canonical_target.starts_with(root) {
+        return Some(paths.canonical_target);
+    }
+    None
+}
+
 /// The document's own directory is recursive so a sibling `assets/` folder
 /// works; ancestors are granted non-recursively so `../image.png` resolves
 /// without opening whole trees. The glob patterns are additive and live for
@@ -719,7 +764,7 @@ pub fn document_take_pending<R: tauri::Runtime>(
     // listener.
     if let Some(current) = payload.as_ref() {
         if let Ok(record) = registry.get(&current.doc_token) {
-            let path = record.canonical_target.clone();
+            let path = record.canonical_target()?;
             drop(record);
             if let Some(watcher) = window.try_state::<DocumentWatcher>() {
                 watcher.watch(&current.doc_token, &path);
@@ -763,8 +808,8 @@ pub fn document_activate<R: tauri::Runtime>(
                 "invalid or expired docToken",
             ));
         }
-        let record = documents.get(&doc_token)?;
-        let path = record.canonical_target.clone();
+        let record = documents.activate(&doc_token)?;
+        let path = record.canonical_target()?;
         drop(record);
         Some(path)
     };
@@ -782,6 +827,7 @@ pub fn document_activate<R: tauri::Runtime>(
             // A closed window cannot adopt the payload it asked for; release
             // the candidate so the registry does not outlive the request.
             if !untitled {
+                let _ = documents.deactivate(&doc_token);
                 documents.release(&doc_token);
             }
             return Err(error);
@@ -828,12 +874,14 @@ pub async fn document_save_as<R: tauri::Runtime>(
     window: WebviewWindow<R>,
     registry: State<'_, DocumentRegistry>,
     sessions: State<'_, WindowSessions>,
+    workspaces: State<'_, WorkspaceRegistry>,
     locale: State<'_, crate::state::ShellLocale>,
     text: String,
 ) -> Result<FilePayload, AppError> {
     let registry = registry.inner().clone();
     let watch_registry = registry.clone();
     let sessions = sessions.inner().clone();
+    let workspaces = workspaces.inner().clone();
     let untitled_file_name = locale.untitled_file_name();
     let app_name = locale
         .labels()
@@ -877,27 +925,54 @@ pub async fn document_save_as<R: tauri::Runtime>(
     if let Err(error) = window.set_title(&window_title_for(Path::new(&payload.path), &app_name)) {
         tracing::warn!(%error, "failed to update the window title");
     }
-    if !sessions.set_token(window.label(), payload.doc_token.clone()) {
-        // The window was destroyed while the save dialog was open. The webview
-        // can no longer adopt the new token, so release it instead of leaking.
+    let swap = sessions.replace_token(window.label(), payload.doc_token.clone());
+    if !swap.accepted {
         watch_registry.release(&payload.doc_token);
         return Ok(payload);
     }
+    for old in [swap.current, swap.previous].into_iter().flatten() {
+        if let Err(error) = watch_registry.deactivate(&old) {
+            tracing::warn!(%error, token = old, "failed to deactivate the replaced token");
+        }
+        watch_registry.release(&old);
+        if let Some(watcher) = window.try_state::<DocumentWatcher>() {
+            watcher.unwatch(&old);
+        }
+    }
     if let Ok(record) = watch_registry.get(&payload.doc_token) {
-        let path = record.canonical_target.clone();
+        let path = record.canonical_target()?;
         drop(record);
         if let Some(watcher) = window.try_state::<DocumentWatcher>() {
             watcher.watch(&payload.doc_token, &path);
+        }
+    }
+    let root = sessions
+        .workspace_for(window.label())
+        .and_then(|token| workspaces.get(&token).ok())
+        .map(|record| record.root.clone());
+    if let (Some(root), Some(index)) = (root, window.try_state::<SearchIndexService>()) {
+        if let Ok(record) = watch_registry.get(&payload.doc_token) {
+            if let Some(index_path) = document_index_path(&root, &record) {
+                index.notify_upsert(root, index_path);
+            }
         }
     }
     Ok(payload)
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn document_reload(
+pub async fn document_reload<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
     doc_token: String,
     registry: State<'_, DocumentRegistry>,
+    sessions: State<'_, WindowSessions>,
 ) -> Result<FilePayload, AppError> {
+    require_current_document(
+        sessions.inner(),
+        registry.inner(),
+        window.label(),
+        &doc_token,
+    )?;
     let registry = registry.inner().clone();
     tauri::async_runtime::spawn_blocking(move || registry.reload(&doc_token))
         .await
@@ -923,6 +998,7 @@ pub async fn document_write_atomic<R: tauri::Runtime>(
 ) -> Result<SaveResult, AppError> {
     let registry = registry.inner().clone();
     let label = window.label().to_string();
+    require_current_document(sessions.inner(), &registry, &label, &doc_token)?;
     let root = sessions
         .workspace_for(&label)
         .and_then(|token| workspaces.get(&token).ok())
@@ -942,42 +1018,70 @@ pub async fn document_write_atomic<R: tauri::Runtime>(
 
     if let (Some(root), Some(index)) = (root, app.try_state::<SearchIndexService>()) {
         if let Ok(record) = registry.get(&doc_token) {
-            index.notify_upsert(root, record.canonical_target.clone());
+            if let Some(index_path) = document_index_path(&root, &record) {
+                index.notify_upsert(root, index_path);
+            }
         }
     }
     Ok(result)
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn document_save_image(
+pub async fn document_save_image<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
     doc_token: String,
     file_name: String,
     mime: String,
     data_base64: String,
     registry: State<'_, DocumentRegistry>,
+    sessions: State<'_, WindowSessions>,
 ) -> Result<ImageSaveResult, AppError> {
+    require_current_document(
+        sessions.inner(),
+        registry.inner(),
+        window.label(),
+        &doc_token,
+    )?;
     let record = registry.get(&doc_token)?;
+    let path = record.canonical_target()?;
+    let parent_identity = record.paths()?.parent_identity;
     tauri::async_runtime::spawn_blocking(move || {
-        image_assets::save_image(&record.canonical_target, &file_name, &mime, &data_base64)
+        image_assets::save_image_verified(
+            &path,
+            &file_name,
+            &mime,
+            &data_base64,
+            parent_identity.as_ref(),
+        )
     })
     .await
     .map_err(|error| AppError::new(AppErrorCode::Io, format!("image save task failed: {error}")))?
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn document_history_list(
+pub async fn document_history_list<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
     doc_token: String,
     limit: Option<usize>,
     offset: Option<usize>,
     registry: State<'_, DocumentRegistry>,
     history: State<'_, HistoryStore>,
+    sessions: State<'_, WindowSessions>,
 ) -> Result<Vec<HistoryEntry>, AppError> {
+    require_current_document(
+        sessions.inner(),
+        registry.inner(),
+        window.label(),
+        &doc_token,
+    )?;
     let record = registry.get(&doc_token)?;
+    let path = record.canonical_target()?;
+    let document_id = record.document_id();
     let history = history.inner().clone();
     let limit = limit.unwrap_or(50).clamp(1, 100);
     let offset = offset.unwrap_or(0).min(1000);
     tauri::async_runtime::spawn_blocking(move || {
-        history.list(&record.canonical_target, limit, offset)
+        history.list_for(document_id.as_ref(), &path, limit, offset)
     })
     .await
     .map_err(|error| {
@@ -989,30 +1093,50 @@ pub async fn document_history_list(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn document_history_read(
+pub async fn document_history_read<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
     doc_token: String,
     entry_id: String,
     registry: State<'_, DocumentRegistry>,
     history: State<'_, HistoryStore>,
+    sessions: State<'_, WindowSessions>,
 ) -> Result<HistoryRecord, AppError> {
+    require_current_document(
+        sessions.inner(),
+        registry.inner(),
+        window.label(),
+        &doc_token,
+    )?;
     let record = registry.get(&doc_token)?;
+    let path = record.canonical_target()?;
+    let document_id = record.document_id();
     let history = history.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || history.read(&record.canonical_target, &entry_id))
-        .await
-        .map_err(|error| {
-            AppError::new(
-                AppErrorCode::Io,
-                format!("history read task failed: {error}"),
-            )
-        })?
+    tauri::async_runtime::spawn_blocking(move || {
+        history.read_for(document_id.as_ref(), &path, &entry_id)
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(
+            AppErrorCode::Io,
+            format!("history read task failed: {error}"),
+        )
+    })?
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn document_history_restore(
+pub async fn document_history_restore<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
     doc_token: String,
     entry_id: String,
     registry: State<'_, DocumentRegistry>,
+    sessions: State<'_, WindowSessions>,
 ) -> Result<FilePayload, AppError> {
+    require_current_document(
+        sessions.inner(),
+        registry.inner(),
+        window.label(),
+        &doc_token,
+    )?;
     let registry = registry.inner().clone();
     tauri::async_runtime::spawn_blocking(move || registry.restore_history(&doc_token, &entry_id))
         .await

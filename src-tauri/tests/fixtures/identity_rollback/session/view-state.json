@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "entries": {
+    "11111111-1111-4111-8111-111111111111": {
+      "anchor": 1,
+      "head": 2,
+      "topPos": 3,
+      "topOffset": 0.0,
+      "scrollLeft": 0.0,
+      "livePreviewPreferred": false,
+      "updatedAtMs": 1700000000000
+    },
+    "22222222-2222-4222-8222-222222222222": {
+      "anchor": 4,
+      "head": 5,
+      "topPos": 6,
+      "topOffset": 1.5,
+      "scrollLeft": 0.0,
+      "livePreviewPreferred": true,
+      "updatedAtMs": 1700000000001
+    }
+  },
+  "legacy": {}
+}

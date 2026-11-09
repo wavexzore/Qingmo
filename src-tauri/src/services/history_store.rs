@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{HistoryEntry, HistoryRecord, TextFormat};
+use crate::services::document_identity::{DocumentId, DocumentIdentityStore};
 use crate::services::encoding;
+use crate::services::file_service::MAX_DOCUMENT_BYTES;
 
 pub const HISTORY_SCHEMA_VERSION: u32 = 1;
 pub const HISTORY_MERGE_MS: i64 = 10_000;
@@ -26,6 +28,14 @@ pub const HISTORY_MAX_BYTES_PER_DOC: u64 = 64 * 1024 * 1024;
 pub const HISTORY_MAX_BYTES_TOTAL: u64 = 512 * 1024 * 1024;
 
 const STAGING_PREFIX: &str = ".staging-";
+const MIGRATION_FILE: &str = "migration.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationMarker {
+    schema_version: u32,
+    status: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +77,7 @@ struct Inner {
     root: PathBuf,
     ready: bool,
     state: Mutex<()>,
+    identity: Mutex<Option<DocumentIdentityStore>>,
 }
 
 /// Shared handle; cloning is cheap and safe across blocking tasks.
@@ -94,6 +105,7 @@ impl HistoryStore {
                 root,
                 ready: true,
                 state: Mutex::new(()),
+                identity: Mutex::new(None),
             }),
         })
     }
@@ -104,7 +116,16 @@ impl HistoryStore {
                 root: PathBuf::new(),
                 ready: false,
                 state: Mutex::new(()),
+                identity: Mutex::new(None),
             }),
+        }
+    }
+
+    /// Installs the identity store used for `DocumentId` buckets and legacy
+    /// path migration. History remains usable without it (legacy path hash).
+    pub fn configure_identity(&self, identity: Option<DocumentIdentityStore>) {
+        if let Ok(mut guard) = self.inner.identity.lock() {
+            *guard = identity;
         }
     }
 
@@ -112,7 +133,7 @@ impl HistoryStore {
         self.inner.ready
     }
 
-    /// Captures the pre-save bytes.
+    /// Captures the pre-save bytes into the legacy path-hash bucket.
     ///
     /// `force_new` is used by Restore: the current version must get its own
     /// entry even when it falls inside the normal 10s merge window.
@@ -123,12 +144,39 @@ impl HistoryStore {
         hash: &str,
         force_new: bool,
     ) -> Result<Option<HistoryEntry>, AppError> {
+        self.capture_for(None, path, bytes, hash, force_new)
+    }
+
+    /// Captures into a stable `DocumentId` bucket, migrating the legacy path
+    /// buckets first. `None` keeps the legacy path-hash behavior.
+    pub fn capture_for(
+        &self,
+        document_id: Option<&DocumentId>,
+        path: &Path,
+        bytes: &[u8],
+        hash: &str,
+        force_new: bool,
+    ) -> Result<Option<HistoryEntry>, AppError> {
         if !self.inner.ready {
             return Ok(None);
         }
         let _state = self.lock()?;
+        if let Some(id) = document_id {
+            self.ensure_migrated(id, path)?;
+        }
+        self.capture_in(document_id, path, bytes, hash, force_new)
+    }
+
+    fn capture_in(
+        &self,
+        document_id: Option<&DocumentId>,
+        path: &Path,
+        bytes: &[u8],
+        hash: &str,
+        force_new: bool,
+    ) -> Result<Option<HistoryEntry>, AppError> {
         let now = now_ms();
-        let doc_dir = self.doc_dir(path);
+        let doc_dir = self.doc_dir(path, document_id);
         fs::create_dir_all(&doc_dir).map_err(|error| AppError::from_io(&error))?;
         private_dir(&doc_dir)?;
 
@@ -173,13 +221,26 @@ impl HistoryStore {
     }
 
     pub fn list(&self, path: &Path, limit: usize, offset: usize) -> Vec<HistoryEntry> {
+        self.list_for(None, path, limit, offset)
+    }
+
+    pub fn list_for(
+        &self,
+        document_id: Option<&DocumentId>,
+        path: &Path,
+        limit: usize,
+        offset: usize,
+    ) -> Vec<HistoryEntry> {
         if !self.inner.ready {
             return Vec::new();
         }
         let Ok(_state) = self.lock() else {
             return Vec::new();
         };
-        let doc_dir = self.doc_dir(path);
+        if let Some(id) = document_id {
+            let _ = self.ensure_migrated(id, path);
+        }
+        let doc_dir = self.doc_dir(path, document_id);
         let mut entries = self.load_entries(&doc_dir, path);
         entries.entries.retain(|entry| {
             doc_dir.join(format!("{}.bin", entry.id)).is_file()
@@ -201,39 +262,37 @@ impl HistoryStore {
     }
 
     pub fn read(&self, path: &Path, entry_id: &str) -> Result<HistoryRecord, AppError> {
+        self.read_for(None, path, entry_id)
+    }
+
+    pub fn read_for(
+        &self,
+        document_id: Option<&DocumentId>,
+        path: &Path,
+        entry_id: &str,
+    ) -> Result<HistoryRecord, AppError> {
         if !self.inner.ready {
             return Err(disabled_error());
         }
         validate_entry_id(entry_id)?;
         let _state = self.lock()?;
-        let doc_dir = self.doc_dir(path);
+        if let Some(id) = document_id {
+            self.ensure_migrated(id, path)?;
+        }
+        let doc_dir = self.doc_dir(path, document_id);
         let entries = self.load_entries(&doc_dir, path);
         let entry = entries
             .entries
             .iter()
             .find(|entry| entry.id == entry_id)
             .ok_or_else(|| AppError::new(AppErrorCode::NotFound, "history entry not found"))?;
-        let file = doc_dir.join(format!("{entry_id}.bin"));
-        let bytes = fs::read(&file).map_err(|error| AppError::from_io(&error))?;
-        if bytes.len() as u64 != entry.size {
-            return Err(AppError::new(
-                AppErrorCode::Io,
-                "history entry is incomplete",
-            ));
-        }
-        let hash = blake3::hash(&bytes).to_hex().to_string();
-        if hash != entry.hash {
-            return Err(AppError::new(
-                AppErrorCode::Io,
-                "history entry failed its hash check",
-            ));
-        }
+        let bytes = read_entry_bytes(&doc_dir, entry)?;
         let decoded = encoding::decode(&bytes)?;
         Ok(HistoryRecord {
             id: entry.id.clone(),
             text: decoded.text,
             format: decoded.format,
-            hash,
+            hash: entry.hash.clone(),
             created_at_ms: entry.created_at_ms,
         })
     }
@@ -241,21 +300,31 @@ impl HistoryStore {
     /// Reads the raw snapshot for Restore; the caller writes it through the
     /// normal AtomicWriter path and updates the document format.
     pub fn read_raw(&self, path: &Path, entry_id: &str) -> Result<(Vec<u8>, TextFormat), AppError> {
+        self.read_raw_for(None, path, entry_id)
+    }
+
+    pub fn read_raw_for(
+        &self,
+        document_id: Option<&DocumentId>,
+        path: &Path,
+        entry_id: &str,
+    ) -> Result<(Vec<u8>, TextFormat), AppError> {
         if !self.inner.ready {
             return Err(disabled_error());
         }
         validate_entry_id(entry_id)?;
         let _state = self.lock()?;
-        let doc_dir = self.doc_dir(path);
-        let entries = self.load_entries(&doc_dir, path);
-        if !entries.entries.iter().any(|entry| entry.id == entry_id) {
-            return Err(AppError::new(
-                AppErrorCode::NotFound,
-                "history entry not found",
-            ));
+        if let Some(id) = document_id {
+            self.ensure_migrated(id, path)?;
         }
-        let bytes = fs::read(doc_dir.join(format!("{entry_id}.bin")))
-            .map_err(|error| AppError::from_io(&error))?;
+        let doc_dir = self.doc_dir(path, document_id);
+        let entries = self.load_entries(&doc_dir, path);
+        let entry = entries
+            .entries
+            .iter()
+            .find(|entry| entry.id == entry_id)
+            .ok_or_else(|| AppError::new(AppErrorCode::NotFound, "history entry not found"))?;
+        let bytes = read_entry_bytes(&doc_dir, entry)?;
         let decoded = encoding::decode(&bytes)?;
         Ok((bytes, decoded.format))
     }
@@ -274,7 +343,7 @@ impl HistoryStore {
         let now = now_ms();
         for dir in dirs.flatten() {
             let path = dir.path();
-            if !path.is_dir() {
+            if !path.is_dir() || migration_pending(&path) {
                 continue;
             }
             let mut entries = self.load_entries(&path, &path);
@@ -315,11 +384,76 @@ impl HistoryStore {
         report
     }
 
-    fn doc_dir(&self, path: &Path) -> PathBuf {
+    fn doc_dir(&self, path: &Path, document_id: Option<&DocumentId>) -> PathBuf {
+        match document_id {
+            Some(id) => self.inner.root.join(id.to_string()),
+            None => self.legacy_dir(path),
+        }
+    }
+
+    fn legacy_dir(&self, path: &Path) -> PathBuf {
         let key = blake3::hash(path.to_string_lossy().as_bytes())
             .to_hex()
             .to_string();
         self.inner.root.join(&key[..32])
+    }
+
+    /// Copies/merges the legacy path buckets into the stable id bucket once.
+    /// The marker is written `pending` before any merge and `done` only after
+    /// every alias has been processed, so a crash retries instead of silently
+    /// losing entries.
+    fn ensure_migrated(&self, id: &DocumentId, path: &Path) -> Result<(), AppError> {
+        let target = self.inner.root.join(id.to_string());
+        fs::create_dir_all(&target).map_err(|error| AppError::from_io(&error))?;
+        private_dir(&target)?;
+        if migration_done(&target) {
+            return Ok(());
+        }
+        write_migration(&target, "pending")?;
+
+        let mut aliases = vec![path.to_path_buf()];
+        if let Ok(guard) = self.inner.identity.lock() {
+            if let Some(identity) = guard.as_ref() {
+                aliases.extend(identity.legacy_paths(id));
+            }
+        }
+        aliases.sort_by(|left, right| left.as_os_str().cmp(right.as_os_str()));
+        aliases.dedup_by(|left, right| left == right);
+
+        let mut entries = self.load_entries(&target, path);
+        for alias in aliases {
+            let source = self.legacy_dir(&alias);
+            if source == target || !source.is_dir() {
+                continue;
+            }
+            let source_entries = self.load_entries(&source, &alias);
+            for entry in source_entries.entries {
+                if entries
+                    .entries
+                    .iter()
+                    .any(|candidate| candidate.id == entry.id)
+                {
+                    continue;
+                }
+                let source_file = source.join(format!("{}.bin", entry.id));
+                let target_file = target.join(format!("{}.bin", entry.id));
+                if !source_file.is_file() || target_file.exists() {
+                    continue;
+                }
+                fs::copy(&source_file, &target_file).map_err(|error| AppError::from_io(&error))?;
+                entries.entries.push(entry);
+            }
+        }
+        entries.entries.sort_by(|left, right| {
+            right
+                .created_at_ms
+                .cmp(&left.created_at_ms)
+                .then_with(|| right.last_seen_at_ms.cmp(&left.last_seen_at_ms))
+        });
+        entries.path = path.to_string_lossy().into_owned();
+        self.save_entries(&target, &entries)?;
+        write_migration(&target, "done")?;
+        Ok(())
     }
 
     fn load_entries(&self, dir: &Path, path: &Path) -> EntriesFile {
@@ -350,7 +484,7 @@ impl HistoryStore {
         };
         for dir in dirs.flatten() {
             let path = dir.path();
-            if !path.is_dir() || !path.join("entries.json").is_file() {
+            if !path.is_dir() || !path.join("entries.json").is_file() || migration_pending(&path) {
                 continue;
             }
             let entries = self.load_entries(&path, &path);
@@ -432,6 +566,63 @@ fn validate_entry_id(id: &str) -> Result<(), AppError> {
         ));
     }
     Ok(())
+}
+
+fn read_entry_bytes(dir: &Path, entry: &StoredEntry) -> Result<Vec<u8>, AppError> {
+    if entry.size > MAX_DOCUMENT_BYTES {
+        return Err(AppError::new(
+            AppErrorCode::FileTooLarge,
+            "history entry exceeds the document limit",
+        ));
+    }
+    let file = dir.join(format!("{}.bin", entry.id));
+    let metadata = fs::symlink_metadata(&file).map_err(|error| AppError::from_io(&error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(AppError::new(
+            AppErrorCode::InvalidPath,
+            "history entry is not a regular file",
+        ));
+    }
+    if metadata.len() != entry.size {
+        return Err(AppError::new(
+            AppErrorCode::Io,
+            "history entry is incomplete",
+        ));
+    }
+    let bytes = fs::read(&file).map_err(|error| AppError::from_io(&error))?;
+    let hash = blake3::hash(&bytes).to_hex().to_string();
+    if hash != entry.hash {
+        return Err(AppError::new(
+            AppErrorCode::Io,
+            "history entry failed its hash check",
+        ));
+    }
+    Ok(bytes)
+}
+
+fn migration_done(dir: &Path) -> bool {
+    let Ok(bytes) = fs::read(dir.join(MIGRATION_FILE)) else {
+        return false;
+    };
+    serde_json::from_slice::<MigrationMarker>(&bytes)
+        .is_ok_and(|marker| marker.status == "done" && marker.schema_version == 1)
+}
+
+fn migration_pending(dir: &Path) -> bool {
+    let Ok(bytes) = fs::read(dir.join(MIGRATION_FILE)) else {
+        return false;
+    };
+    serde_json::from_slice::<MigrationMarker>(&bytes).is_ok_and(|marker| marker.status == "pending")
+}
+
+fn write_migration(dir: &Path, status: &str) -> Result<(), AppError> {
+    let marker = MigrationMarker {
+        schema_version: 1,
+        status: status.to_string(),
+    };
+    let bytes = serde_json::to_vec(&marker)
+        .map_err(|error| AppError::new(AppErrorCode::Io, error.to_string()))?;
+    write_private_atomic(&dir.join(MIGRATION_FILE), &bytes)
 }
 
 fn disabled_error() -> AppError {

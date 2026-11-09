@@ -290,7 +290,7 @@ export const errors = {
   NOT_FOUND: "文件不存在或已被移动。",
   NOT_A_FILE: "所选路径不是普通文件。",
   UNSUPPORTED_EXTENSION: "只支持 .md 与 .markdown 文件。",
-  FILE_TOO_LARGE: "内容过大：文件打开上限 10 MiB、保存上限 16 MiB；崩溃草稿上限 2 MiB。",
+  FILE_TOO_LARGE: "内容过大：文件打开与保存上限 16 MiB；崩溃草稿上限 2 MiB。",
   UNSUPPORTED_ENCODING: "仅支持 UTF-8 或带 BOM 的 UTF-16。",
   CONFLICT: "文件已被外部修改，请先确认版本。",
   PERMISSION_DENIED: "没有读取或写入该文件的权限。",
@@ -307,6 +307,7 @@ export const errors = {
   INVALID_LOCALE: "界面语言数据无效，已保留当前语言。",
   SEARCH_TIMEOUT: "搜索耗时过长，请缩小查询范围。",
   INDEX_DISABLED: "搜索索引不可用，请重新打开文件夹以重建索引。",
+  IDENTITY_DEGRADED: "文档身份存储不可写，已使用兼容路径保存。",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {
@@ -594,6 +595,10 @@ export const workspace = {
     retry: "重试读取此目录",
     truncatedRow: "此目录只显示前 10,000 项，请进子目录查看",
     rowError: "无法读取此目录",
+    kindDirectory: "文件夹",
+    kindFile: "文件",
+    kindSymlinkDirectory: "链接文件夹",
+    kindSymlinkFile: "链接文件",
   },
   truncated: {
     listed: "仅显示前 10,000 项，请进子目录查看。",

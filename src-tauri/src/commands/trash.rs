@@ -33,8 +33,8 @@ pub async fn workspace_delete<R: tauri::Runtime>(
     let trash = trash.inner().clone();
     let locks = locks.inner().clone();
     let entry = tauri::async_runtime::spawn_blocking(move || {
-        let source = workspace_service::resolve_document(&root_for_task, &segments_for_task)?;
-        trash.delete(&root_for_task, &source, Some(&locks), |path| {
+        let resolved = workspace_service::resolve_delete(&root_for_task, &segments_for_task)?;
+        trash.delete(&root_for_task, &resolved.raw_path, Some(&locks), |path| {
             documents_for_task.is_path_open(path)
         })
     })
@@ -46,8 +46,9 @@ pub async fn workspace_delete<R: tauri::Runtime>(
         )
     })??;
     if let Some(index) = app.try_state::<SearchIndexService>() {
-        if let Ok(source) = workspace_service::resolve_document(&root, &segments) {
-            index.remove_path(&root, &source);
+        if let Ok(resolved) = workspace_service::resolve_delete(&root, &segments) {
+            // A symlink row is indexed by its link path, never by the target.
+            index.remove_path(&root, &resolved.raw_path);
         }
     }
     crate::commands::workspace::sync_workspace_watchers(&app);

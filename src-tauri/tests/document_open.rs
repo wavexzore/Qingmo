@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use qingmo_lib::error::AppErrorCode;
 use qingmo_lib::ipc::dto::{LineEnding, ReadOnlyReason, TextEncoding};
-use qingmo_lib::services::file_service::MAX_FILE_BYTES;
+use qingmo_lib::services::file_service::{FileService, MAX_DOCUMENT_BYTES};
 use qingmo_lib::state::DocumentRegistry;
 use tempfile::TempDir;
 
@@ -165,15 +165,19 @@ fn marks_mdx_read_only_even_when_mixed_eol() {
 }
 
 #[test]
-fn enforces_the_ten_mib_boundary() {
+fn enforces_the_16_mib_boundary() {
     let dir = TempDir::new().expect("temp dir");
     let registry = DocumentRegistry::new();
 
-    let exactly = write_file(&dir, "exactly.md", &vec![b'a'; MAX_FILE_BYTES as usize]);
-    let payload = registry.open_path(exactly).expect("10 MiB must open");
-    assert_eq!(payload.size, MAX_FILE_BYTES);
+    let exactly = write_file(&dir, "exactly.md", &vec![b'a'; MAX_DOCUMENT_BYTES as usize]);
+    let payload = registry.open_path(exactly).expect("16 MiB must open");
+    assert_eq!(payload.size, MAX_DOCUMENT_BYTES);
 
-    let over = write_file(&dir, "over.md", &vec![b'a'; MAX_FILE_BYTES as usize + 1]);
+    let over = write_file(
+        &dir,
+        "over.md",
+        &vec![b'a'; MAX_DOCUMENT_BYTES as usize + 1],
+    );
     assert_eq!(open_code(&registry, over), AppErrorCode::FileTooLarge);
 }
 
@@ -300,4 +304,50 @@ fn reports_permission_denied_for_an_unreadable_file() {
     // Restore before asserting so the temp directory can be cleaned up.
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("chmod restore");
     assert_eq!(code, AppErrorCode::PermissionDenied);
+}
+
+#[cfg(unix)]
+#[test]
+fn read_raw_rejects_a_symlink_final_component() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().expect("temp dir");
+    let real = write_text(&dir, "real.md", "real");
+    let link = dir.path().join("link.md");
+    symlink(&real, &link).expect("symlink");
+
+    let error = FileService::read_raw(&link, MAX_DOCUMENT_BYTES, None)
+        .expect_err("final symlink must be rejected");
+    assert_eq!(error.code, AppErrorCode::InvalidPath);
+}
+
+#[cfg(unix)]
+#[test]
+fn read_raw_rejects_a_fifo_without_blocking() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("pipe.md");
+    let raw = CString::new(path.as_os_str().as_bytes()).expect("path");
+    let result = unsafe { libc::mkfifo(raw.as_ptr(), 0o600) };
+    assert_eq!(result, 0, "mkfifo");
+
+    let error = FileService::read_raw(&path, MAX_DOCUMENT_BYTES, None)
+        .expect_err("FIFO must not be opened");
+    assert_eq!(error.code, AppErrorCode::NotAFile);
+}
+
+#[test]
+fn read_raw_rejects_a_changed_parent_identity() {
+    let dir = TempDir::new().expect("temp dir");
+    let other = TempDir::new().expect("other dir");
+    let path = write_text(&dir, "a.md", "hello");
+    let other_identity = qingmo_lib::services::file_identity::file_identity(other.path())
+        .expect("identity")
+        .expect("supported");
+
+    let error = FileService::read_raw(&path, MAX_DOCUMENT_BYTES, Some(&other_identity))
+        .expect_err("parent identity mismatch must conflict");
+    assert_eq!(error.code, AppErrorCode::Conflict);
 }

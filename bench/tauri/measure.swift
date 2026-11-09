@@ -5,7 +5,7 @@
 // one character, presses Cmd+S and polls for "已同步" as a save upper bound.
 //
 // This is not a framework; run it only on macOS with Accessibility permission:
-//   swift bench/tauri/measure.swift <pid> <filename-in-cwd> [timeout-seconds]
+//   swift bench/tauri/measure.swift <pid> <filename-in-cwd> [timeout-seconds] [sidebar-name]
 
 import ApplicationServices
 import CoreGraphics
@@ -13,11 +13,12 @@ import Foundation
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 3, let pid = pid_t(arguments[1]) else {
-    fputs("usage: measure.swift <pid> <filename> [timeout]\n", stderr)
+    fputs("usage: measure.swift <pid> <filename> [timeout] [sidebar-name]\n", stderr)
     exit(2)
 }
 let target = arguments[2]
 let timeout = arguments.count >= 4 ? (Double(arguments[3]) ?? 60) : 60
+let sidebarName = arguments.count >= 5 ? arguments[4] : ""
 let app = AXUIElementCreateApplication(pid)
 
 func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
@@ -101,15 +102,19 @@ func hasStaticText(_ marker: String) -> Bool {
     }) != nil
 }
 
-func documentHeading() -> String {
-    guard
-        let heading = find(app, maxDepth: 8, where: { element in
-            role(element) == "AXHeading" && !title(element).isEmpty
-        })
-    else {
+/// The focused window title is the document name plus the app suffix
+/// (for example `xlarge-copy.md — 青墨`). A document window that owns a
+/// workspace sidebar has its workspace name as the first `AXHeading`, so
+/// matching headings would pick the sidebar instead of the document.
+func focusedWindowTitle() -> String {
+    guard let value = attribute(app, kAXFocusedWindowAttribute as String) else {
         return ""
     }
-    return title(heading)
+    let window = value as! AXUIElement
+    guard role(window) == "AXWindow" else {
+        return ""
+    }
+    return title(window)
 }
 
 func hasEditor() -> Bool {
@@ -153,6 +158,50 @@ func waitUntil(_ seconds: Double, _ predicate: () -> Bool) -> Bool {
     return predicate()
 }
 
+func subtreeContainsText(_ element: AXUIElement, _ needle: String, depth: Int = 0) -> Bool {
+    if title(element) == needle || stringValue(element) == needle {
+        return true
+    }
+    if depth >= 4 {
+        return false
+    }
+    for child in children(element) {
+        if subtreeContainsText(child, needle, depth: depth + 1) {
+            return true
+        }
+    }
+    return false
+}
+
+/// The native open panel remembers a directory per app, but a freshly
+/// launched release binary can still start in an unrelated folder. When the
+/// requested file is not visible, select its parent from the panel sidebar.
+/// Navigation finishes before the Open button is pressed, so it is outside
+/// the measured open interval.
+func selectSidebarRow(_ name: String) -> Bool {
+    guard let outline = find(app, maxDepth: 8, where: { role($0) == "AXOutline" }) else {
+        return false
+    }
+    guard
+        let row = find(outline, maxDepth: 6, where: {
+            role($0) == "AXRow" && subtreeContainsText($0, name)
+        })
+    else {
+        return false
+    }
+    let pressed = AXUIElementPerformAction(row, kAXPressAction as CFString)
+    if pressed == .success {
+        return true
+    }
+    _ = AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue)
+    _ = AXUIElementSetAttributeValue(
+        outline,
+        kAXSelectedRowsAttribute as CFString,
+        [row] as CFArray
+    )
+    return true
+}
+
 // 1. Ensure the open panel is visible.
 if find(app, maxDepth: 5, where: { role($0) == "AXSheet" }) == nil {
     for _ in 0..<2 {
@@ -172,10 +221,25 @@ guard let sheet = find(app, maxDepth: 5, where: { role($0) == "AXSheet" }) else 
     exit(3)
 }
 
-var targetField: AXUIElement?
-guard waitUntil(5, {
+func locateTargetField() -> AXUIElement? {
     let currentSheet = find(app, maxDepth: 5, where: { role($0) == "AXSheet" }) ?? sheet
-    targetField = find(currentSheet, where: { role($0) == "AXTextField" && stringValue($0) == target })
+    return find(currentSheet, where: {
+        role($0) == "AXTextField" && stringValue($0) == target
+    })
+}
+
+var targetField = locateTargetField()
+if targetField == nil, !sidebarName.isEmpty, selectSidebarRow(sidebarName) {
+    _ = waitUntil(3, {
+        targetField = locateTargetField()
+        return targetField != nil
+    })
+}
+
+guard waitUntil(5, {
+    if targetField == nil {
+        targetField = locateTargetField()
+    }
     return targetField != nil
 }), let field = targetField, let row = {
         var current: AXUIElement? = field
@@ -219,11 +283,13 @@ if openError != .success {
     exit(6)
 }
 
-// 2. The target heading only exists once the new document session is mounted.
-// The status bar alone is not enough: an already-open document keeps its status
-// bar visible while the dialog is open.
-guard waitUntil(timeout, { documentHeading() == target && statusText() != "" && hasEditor() }) else {
-    fputs("document did not open before timeout; heading=\(documentHeading())\n", stderr)
+// 2. The focused window title only changes once the new document session is
+// mounted. The status bar alone is not enough: an already-open document keeps
+// its status bar visible while the dialog is open.
+guard waitUntil(timeout, {
+    focusedWindowTitle().hasPrefix(target) && statusText() != "" && hasEditor()
+}) else {
+    fputs("document did not open before timeout; window=\(focusedWindowTitle())\n", stderr)
     exit(7)
 }
 let openMs = Date().timeIntervalSince(openStart) * 1000
@@ -233,8 +299,9 @@ let openMs = Date().timeIntervalSince(openStart) * 1000
 usleep(250_000)
 let baseline = statusText()
 
-// 3. Focus the CM6 text area. The 10 MiB fixture is exactly at the save
-// limit, so inserting would be rejected; delete one character instead.
+// 3. Focus the CM6 text area. The large/xlarge fixtures are at (or near) the
+// 16 MiB save limit, so inserting would be rejected; delete one character
+// instead.
 let largeFile = hasStaticText("大文档") || hasStaticText("源码")
 let editor = find(app, maxDepth: 12, where: { role($0) == "AXTextArea" })
 if let editor {
@@ -244,7 +311,7 @@ if let editor {
     }
     usleep(40_000)
 }
-postKey(largeFile ? 117 : 6) // forward delete for 10 MiB, otherwise z
+postKey(largeFile ? 117 : 6) // forward delete for large/xlarge, otherwise z
 
 let dirty = waitUntil(1.5, { statusText() != baseline && !statusText().isEmpty })
 let beforeSave = statusText()

@@ -117,6 +117,21 @@ describe("openFile", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
+  it("reads persisted view state with the document token", async () => {
+    const ipc = fileIpc("# Hi\n");
+    const spy = vi.spyOn(ipc, "sessionViewStateGet");
+    const { platform } = renderApp(ipc);
+
+    platform.emitMenuAction("file.open");
+
+    await screen.findByTestId("document-session");
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const last = spy.mock.calls[spy.mock.calls.length - 1];
+    expect(last?.[0]).toBe("/docs/note.md");
+    expect(last?.[1]).toEqual(expect.any(String));
+    expect(last?.[1]).not.toBe("");
+  });
+
   it("returns null when Tauri opened the document in a new window", async () => {
     const ipc = fileIpc();
     // The Tauri adapter resolves null after creating a native window; the
@@ -182,6 +197,7 @@ describe("openFile", () => {
       onCloseCancelled: vi.fn(() => () => undefined),
       onWorkspaceIndexStatus: vi.fn(() => () => undefined),
       onDocumentChanged: vi.fn(() => () => undefined),
+      onDocumentRelocated: vi.fn(() => () => undefined),
       appCloseConfirm: vi.fn(),
       appSetLivePreview: vi.fn(),
       appApplyLocale: vi.fn(),

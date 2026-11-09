@@ -16,13 +16,14 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{SearchHit, SearchIndexState, SearchResponse, SearchStatus};
+use crate::services::file_service::MAX_DOCUMENT_BYTES;
 use crate::services::search_query::{self, plain_snippet, title_from_body, TermTable};
 use crate::services::workspace_service::is_ignored_relative_path;
 
 pub const INDEX_SCHEMA_VERSION: u32 = 2;
 pub const INDEX_MAX_FILES: usize = 100_000;
 pub const INDEX_MAX_BODY_BYTES: u64 = 512 * 1024 * 1024;
-pub const INDEX_MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+pub const INDEX_MAX_FILE_BYTES: u64 = MAX_DOCUMENT_BYTES;
 pub const INDEX_SHORT_TERMS_MAX_BYTES: usize = 16 * 1024 * 1024;
 pub const INDEX_QUERY_TIMEOUT_MS: u64 = 500;
 pub const SEARCH_SCORE_LIMIT: usize = 2_000;
@@ -232,12 +233,21 @@ impl SearchIndexService {
                 indexed += 1;
                 continue;
             }
-            if self.upsert_file(ready, root, path, &workspace_key, &relative)? {
-                indexed += 1;
+            if let Some(prepared) = prepare_upsert(root, path) {
+                if self
+                    .upsert_prepared(ready, &workspace_key, &prepared)
+                    .is_ok()
+                {
+                    indexed += 1;
+                }
+            } else {
+                continue;
             }
         }
 
-        self.remove_stale(ready, &workspace_key, &seen)?;
+        if !truncated {
+            self.remove_stale(ready, &workspace_key, &seen)?;
+        }
         let _ = self.optimize(ready);
         if !truncated {
             let _ = self.compact(ready);
@@ -285,14 +295,16 @@ impl SearchIndexService {
     pub fn upsert_path(&self, root: &Path, path: &Path) -> Result<(), AppError> {
         let ready = self.ready()?;
         let workspace_key = workspace_key(root);
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|_| AppError::new(AppErrorCode::OutsideScope, "path is outside workspace"))?
-            .to_string_lossy()
-            .replace('\\', "/");
+        let relative = relative_key(root, path)?;
         self.ensure_workspace(ready, root, &workspace_key)?;
-        self.upsert_file(ready, root, path, &workspace_key, &relative)?;
-        Ok(())
+        match prepare_upsert(root, path) {
+            Some(prepared) => self.upsert_prepared(ready, &workspace_key, &prepared),
+            None => {
+                // A saved file that is no longer indexable (md -> txt, moved
+                // out of the root, oversized) must not leave its old row.
+                self.remove_path_or_prefix(root, &relative)
+            }
+        }
     }
 
     pub fn remove_path(&self, root: &Path, path: &Path) {
@@ -306,6 +318,139 @@ impl SearchIndexService {
         let relative = relative.to_string_lossy().replace('\\', "/");
         if let Ok(write) = ready.write.lock() {
             let _ = delete_document_tx(&write, &workspace_key, &relative);
+        }
+    }
+
+    /// Deletes the exact row and every row below it.
+    ///
+    /// A directory rename/removal must not leave `docs/a.md` indexed after
+    /// `docs` disappears.
+    pub fn remove_path_or_prefix(&self, root: &Path, relative: &str) -> Result<(), AppError> {
+        let ready = self.ready()?;
+        let workspace_key = workspace_key(root);
+        let write = ready
+            .write
+            .lock()
+            .map_err(|_| AppError::new(AppErrorCode::IndexDisabled, "index lock poisoned"))?;
+        write
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(index_error)?;
+        let result = delete_path_or_prefix_tx(&write, &workspace_key, relative);
+        match result {
+            Ok(()) => write.execute_batch("COMMIT").map_err(index_error),
+            Err(error) => {
+                let _ = write.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
+    /// Atomically moves one file row (or a directory prefix) to its new path.
+    ///
+    /// The replacement file is read and decoded before the transaction so the
+    /// database lock is never held during disk I/O. A non-indexable target
+    /// deletes the old row and reports `requires_rescan = false`; a directory
+    /// rename updates every row below it in one transaction.
+    pub fn rename_path(
+        &self,
+        root: &Path,
+        old_path: &Path,
+        new_path: &Path,
+    ) -> Result<RenameResult, AppError> {
+        let ready = self.ready()?;
+        let workspace_key = workspace_key(root);
+        let old_relative = relative_key(root, old_path)?;
+        let new_relative = relative_key(root, new_path)?;
+        self.ensure_workspace(ready, root, &workspace_key)?;
+
+        if fs::metadata(new_path).is_ok_and(|metadata| metadata.is_dir()) {
+            self.rename_prefix_rows(ready, &workspace_key, &old_relative, &new_relative, root)?;
+            return Ok(RenameResult {
+                renamed: true,
+                requires_rescan: false,
+            });
+        }
+
+        let prepared = prepare_upsert(root, new_path);
+        let write = ready
+            .write
+            .lock()
+            .map_err(|_| AppError::new(AppErrorCode::IndexDisabled, "index lock poisoned"))?;
+        write
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(index_error)?;
+        let result = (|| -> Result<(), AppError> {
+            delete_path_or_prefix_tx(&write, &workspace_key, &old_relative)?;
+            if let Some(prepared) = prepared.as_ref() {
+                insert_prepared_tx(&write, &workspace_key, prepared)?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                write.execute_batch("COMMIT").map_err(index_error)?;
+                Ok(RenameResult {
+                    renamed: prepared.is_some(),
+                    requires_rescan: false,
+                })
+            }
+            Err(error) => {
+                let _ = write.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
+    fn rename_prefix_rows(
+        &self,
+        ready: &Ready,
+        workspace_key: &str,
+        old_relative: &str,
+        new_relative: &str,
+        root: &Path,
+    ) -> Result<(), AppError> {
+        let write = ready
+            .write
+            .lock()
+            .map_err(|_| AppError::new(AppErrorCode::IndexDisabled, "index lock poisoned"))?;
+        write
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(index_error)?;
+        let result = (|| -> Result<(), AppError> {
+            let rows: Vec<(i64, String)> = {
+                let pattern = format!("{}/%", escape_like(old_relative));
+                let mut statement = write
+                    .prepare(
+                        "SELECT id, path FROM documents
+                         WHERE workspace_key = ?1 AND (path = ?2 OR path LIKE ?3 ESCAPE '\\')",
+                    )
+                    .map_err(index_error)?;
+                let rows = statement
+                    .query_map(params![workspace_key, old_relative, pattern], |row| {
+                        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(index_error)?;
+                rows.filter_map(Result::ok).collect()
+            };
+            for (id, relative) in rows {
+                let suffix = relative.strip_prefix(old_relative).unwrap_or("");
+                let next = format!("{new_relative}{suffix}");
+                let abs_path = root.join(&next).to_string_lossy().into_owned();
+                write
+                    .execute(
+                        "UPDATE documents SET path = ?1, abs_path = ?2 WHERE id = ?3",
+                        params![next, abs_path, id],
+                    )
+                    .map_err(index_error)?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => write.execute_batch("COMMIT").map_err(index_error),
+            Err(error) => {
+                let _ = write.execute_batch("ROLLBACK");
+                Err(error)
+            }
         }
     }
 
@@ -535,44 +680,12 @@ impl SearchIndexService {
         Ok(existing == Some((mtime, size)))
     }
 
-    fn upsert_file(
+    fn upsert_prepared(
         &self,
         ready: &Ready,
-        root: &Path,
-        path: &Path,
         workspace_key: &str,
-        relative: &str,
-    ) -> Result<bool, AppError> {
-        let metadata = match fs::metadata(path) {
-            Ok(metadata) if metadata.is_file() && metadata.len() <= INDEX_MAX_FILE_BYTES => {
-                metadata
-            }
-            _ => return Ok(false),
-        };
-        let bytes = match fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(_) => return Ok(false),
-        };
-        let decoded = match crate::services::encoding::decode(&bytes) {
-            Ok(decoded) if !decoded.mixed_eol => decoded,
-            _ => return Ok(false),
-        };
-        let title = title_from_body(
-            &decoded.text,
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("Untitled"),
-        );
-        let terms = search_query::short_terms(&decoded.text);
-        let short_ok = terms.len() <= INDEX_SHORT_TERMS_MAX_BYTES;
-        let mtime = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|duration| duration.as_millis() as i64)
-            .unwrap_or(0);
-        let hash = blake3::hash(&bytes).to_hex().to_string();
-        let abs_path = path.to_string_lossy().to_string();
+        prepared: &PreparedUpsert,
+    ) -> Result<(), AppError> {
         let write = ready
             .write
             .lock()
@@ -581,60 +694,16 @@ impl SearchIndexService {
             .execute_batch("BEGIN IMMEDIATE")
             .map_err(index_error)?;
         let result = (|| -> Result<(), AppError> {
-            let id: i64 = write
-                .query_row(
-                    "INSERT INTO documents(workspace_key, path, abs_path, title, mtime_ms, size_bytes, hash, indexed_at_ms)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-                     ON CONFLICT(workspace_key, path) DO UPDATE SET
-                       abs_path=excluded.abs_path, title=excluded.title, mtime_ms=excluded.mtime_ms,
-                       size_bytes=excluded.size_bytes, hash=excluded.hash, indexed_at_ms=excluded.indexed_at_ms
-                     RETURNING id",
-                    params![
-                        workspace_key,
-                        relative,
-                        abs_path,
-                        title,
-                        mtime,
-                        metadata.len(),
-                        hash,
-                        now_ms()
-                    ],
-                    |row| row.get(0),
-                )
-                .map_err(index_error)?;
-            write
-                .execute("DELETE FROM documents_fts WHERE rowid = ?1", params![id])
-                .map_err(index_error)?;
-            write
-                .execute(
-                    "DELETE FROM documents_fts_short WHERE rowid = ?1",
-                    params![id],
-                )
-                .map_err(index_error)?;
-            write
-                .execute(
-                    "INSERT INTO documents_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
-                    params![id, title, decoded.text],
-                )
-                .map_err(index_error)?;
-            if short_ok {
-                write
-                    .execute(
-                        "INSERT INTO documents_fts_short(rowid, terms) VALUES (?1, ?2)",
-                        params![id, terms],
-                    )
-                    .map_err(index_error)?;
-            }
-            let _ = root;
+            insert_prepared_tx(&write, workspace_key, prepared)?;
             Ok(())
         })();
         match result {
             Ok(()) => {
                 write.execute_batch("COMMIT").map_err(index_error)?;
-                if !short_ok {
+                if !prepared.short_ok {
                     self.inner.truncated.store(true, Ordering::SeqCst);
                 }
-                Ok(true)
+                Ok(())
             }
             Err(error) => {
                 let _ = write.execute_batch("ROLLBACK");
@@ -706,6 +775,184 @@ impl SearchIndexService {
             .map_err(index_error)?;
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenameResult {
+    pub renamed: bool,
+    pub requires_rescan: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedUpsert {
+    relative: String,
+    abs_path: String,
+    title: String,
+    body: String,
+    terms: String,
+    short_ok: bool,
+    mtime: i64,
+    size: u64,
+    hash: String,
+}
+
+fn relative_key(root: &Path, path: &Path) -> Result<String, AppError> {
+    path.strip_prefix(root)
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .map_err(|_| AppError::new(AppErrorCode::OutsideScope, "path is outside workspace"))
+}
+
+/// Reads and validates one indexable file before the database transaction.
+fn prepare_upsert(root: &Path, path: &Path) -> Option<PreparedUpsert> {
+    let relative = path.strip_prefix(root).ok()?;
+    if is_ignored_relative_path(relative) || !is_markdown(path) {
+        return None;
+    }
+    let metadata = fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > INDEX_MAX_FILE_BYTES {
+        return None;
+    }
+    if let Ok(link_metadata) = fs::symlink_metadata(path) {
+        if link_metadata.file_type().is_symlink() {
+            let target = fs::canonicalize(path).ok()?;
+            if !target.starts_with(root) {
+                return None;
+            }
+        }
+    }
+    let bytes = fs::read(path).ok()?;
+    let decoded = crate::services::encoding::decode(&bytes).ok()?;
+    if decoded.mixed_eol {
+        return None;
+    }
+    let title = title_from_body(
+        &decoded.text,
+        path.file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("Untitled"),
+    );
+    let terms = search_query::short_terms(&decoded.text);
+    let short_ok = terms.len() <= INDEX_SHORT_TERMS_MAX_BYTES;
+    let mtime = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0);
+    Some(PreparedUpsert {
+        relative: relative.to_string_lossy().replace('\\', "/"),
+        abs_path: path.to_string_lossy().into_owned(),
+        title,
+        body: decoded.text,
+        terms,
+        short_ok,
+        mtime,
+        size: metadata.len(),
+        hash: blake3::hash(&bytes).to_hex().to_string(),
+    })
+}
+
+fn insert_prepared_tx(
+    write: &Connection,
+    workspace_key: &str,
+    prepared: &PreparedUpsert,
+) -> Result<(), AppError> {
+    let id: i64 = write
+        .query_row(
+            "INSERT INTO documents(workspace_key, path, abs_path, title, mtime_ms, size_bytes, hash, indexed_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(workspace_key, path) DO UPDATE SET
+               abs_path=excluded.abs_path, title=excluded.title, mtime_ms=excluded.mtime_ms,
+               size_bytes=excluded.size_bytes, hash=excluded.hash, indexed_at_ms=excluded.indexed_at_ms
+             RETURNING id",
+            params![
+                workspace_key,
+                prepared.relative,
+                prepared.abs_path,
+                prepared.title,
+                prepared.mtime,
+                prepared.size,
+                prepared.hash,
+                now_ms()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(index_error)?;
+    write
+        .execute("DELETE FROM documents_fts WHERE rowid = ?1", params![id])
+        .map_err(index_error)?;
+    write
+        .execute(
+            "DELETE FROM documents_fts_short WHERE rowid = ?1",
+            params![id],
+        )
+        .map_err(index_error)?;
+    write
+        .execute(
+            "INSERT INTO documents_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
+            params![id, prepared.title, prepared.body],
+        )
+        .map_err(index_error)?;
+    if prepared.short_ok {
+        write
+            .execute(
+                "INSERT INTO documents_fts_short(rowid, terms) VALUES (?1, ?2)",
+                params![id, prepared.terms],
+            )
+            .map_err(index_error)?;
+    }
+    Ok(())
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+/// Deletes the exact row and all rows below a prefix without opening a
+/// transaction; callers own BEGIN/COMMIT/ROLLBACK.
+fn delete_path_or_prefix_tx(
+    write: &Connection,
+    workspace_key: &str,
+    relative: &str,
+) -> Result<(), AppError> {
+    let ids: Vec<i64> = {
+        let pattern = format!("{}/%", escape_like(relative));
+        let mut statement = write
+            .prepare(
+                "SELECT id FROM documents
+                 WHERE workspace_key = ?1 AND (path = ?2 OR path LIKE ?3 ESCAPE '\\')",
+            )
+            .map_err(index_error)?;
+        let rows = statement
+            .query_map(params![workspace_key, relative, pattern], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(index_error)?;
+        rows.filter_map(Result::ok).collect()
+    };
+    for id in ids {
+        delete_row_tx(write, id)?;
+    }
+    Ok(())
+}
+
+fn delete_row_tx(write: &Connection, id: i64) -> Result<(), AppError> {
+    write
+        .execute("DELETE FROM documents_fts WHERE rowid = ?1", params![id])
+        .map_err(index_error)?;
+    write
+        .execute(
+            "DELETE FROM documents_fts_short WHERE rowid = ?1",
+            params![id],
+        )
+        .map_err(index_error)?;
+    write
+        .execute("DELETE FROM documents WHERE id = ?1", params![id])
+        .map_err(index_error)?;
+    Ok(())
 }
 
 fn delete_document_tx(
@@ -1080,12 +1327,34 @@ fn walk(
         if is_ignored_relative_path(relative) {
             continue;
         }
-        let Ok(metadata) = entry.metadata() else {
+        let Ok(file_type) = entry.file_type() else {
             continue;
         };
-        if metadata.is_dir() {
+        if file_type.is_symlink() {
+            // Never expand a symlink directory (Q-004). An inside file link is
+            // indexed by its link path so the visible name stays searchable.
+            let Ok(target) = fs::canonicalize(&path) else {
+                continue;
+            };
+            if target.starts_with(root) && target.is_file() && is_markdown(&path) {
+                let Ok(target_meta) = fs::metadata(&target) else {
+                    continue;
+                };
+                if target_meta.len() > INDEX_MAX_FILE_BYTES {
+                    continue;
+                }
+                if !push_file(files, total_bytes, path, target_meta.len(), truncated) {
+                    return Ok(());
+                }
+            }
+            continue;
+        }
+        if file_type.is_dir() {
             walk(&path, files, total_bytes, truncated, depth + 1)?;
-        } else if metadata.is_file() && is_markdown(&path) {
+        } else if file_type.is_file() && is_markdown(&path) {
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
             let size = metadata.len();
             if size > INDEX_MAX_FILE_BYTES {
                 *truncated = true;
@@ -1093,21 +1362,6 @@ fn walk(
             }
             if !push_file(files, total_bytes, path, size, truncated) {
                 return Ok(());
-            }
-        } else if metadata.file_type().is_symlink() {
-            let Ok(target) = fs::canonicalize(&path) else {
-                continue;
-            };
-            if target.starts_with(root) && target.is_file() && is_markdown(&target) {
-                let Ok(target_meta) = fs::metadata(&target) else {
-                    continue;
-                };
-                if target_meta.len() > INDEX_MAX_FILE_BYTES {
-                    continue;
-                }
-                if !push_file(files, total_bytes, target, target_meta.len(), truncated) {
-                    return Ok(());
-                }
             }
         }
     }

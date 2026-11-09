@@ -8,10 +8,12 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
-use crate::ipc::contract::EVENT_DOCUMENT_CHANGED;
-use crate::ipc::dto::{DocumentChangeKind, DocumentChangedPayload};
+use crate::ipc::contract::{EVENT_DOCUMENT_CHANGED, EVENT_DOCUMENT_RELOCATED};
+use crate::ipc::dto::{DocumentChangeKind, DocumentChangedPayload, DocumentRelocatedPayload};
+use crate::services::file_identity::{file_identity, same_identity, FileIdentity};
 use crate::services::file_service::{mtime_ms, MAX_FILE_BYTES};
-use crate::state::DocumentRegistry;
+use crate::services::workspace_service::is_document_name;
+use crate::state::{DocumentRegistry, WindowSessions};
 
 /// How often every open document is checked for a different disk version.
 ///
@@ -42,6 +44,8 @@ struct WatchEntry {
     emitted_hash: Option<String>,
     misses: u8,
     deleted_emitted: bool,
+    /// Resume offset for the bounded parent-directory recovery scan.
+    scan_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,14 +68,16 @@ pub struct DocumentWatcher {
 struct Inner {
     app: AppHandle,
     registry: DocumentRegistry,
+    sessions: WindowSessions,
     docs: Mutex<HashMap<String, WatchEntry>>,
 }
 
 impl DocumentWatcher {
-    pub fn start(app: AppHandle, registry: DocumentRegistry) -> Self {
+    pub fn start(app: AppHandle, registry: DocumentRegistry, sessions: WindowSessions) -> Self {
         let inner = Arc::new(Inner {
             app,
             registry,
+            sessions,
             docs: Mutex::new(HashMap::new()),
         });
         let stop = Arc::new(AtomicBool::new(false));
@@ -112,6 +118,7 @@ impl DocumentWatcher {
                 emitted_hash: None,
                 misses: 0,
                 deleted_emitted: false,
+                scan_offset: 0,
             },
         );
     }
@@ -142,11 +149,23 @@ impl Inner {
                 .collect()
         };
 
-        for (token, path) in targets {
+        for (token, watched_path) in targets {
             let Some(record) = self.registry.get(&token).ok() else {
                 // The window closed between the snapshot and this check.
                 self.forget(&token);
                 continue;
+            };
+            // Only the window that currently shows this document receives
+            // events. A rollback token kept by a switch or Save As must stay
+            // silent until it becomes current again.
+            let Some(label) = self.sessions.label_for_current(&token) else {
+                continue;
+            };
+            // Re-read the path every tick: Save As, reload and rename can move
+            // the canonical target without restarting the watcher.
+            let path = match record.paths() {
+                Ok(paths) => paths.canonical_target,
+                Err(_) => watched_path,
             };
 
             let stat = match stat_of(&path) {
@@ -156,6 +175,34 @@ impl Inner {
                     continue;
                 }
             };
+
+            if stat.is_none() {
+                let identity = record.paths().ok().and_then(|paths| paths.file_identity);
+                match recover_from_parent(self, &token, &path, identity.as_ref()) {
+                    Recovery::Found(new_path) => {
+                        tracing::info!(
+                            doc_token = token,
+                            path = %new_path.display(),
+                            "document recovered after an external rename"
+                        );
+                        let observation =
+                            match crate::services::file_identity::observe_path(&new_path) {
+                                Ok(observation) => observation,
+                                Err(_) => continue,
+                            };
+                        if let Err(error) =
+                            self.registry.rekey_token(&token, &new_path, observation)
+                        {
+                            tracing::warn!(%error, doc_token = token, "failed to rekey a recovered document");
+                            continue;
+                        }
+                        self.emit_relocated(&label, &token, &new_path);
+                        continue;
+                    }
+                    Recovery::Pending => continue,
+                    Recovery::NotFound => {}
+                }
+            }
 
             // Hashing is only needed when size/mtime moved. A missing file is
             // always observed so the deletion confirmation can advance.
@@ -236,13 +283,24 @@ impl Inner {
                         hash = version.hash,
                         "external document change detected"
                     );
-                    self.emit(DocumentChangedPayload {
-                        doc_token: token,
-                        kind: DocumentChangeKind::Modified,
-                        current_hash: Some(version.hash),
-                        current_size: Some(version.size),
-                        current_mtime_ms: Some(version.mtime_ms),
-                    });
+                    if !record.is_active() {
+                        // The file reappeared after a confirmed deletion; the
+                        // document becomes editable again before the event is
+                        // delivered.
+                        if let Err(error) = self.registry.mark_recovered(&token, &path) {
+                            tracing::warn!(%error, doc_token = token, "failed to recover a missing document");
+                        }
+                    }
+                    self.emit(
+                        &label,
+                        DocumentChangedPayload {
+                            doc_token: token,
+                            kind: DocumentChangeKind::Modified,
+                            current_hash: Some(version.hash),
+                            current_size: Some(version.size),
+                            current_mtime_ms: Some(version.mtime_ms),
+                        },
+                    );
                 }
                 Some(ObservedChange::Deleted) => {
                     tracing::debug!(
@@ -250,22 +308,48 @@ impl Inner {
                         path = %path.display(),
                         "document deletion detected"
                     );
-                    self.emit(DocumentChangedPayload {
-                        doc_token: token,
-                        kind: DocumentChangeKind::Deleted,
-                        current_hash: None,
-                        current_size: None,
-                        current_mtime_ms: None,
-                    });
+                    if let Err(error) = self.registry.mark_missing(&token) {
+                        tracing::warn!(%error, doc_token = token, "failed to mark a document missing");
+                    }
+                    self.emit(
+                        &label,
+                        DocumentChangedPayload {
+                            doc_token: token,
+                            kind: DocumentChangeKind::Deleted,
+                            current_hash: None,
+                            current_size: None,
+                            current_mtime_ms: None,
+                        },
+                    );
                 }
                 None => {}
             }
         }
     }
 
-    fn emit(&self, payload: DocumentChangedPayload) {
-        if let Err(error) = self.app.emit(EVENT_DOCUMENT_CHANGED, payload) {
-            tracing::error!(%error, "failed to emit app://document-changed");
+    fn emit_relocated(&self, label: &str, token: &str, path: &Path) {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let payload = DocumentRelocatedPayload {
+            doc_token: token.to_string(),
+            path: path.to_string_lossy().into_owned(),
+            name,
+        };
+        if let Err(error) = self.app.emit_to(label, EVENT_DOCUMENT_RELOCATED, payload) {
+            tracing::debug!(%error, window = label, "failed to emit a document relocation");
+        }
+    }
+
+    fn emit(&self, label: &str, payload: DocumentChangedPayload) {
+        if let Err(error) = self.app.emit_to(label, EVENT_DOCUMENT_CHANGED, payload) {
+            tracing::error!(
+                %error,
+                window = label,
+                "failed to emit app://document-changed"
+            );
         }
     }
 }
@@ -316,6 +400,95 @@ fn detect(
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum Recovery {
+    /// A regular file with the same instance identity now lives in the parent.
+    Found(PathBuf),
+    /// The scan is incomplete or the parent is unavailable; deletion must not
+    /// be confirmed this tick.
+    Pending,
+    /// The parent is readable and contains no candidate.
+    NotFound,
+}
+
+/// Bounded parent-directory scan used after an external file rename.
+///
+/// At most `RECOVERY_SCAN_BATCH` entries are inspected per tick; the offset is
+/// persisted on the watch entry so a large directory is scanned across ticks
+/// without ever confirming `Deleted` while the candidate space is unexplored.
+const RECOVERY_SCAN_BATCH: usize = 256;
+
+fn recover_from_parent(
+    inner: &Inner,
+    token: &str,
+    path: &Path,
+    expected: Option<&FileIdentity>,
+) -> Recovery {
+    let Some(expected) = expected else {
+        return Recovery::NotFound;
+    };
+    let Some(parent) = path.parent() else {
+        return Recovery::NotFound;
+    };
+    match std::fs::metadata(parent) {
+        Ok(metadata) if metadata.is_dir() => {}
+        // A missing or unreadable parent cannot prove the file is gone.
+        Err(_) => return Recovery::Pending,
+        Ok(_) => return Recovery::Pending,
+    }
+    let offset = inner
+        .docs
+        .lock()
+        .ok()
+        .and_then(|docs| docs.get(token).map(|entry| entry.scan_offset))
+        .unwrap_or(0);
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Recovery::Pending;
+    };
+    for (scanned, entry) in entries.flatten().skip(offset).enumerate() {
+        if scanned >= RECOVERY_SCAN_BATCH {
+            inner.set_scan_offset(token, offset + scanned);
+            return Recovery::Pending;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() {
+            continue;
+        }
+        let candidate = entry.path();
+        if candidate == path || !is_document_name(&candidate) {
+            continue;
+        }
+        let Ok(Some(found)) = file_identity(&candidate) else {
+            continue;
+        };
+        if !same_identity(expected, &found) {
+            continue;
+        }
+        let Ok(canonical) = std::fs::canonicalize(&candidate) else {
+            continue;
+        };
+        if canonical.parent() != Some(parent) {
+            continue;
+        }
+        inner.set_scan_offset(token, 0);
+        return Recovery::Found(canonical);
+    }
+    inner.set_scan_offset(token, 0);
+    Recovery::NotFound
+}
+
+impl Inner {
+    fn set_scan_offset(&self, token: &str, value: usize) {
+        if let Ok(mut docs) = self.docs.lock() {
+            if let Some(entry) = docs.get_mut(token) {
+                entry.scan_offset = value;
+            }
+        }
+    }
+}
+
 fn stat_of(path: &Path) -> std::io::Result<Option<(u64, i64)>> {
     match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_file() => Ok(Some((metadata.len(), mtime_ms(&metadata)))),
@@ -350,6 +523,7 @@ mod tests {
             emitted_hash: None,
             misses: 0,
             deleted_emitted: false,
+            scan_offset: 0,
         }
     }
 

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "path": "/work/b.md",
+  "entries": [
+    {
+      "id": "entry-b",
+      "hash": "f0052dcb8151d6cb172b268144bfe645402cf09e040f522954d53cf0d677acc1",
+      "size": 6,
+      "createdAtMs": 1700000000001,
+      "lastSeenAtMs": 1700000000001,
+      "appVersion": "0.1.4"
+    }
+  ]
+}

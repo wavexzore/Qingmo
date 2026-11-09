@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 export const BENCH_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const FIXTURE_DIR = path.join(BENCH_ROOT, "fixtures");
 
-export const FIXTURE_NAMES = ["small", "medium", "large"] as const;
+export const FIXTURE_NAMES = ["small", "medium", "large", "xlarge"] as const;
 export type FixtureName = (typeof FIXTURE_NAMES)[number];
 
 export interface FixtureSpec {
@@ -51,12 +51,12 @@ export function loadFixture(name: FixtureName): FixtureSpec {
   return { name, text, ...entry };
 }
 
-/** Deliberately small iteration counts for the 10 MiB case. */
+/** Deliberately small iteration counts for the 10/16 MiB cases. */
 export function iterationsFor(name: FixtureName, kind: "open" | "key" | "save"): number {
   const table = {
-    open: { small: 20, medium: 8, large: 4 },
-    key: { small: 80, medium: 40, large: 20 },
-    save: { small: 30, medium: 12, large: 5 },
+    open: { small: 20, medium: 8, large: 4, xlarge: 3 },
+    key: { small: 80, medium: 40, large: 20, xlarge: 12 },
+    save: { small: 30, medium: 12, large: 5, xlarge: 3 },
   } as const;
   return table[kind][name];
 }

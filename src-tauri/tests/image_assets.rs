@@ -133,3 +133,52 @@ fn accepts_gif_jpeg_and_webp_magic() {
         "assets/a.webp"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn rejects_a_symlinked_assets_directory_without_writing_outside() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().expect("temp dir");
+    let outside = TempDir::new().expect("outside");
+    let document = document(&dir);
+    symlink(outside.path(), dir.path().join("assets")).expect("assets symlink");
+    let data = base64::engine::general_purpose::STANDARD.encode(png_bytes());
+
+    let error = qingmo_lib::services::image_assets::save_image_verified(
+        &document,
+        "x.png",
+        "image/png",
+        &data,
+        None,
+    )
+    .expect_err("symlinked assets must be rejected");
+    assert_eq!(error.code, AppErrorCode::InvalidPath);
+    assert_eq!(
+        fs::read_dir(outside.path()).expect("outside").count(),
+        0,
+        "nothing may be written outside the document directory"
+    );
+}
+
+#[test]
+fn rejects_a_changed_parent_identity() {
+    let dir = TempDir::new().expect("temp dir");
+    let other = TempDir::new().expect("other");
+    let document = document(&dir);
+    let other_identity = qingmo_lib::services::file_identity::file_identity(other.path())
+        .expect("identity")
+        .expect("supported");
+    let data = base64::engine::general_purpose::STANDARD.encode(png_bytes());
+
+    let error = qingmo_lib::services::image_assets::save_image_verified(
+        &document,
+        "x.png",
+        "image/png",
+        &data,
+        Some(&other_identity),
+    )
+    .expect_err("parent identity mismatch must conflict");
+    assert_eq!(error.code, AppErrorCode::Conflict);
+    assert!(!dir.path().join("assets").exists());
+}

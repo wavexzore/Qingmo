@@ -89,7 +89,7 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionDraftDiscard]).toBe("allow-session-draft-discard");
   });
 
-  it("keeps the ten events stable", () => {
+  it("keeps the eleven events stable", () => {
     expect(EVENT_NAMES).toEqual([
       "app://close-requested",
       "app://close-cancelled",
@@ -98,6 +98,7 @@ describe("IPC contract mirror", () => {
       "app://update-flush-request",
       "app://menu-action",
       "app://document-changed",
+      "app://document-relocated",
       "app://document-new-failed",
       "app://workspace-changed",
       "app://workspace-index-status",
@@ -108,6 +109,7 @@ describe("IPC contract mirror", () => {
     expect(EVENTS.updateFlushRequest).toBe("app://update-flush-request");
     expect(EVENTS.menuAction).toBe("app://menu-action");
     expect(EVENTS.documentChanged).toBe("app://document-changed");
+    expect(EVENTS.documentRelocated).toBe("app://document-relocated");
     expect(EVENTS.documentNewFailed).toBe("app://document-new-failed");
     expect(EVENTS.workspaceChanged).toBe("app://workspace-changed");
     expect(EVENTS.closeCancelled).toBe("app://close-cancelled");

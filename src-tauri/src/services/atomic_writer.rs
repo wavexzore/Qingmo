@@ -1,13 +1,17 @@
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use atomic_write_file::AtomicWriteFile;
 
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{ConflictDetails, LineEnding, SaveResult, TextEncoding, TextFormat};
+use crate::services::file_identity::{
+    identity_from_handle, identity_from_metadata, observe_path, same_identity, FileIdentity,
+    FileObservation,
+};
 use crate::services::file_lock::{FileLockGuard, FileLockStore};
-use crate::services::file_service::{mtime_ms, MAX_WRITE_BYTES};
+use crate::services::file_service::{mtime_ms, FileService, MAX_DOCUMENT_BYTES, MAX_WRITE_BYTES};
 use crate::services::history_store::HistoryStore;
 use crate::state::DocumentRecord;
 
@@ -16,6 +20,28 @@ struct CurrentDisk {
     size: u64,
     mtime_ms: i64,
     bytes: Vec<u8>,
+    identity: Option<FileIdentity>,
+}
+
+/// Anchor captured by `read_current`; the writer refuses to overwrite a
+/// different instance when the target changed in between.
+#[derive(Debug, Clone)]
+pub enum ExpectedTarget {
+    Existing {
+        identity: Option<FileIdentity>,
+        hash: String,
+        size: u64,
+        mtime_ms: i64,
+    },
+    Absent,
+}
+
+#[derive(Debug, Clone)]
+pub struct WriteOutcome {
+    pub hash: String,
+    pub size: u64,
+    pub mtime_ms: i64,
+    pub identity: Option<FileIdentity>,
 }
 
 /// The only implementation that writes document bytes to disk.
@@ -57,6 +83,74 @@ impl AtomicWriter {
         )
     }
 
+    /// Reads while holding the cross-process path lock.
+    ///
+    /// Reload must not race a save from another process; the lock is the same
+    /// one `write_with_services` takes.
+    pub fn with_read_lock<T>(
+        locks: Option<&FileLockStore>,
+        path: &Path,
+        read: impl FnOnce() -> Result<T, AppError>,
+    ) -> Result<T, AppError> {
+        let _lock = locks.map(|store| store.acquire(path)).transpose()?;
+        read()
+    }
+
+    /// Writes a brand-new Save As target under the one FileLock owner.
+    pub fn write_new(
+        locks: Option<&FileLockStore>,
+        path: &Path,
+        format: &TextFormat,
+        text_lf: &str,
+        expected: &ExpectedTarget,
+        expected_parent: Option<&FileIdentity>,
+    ) -> Result<WriteOutcome, AppError> {
+        let _lock = locks.map(|store| store.acquire(path)).transpose()?;
+        write_formatted(path, format, text_lf, expected, expected_parent)
+    }
+
+    /// Writes one history snapshot over the current disk version.
+    ///
+    /// The expected target comes from the same locked `read_current` used by a
+    /// normal save; the caller cannot supply a path or an unverified version.
+    pub fn restore_with_services(
+        record: &DocumentRecord,
+        format: &TextFormat,
+        text_lf: &str,
+        locks: Option<&FileLockStore>,
+    ) -> Result<SaveResult, AppError> {
+        let paths = record.paths()?;
+        let _lock: Option<FileLockGuard> = locks
+            .map(|store| store.acquire(&paths.canonical_target))
+            .transpose()?;
+        let mut state = record.lock_state()?;
+        let current = read_current(record, &paths)?;
+        let expected = ExpectedTarget::Existing {
+            identity: current.identity.clone(),
+            hash: current.hash.clone(),
+            size: current.size,
+            mtime_ms: current.mtime_ms,
+        };
+        let result = write_formatted(
+            &paths.canonical_target,
+            format,
+            text_lf,
+            &expected,
+            paths.parent_identity.as_ref(),
+        )?;
+        state.base_hash = result.hash.clone();
+        state.disk_size = result.size;
+        state.mtime_ms = result.mtime_ms;
+        state.format = format.clone();
+        Ok(SaveResult {
+            hash: result.hash,
+            size: result.size,
+            mtime_ms: result.mtime_ms,
+            doc_token: String::new(),
+            generation: paths.generation,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn write_with_format(
         record: &DocumentRecord,
@@ -67,10 +161,9 @@ impl AtomicWriter {
         locks: Option<&FileLockStore>,
         force_history: bool,
     ) -> Result<SaveResult, AppError> {
-        // Global lock order: path FileLock -> registry map (already resolved by
-        // the caller) -> DocState -> HistoryStore internal mutex.
+        let paths = record.paths()?;
         let _lock: Option<FileLockGuard> = locks
-            .map(|store| store.acquire(&record.canonical_target))
+            .map(|store| store.acquire(&paths.canonical_target))
             .transpose()?;
         let mut state = record.lock_state()?;
 
@@ -81,7 +174,7 @@ impl AtomicWriter {
             ));
         }
 
-        let current = read_current(record)?;
+        let current = read_current(record, &paths)?;
         if current.hash != state.base_hash {
             let confirmed = expected_current_hash.is_some_and(|expected| expected == current.hash);
             if !confirmed {
@@ -105,12 +198,15 @@ impl AtomicWriter {
                 hash: current.hash,
                 size: current.size,
                 mtime_ms: current.mtime_ms,
+                doc_token: String::new(),
+                generation: paths.generation,
             });
         }
 
         if let Some(history) = history {
-            if let Err(error) = history.capture(
-                &record.canonical_target,
+            if let Err(error) = history.capture_for(
+                record.document_id().as_ref(),
+                &paths.canonical_target,
                 &current.bytes,
                 &current.hash,
                 force_history,
@@ -120,12 +216,33 @@ impl AtomicWriter {
             }
         }
 
-        let result = write_formatted(&record.canonical_target, &format, text_lf)?;
-        state.base_hash = result.hash.clone();
+        let result = {
+            let expected = ExpectedTarget::Existing {
+                identity: current.identity.clone(),
+                hash: current.hash.clone(),
+                size: current.size,
+                mtime_ms: current.mtime_ms,
+            };
+            write_formatted(
+                &paths.canonical_target,
+                &format,
+                text_lf,
+                &expected,
+                paths.parent_identity.as_ref(),
+            )?
+        };
+        let save_result = SaveResult {
+            hash: result.hash.clone(),
+            size: result.size,
+            mtime_ms: result.mtime_ms,
+            doc_token: String::new(),
+            generation: paths.generation,
+        };
+        state.base_hash = result.hash;
         state.disk_size = result.size;
         state.mtime_ms = result.mtime_ms;
         state.format = format;
-        Ok(result)
+        Ok(save_result)
     }
 }
 
@@ -133,101 +250,255 @@ impl AtomicWriter {
 ///
 /// The save-as path calls this after the native dialog has already confirmed
 /// the target. It shares validation/encoding with the normal document save, so
-/// a new file cannot bypass the LF/NUL/10MiB rules.
+/// a new file cannot bypass the LF/NUL/16MiB rules.
 pub(crate) fn write_formatted(
     path: &Path,
     format: &TextFormat,
     text_lf: &str,
-) -> Result<SaveResult, AppError> {
+    expected: &ExpectedTarget,
+    expected_parent: Option<&FileIdentity>,
+) -> Result<WriteOutcome, AppError> {
     validate_text(text_lf)?;
     if encoded_len(format, text_lf)? > MAX_WRITE_BYTES {
         return Err(file_too_large());
     }
     let encoded = encode(format, text_lf)?;
+    let parent = path.parent().ok_or_else(|| {
+        AppError::new(
+            AppErrorCode::InvalidPath,
+            "document has no parent directory",
+        )
+    })?;
+    let parent_before = observe_path(parent)?;
+    if let Some(expected_parent) = expected_parent {
+        if !matches!(&parent_before, FileObservation::Present(actual) if same_identity(expected_parent, actual))
+        {
+            return Err(AppError::new(
+                AppErrorCode::Conflict,
+                "parent directory changed before saving",
+            ));
+        }
+    }
 
-    let mut file = AtomicWriteFile::options()
+    let target_before = observe_target(path)?;
+    check_expected_target(&target_before, expected, path, expected_parent)?;
+
+    let mut atomic = AtomicWriteFile::options()
         .open(path)
         .map_err(|error| AppError::from_io(&error))?;
-    file.write_all(&encoded)
-        .map_err(|error| AppError::from_io(&error))?;
-    fault_injection_after_temp();
-    file.commit().map_err(|error| AppError::from_io(&error))?;
 
-    let size = encoded.len() as u64;
-    let mtime_ms = std::fs::metadata(path)
-        .map(|metadata| mtime_ms(&metadata))
-        .unwrap_or(0);
-
-    Ok(SaveResult {
-        hash: blake3::hash(&encoded).to_hex().to_string(),
-        size,
-        mtime_ms,
-    })
-}
-
-fn read_current(record: &DocumentRecord) -> Result<CurrentDisk, AppError> {
-    // See FileService::read: classify directories before opening them so the
-    // same NOT_A_FILE contract holds on Windows.
-    let path_metadata = std::fs::metadata(&record.canonical_target).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            AppError::new(
-                AppErrorCode::NotFound,
-                format!("file not found: {}", record.canonical_target.display()),
-            )
-        } else {
-            AppError::from_io(&error)
+    #[cfg(unix)]
+    if let Some(expected_parent) = expected_parent {
+        let directory_identity = atomic_directory_identity(&atomic)?;
+        match directory_identity {
+            Some(actual) if same_identity(expected_parent, &actual) => {}
+            _ => {
+                return Err(AppError::new(
+                    AppErrorCode::Conflict,
+                    "parent directory changed before saving",
+                ))
+            }
         }
-    })?;
-    if !path_metadata.is_file() {
+    }
+
+    let target_after_open = observe_target(path)?;
+    if target_changed(&target_before, &target_after_open, expected) {
         return Err(AppError::new(
-            AppErrorCode::NotAFile,
-            format!("not a regular file: {}", record.canonical_target.display()),
+            AppErrorCode::Conflict,
+            "file changed while saving",
         ));
     }
 
-    let mut file = File::open(&record.canonical_target).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            AppError::new(
-                AppErrorCode::NotFound,
-                format!("file not found: {}", record.canonical_target.display()),
-            )
-        } else {
-            AppError::from_io(&error)
-        }
-    })?;
+    atomic
+        .write_all(&encoded)
+        .map_err(|error| AppError::from_io(&error))?;
+    fault_injection_after_temp();
 
+    let temp_metadata = atomic
+        .as_file()
+        .metadata()
+        .map_err(|error| AppError::from_io(&error))?;
+    let temp_identity = identity_from_handle(atomic.as_file())?;
+    let temp_mtime_ms = mtime_ms(&temp_metadata);
+    atomic
+        .as_file()
+        .sync_all()
+        .map_err(|error| AppError::from_io(&error))?;
+
+    #[cfg(unix)]
+    if let Some(expected_parent) = expected_parent {
+        let directory_identity = atomic_directory_identity(&atomic)?;
+        match directory_identity {
+            Some(actual) if same_identity(expected_parent, &actual) => {}
+            _ => {
+                return Err(AppError::new(
+                    AppErrorCode::Conflict,
+                    "parent directory changed before commit",
+                ))
+            }
+        }
+    }
+    let target_before_commit = observe_target(path)?;
+    if target_changed(&target_before, &target_before_commit, expected)
+        || !crate::services::file_identity::same_observation(
+            &target_after_open,
+            &target_before_commit,
+        )
+    {
+        return Err(AppError::new(
+            AppErrorCode::Conflict,
+            "file changed before commit",
+        ));
+    }
+
+    match atomic.commit() {
+        Ok(()) => Ok(WriteOutcome {
+            hash: blake3::hash(&encoded).to_hex().to_string(),
+            size: encoded.len() as u64,
+            mtime_ms: temp_mtime_ms,
+            identity: temp_identity,
+        }),
+        Err(error) => {
+            // The commit may have succeeded and only the durability barrier
+            // failed. Re-read before reporting failure so a committed file is
+            // never reported as a failed save.
+            match FileService::read_raw(path, MAX_DOCUMENT_BYTES, expected_parent) {
+                Ok(raw) if raw.hash == blake3::hash(&encoded).to_hex().to_string() => {
+                    tracing::warn!(%error, "commit reported an error after the file was written");
+                    Ok(WriteOutcome {
+                        hash: raw.hash,
+                        size: raw.size,
+                        mtime_ms: raw.mtime_ms,
+                        identity: temp_identity,
+                    })
+                }
+                _ => Err(AppError::from_io(&error)),
+            }
+        }
+    }
+}
+
+fn observe_target(path: &Path) -> Result<FileObservation, AppError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(AppError::new(
+            AppErrorCode::InvalidPath,
+            format!("symbolic links are not accepted: {}", path.display()),
+        )),
+        Ok(metadata) if !metadata.is_file() => Err(AppError::new(
+            AppErrorCode::NotAFile,
+            format!("not a regular file: {}", path.display()),
+        )),
+        Ok(_) => observe_path(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(FileObservation::Absent),
+        Err(error) => Err(AppError::from_io(&error)),
+    }
+}
+
+fn check_expected_target(
+    target_before: &FileObservation,
+    expected: &ExpectedTarget,
+    path: &Path,
+    expected_parent: Option<&FileIdentity>,
+) -> Result<(), AppError> {
+    match expected {
+        ExpectedTarget::Existing {
+            identity,
+            hash,
+            size,
+            ..
+        } => {
+            if target_before.is_absent() {
+                return Err(AppError::new(
+                    AppErrorCode::Conflict,
+                    "the document was deleted before saving; refusing to recreate it",
+                ));
+            }
+            if let Some(expected_identity) = identity {
+                let matches = matches!(
+                    target_before,
+                    FileObservation::Present(actual)
+                        if same_identity(expected_identity, actual)
+                );
+                if !matches && matches!(target_before, FileObservation::Present(_)) {
+                    return Err(AppError::new(
+                        AppErrorCode::Conflict,
+                        "a different file appeared at the document path",
+                    ));
+                }
+            }
+            let raw = FileService::read_raw(path, MAX_DOCUMENT_BYTES, expected_parent)?;
+            if raw.hash != *hash || raw.size != *size {
+                return Err(AppError::new(
+                    AppErrorCode::Conflict,
+                    "file changed before saving",
+                ));
+            }
+            Ok(())
+        }
+        ExpectedTarget::Absent => {
+            if !target_before.is_absent() {
+                return Err(AppError::new(
+                    AppErrorCode::Conflict,
+                    "a file appeared at the save-as target",
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
+fn target_changed(
+    before: &FileObservation,
+    after: &FileObservation,
+    expected: &ExpectedTarget,
+) -> bool {
+    match expected {
+        ExpectedTarget::Existing {
+            identity: Some(identity),
+            ..
+        } => !matches!(
+            after,
+            FileObservation::Present(actual) if same_identity(identity, actual)
+        ),
+        ExpectedTarget::Existing { identity: None, .. } => {
+            std::mem::discriminant(before) != std::mem::discriminant(after)
+        }
+        ExpectedTarget::Absent => !after.is_absent(),
+    }
+}
+
+#[cfg(unix)]
+fn atomic_directory_identity(atomic: &AtomicWriteFile) -> Result<Option<FileIdentity>, AppError> {
+    use std::os::fd::AsFd;
+
+    let Some(directory) = atomic.directory() else {
+        return Ok(None);
+    };
+    let owned = directory
+        .as_fd()
+        .try_clone_to_owned()
+        .map_err(|error| AppError::from_io(&error))?;
+    let file = File::from(owned);
     let metadata = file.metadata().map_err(|error| AppError::from_io(&error))?;
-    // A file that grew past the write ceiling cannot be the base of a save.
-    // Check the size before reading so a multi-gigabyte external append does
-    // not occupy the path lock while it is hashed.
-    if metadata.len() > MAX_WRITE_BYTES {
-        return Err(file_too_large());
-    }
+    Ok(identity_from_metadata(&metadata))
+}
 
-    let mut hasher = blake3::Hasher::new();
-    let mut size = 0u64;
-    let mut bytes = Vec::with_capacity(metadata.len().min(MAX_WRITE_BYTES) as usize);
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|error| AppError::from_io(&error))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-        bytes.extend_from_slice(&buffer[..read]);
-        size += read as u64;
-        if size > MAX_WRITE_BYTES {
-            return Err(file_too_large());
-        }
-    }
-
+fn read_current(
+    record: &DocumentRecord,
+    paths: &crate::state::document_registry::DocumentPaths,
+) -> Result<CurrentDisk, AppError> {
+    let raw = FileService::read_raw(
+        &paths.canonical_target,
+        MAX_DOCUMENT_BYTES,
+        paths.parent_identity.as_ref(),
+    )?;
+    let _ = record;
     Ok(CurrentDisk {
-        hash: hasher.finalize().to_hex().to_string(),
-        size,
-        mtime_ms: mtime_ms(&metadata),
-        bytes,
+        hash: raw.hash,
+        size: raw.size,
+        mtime_ms: raw.mtime_ms,
+        bytes: raw.bytes,
+        identity: raw.identity,
     })
 }
 
@@ -365,6 +636,7 @@ fn fault_injection_after_temp() {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn restores_each_line_ending_at_the_string_level() {
@@ -443,5 +715,92 @@ mod tests {
                 .code,
             AppErrorCode::UnsupportedEncoding
         );
+    }
+
+    fn format() -> TextFormat {
+        TextFormat {
+            encoding: TextEncoding::Utf8,
+            has_bom: false,
+            eol: LineEnding::Lf,
+        }
+    }
+
+    #[test]
+    fn absent_expected_refuses_an_existing_target() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("a.md");
+        fs::write(&path, "old").expect("fixture");
+        let error = write_formatted(&path, &format(), "new", &ExpectedTarget::Absent, None)
+            .expect_err("existing target must conflict");
+        assert_eq!(error.code, AppErrorCode::Conflict);
+        assert_eq!(fs::read_to_string(&path).expect("read"), "old");
+    }
+
+    #[test]
+    fn existing_expected_refuses_a_missing_target() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("a.md");
+        fs::write(&path, "old").expect("fixture");
+        let raw = FileService::read_raw(&path, MAX_DOCUMENT_BYTES, None).expect("read");
+        fs::remove_file(&path).expect("remove");
+        let expected = ExpectedTarget::Existing {
+            identity: raw.identity,
+            hash: raw.hash,
+            size: raw.size,
+            mtime_ms: raw.mtime_ms,
+        };
+        let error = write_formatted(&path, &format(), "new", &expected, None)
+            .expect_err("missing target must conflict");
+        assert_eq!(error.code, AppErrorCode::Conflict);
+        assert!(!path.exists(), "a missing document must not be recreated");
+    }
+
+    #[test]
+    fn existing_hash_mismatch_is_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("a.md");
+        fs::write(&path, "old").expect("fixture");
+        let raw = FileService::read_raw(&path, MAX_DOCUMENT_BYTES, None).expect("read");
+        let expected = ExpectedTarget::Existing {
+            identity: raw.identity,
+            hash: "not-the-current-hash".to_string(),
+            size: raw.size,
+            mtime_ms: raw.mtime_ms,
+        };
+        let error = write_formatted(&path, &format(), "new", &expected, None)
+            .expect_err("hash mismatch must conflict");
+        assert_eq!(error.code, AppErrorCode::Conflict);
+        assert_eq!(fs::read_to_string(&path).expect("read"), "old");
+    }
+
+    #[test]
+    fn expected_parent_identity_mismatch_is_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let other = tempfile::tempdir().expect("other");
+        let path = dir.path().join("a.md");
+        fs::write(&path, "old").expect("fixture");
+        let other_identity = crate::services::file_identity::file_identity(other.path())
+            .expect("identity")
+            .expect("supported");
+        let error = write_formatted(
+            &path,
+            &format(),
+            "new",
+            &ExpectedTarget::Absent,
+            Some(&other_identity),
+        )
+        .expect_err("parent mismatch must conflict");
+        assert_eq!(error.code, AppErrorCode::Conflict);
+        assert_eq!(fs::read_to_string(&path).expect("read"), "old");
+    }
+
+    #[test]
+    fn absent_expected_creates_a_new_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("new.md");
+        let outcome = write_formatted(&path, &format(), "new", &ExpectedTarget::Absent, None)
+            .expect("create");
+        assert_eq!(outcome.size, 3);
+        assert_eq!(fs::read_to_string(&path).expect("read"), "new");
     }
 }

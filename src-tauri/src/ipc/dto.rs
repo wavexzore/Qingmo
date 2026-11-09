@@ -74,6 +74,11 @@ pub struct SaveResult {
     pub hash: String,
     pub size: u64,
     pub mtime_ms: i64,
+    /// Token the write was issued for. The webview discards a result whose
+    /// token is no longer the session's current token (Save As / switch).
+    pub doc_token: String,
+    /// Path generation observed when the write was committed.
+    pub generation: u64,
 }
 
 /// One open workspace as seen by its owning window.
@@ -160,6 +165,16 @@ pub struct DocumentChangedPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub current_mtime_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentRelocatedPayload {
+    pub doc_token: String,
+    /// Canonical path of the document after the rename.
+    pub path: String,
+    /// File name for the native title and the workspace tree row.
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -685,7 +700,7 @@ impl DraftRecord {
 }
 
 pub const DRAFT_SCHEMA_VERSION: u32 = 1;
-pub const VIEW_STATE_SCHEMA_VERSION: u32 = 1;
+pub const VIEW_STATE_SCHEMA_VERSION: u32 = 2;
 
 /// Debug/build metadata attached to one history snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -835,5 +850,7 @@ pub struct WindowIntent {
     pub bounds: WindowBounds,
     pub workspace_root: Option<String>,
     pub document_path: Option<String>,
+    #[serde(default)]
+    pub document_id: Option<String>,
     pub untitled: bool,
 }

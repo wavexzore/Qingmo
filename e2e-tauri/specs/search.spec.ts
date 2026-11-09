@@ -23,6 +23,18 @@ async function searchUntilResult(token: string): Promise<void> {
   );
 }
 
+async function openResult(fileName: string, expectedText: string): Promise<void> {
+  const option = await $(`//li[@role="option"]//*[contains(text(),"${fileName}")]`);
+  await option.click();
+  // Opening from the dock is asynchronous. Wait for text that only exists in
+  // the target document, otherwise a follow-up edit can race the session swap
+  // and land in the view that is about to be replaced.
+  await browser.waitUntil(
+    async () => (await (await $(".cm-content")).getText()).includes(expectedText),
+    { timeout: 10_000, timeoutMsg: `the search result did not open ${fileName}` },
+  );
+}
+
 describe("real Tauri workspace search", () => {
   before(async () => {
     await resetFixture();
@@ -30,17 +42,18 @@ describe("real Tauri workspace search", () => {
 
   it("searches the open workspace and opens the matching file", async () => {
     await openSearchPanel();
-    await searchUntilResult("base");
+    await searchUntilResult("Image");
 
-    const option = await $('//li[@role="option"]//*[contains(text(),"note.md")]');
-    await option.click();
-    await browser.waitUntil(
-      async () => (await (await $(".cm-content")).getText()).includes("base"),
-      { timeout: 10_000, timeoutMsg: "the search result did not open note.md" },
-    );
+    await openResult("image.md", "Image");
   });
 
   it("reindexes a saved edit and finds the new token", async () => {
+    // The previous test switched to image.md, so opening note.md here is
+    // observable and guarantees the adoption finished before typing.
+    await openSearchPanel();
+    await searchUntilResult("base");
+    await openResult("note.md", "base");
+
     const line = await $('//*[contains(@class,"cm-line") and contains(.,"base")]');
     await line.click();
     await browser.keys([
@@ -68,7 +81,5 @@ describe("real Tauri workspace search", () => {
 
     await openSearchPanel();
     await searchUntilResult("searchneedle");
-    const option = await $('//li[@role="option"]//*[contains(text(),"note.md")]');
-    await option.click();
   });
 });

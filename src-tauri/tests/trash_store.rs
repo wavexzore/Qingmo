@@ -197,3 +197,192 @@ fn a_trash_entry_cannot_be_restored_into_another_workspace() {
         .expect_err("cross-workspace restore");
     assert_eq!(error.code, AppErrorCode::NotFound);
 }
+
+#[test]
+fn restore_rejects_a_tampered_payload_even_on_the_same_volume() {
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    let source = root.join("note.md");
+    fs::write(&source, "body").expect("fixture");
+    let store = TrashStore::open(dir.path().join("trash")).expect("store");
+    let entry = store
+        .delete(&root, &source, None, |_| false)
+        .expect("delete");
+
+    let payload = dir
+        .path()
+        .join("trash")
+        .join(workspace_key(&root))
+        .join(&entry.id)
+        .join("payload");
+    fs::write(&payload, "evil").expect("tamper");
+
+    let error = store
+        .restore(&root, &entry.id, TrashRestoreMode::Original, None, |_| {
+            false
+        })
+        .expect_err("a tampered payload must be refused");
+    assert_eq!(error.code, AppErrorCode::Conflict);
+    assert!(!source.exists(), "the destination must not be created");
+    assert!(payload.exists(), "the payload must be kept for inspection");
+}
+
+#[test]
+fn restore_refuses_dotdot_and_a_symlink_parent() {
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    let trash_dir = dir.path().join("trash");
+    let store = TrashStore::open(trash_dir.clone()).expect("store");
+
+    let id = uuid::Uuid::new_v4().to_string();
+    write_entry(
+        &trash_dir,
+        &id,
+        b"body",
+        entry_json(&id, &root, "../escaped.md", "active", 0),
+    );
+    let error = store
+        .restore(&root, &id, TrashRestoreMode::Original, None, |_| false)
+        .expect_err("dotdot must be rejected");
+    assert!(matches!(
+        error.code,
+        AppErrorCode::InvalidPath | AppErrorCode::OutsideScope
+    ));
+    assert!(!root.parent().unwrap().join("escaped.md").exists());
+
+    let outside = TempDir::new().expect("outside");
+    let outside_root = canonical(&outside);
+    fs::write(outside_root.join("target.md"), "secret").expect("outside target");
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&outside_root, root.join("linked")).expect("parent link");
+        let link_id = uuid::Uuid::new_v4().to_string();
+        write_entry(
+            &trash_dir,
+            &link_id,
+            b"body",
+            entry_json(&link_id, &root, "linked/note.md", "active", 0),
+        );
+        let error = store
+            .restore(&root, &link_id, TrashRestoreMode::Original, None, |_| false)
+            .expect_err("a symlinked parent must be rejected");
+        assert_eq!(error.code, AppErrorCode::OutsideScope);
+        assert!(!outside_root.join("note.md").exists());
+    }
+}
+
+#[test]
+fn gc_without_trusted_roots_keeps_a_pending_entry_until_its_workspace_opens() {
+    let workspace = TempDir::new().expect("workspace");
+    let root = canonical(&workspace);
+    let trash_dir = workspace.path().join("trash");
+    let store = TrashStore::open(trash_dir.clone()).expect("store");
+    let id = uuid::Uuid::new_v4().to_string();
+    let entry_dir = write_entry(
+        &trash_dir,
+        &id,
+        b"body",
+        entry_json(&id, &root, "pending.md", "pending", 0),
+    );
+
+    let report = store.gc(&[], None);
+    assert_eq!(report.recovered, 0);
+    assert!(
+        entry_dir.exists(),
+        "roots=[] must not expire a pending entry"
+    );
+    assert!(!root.join("pending.md").exists());
+
+    let report = store.recover_for_root(&root, None);
+    assert_eq!(report.recovered, 1);
+    assert!(!entry_dir.exists());
+    assert_eq!(
+        fs::read_to_string(root.join("pending.md")).expect("recovered"),
+        "body"
+    );
+}
+
+#[test]
+fn recover_for_root_ignores_an_entry_from_another_workspace() {
+    let first = TempDir::new().expect("first");
+    let second = TempDir::new().expect("second");
+    let first_root = canonical(&first);
+    let second_root = canonical(&second);
+    let trash_dir = first.path().join("trash");
+    let store = TrashStore::open(trash_dir.clone()).expect("store");
+    let id = uuid::Uuid::new_v4().to_string();
+    write_entry(
+        &trash_dir,
+        &id,
+        b"body",
+        entry_json(&id, &second_root, "other.md", "pending", 0),
+    );
+
+    let report = store.recover_for_root(&first_root, None);
+    assert_eq!(report.recovered, 0);
+    assert!(!second_root.join("other.md").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_delete_moves_the_link_and_restore_recreates_it() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    let target = root.join("target.md");
+    fs::write(&target, "target body").expect("target");
+    let link = root.join("link.md");
+    symlink("target.md", &link).expect("symlink");
+    let store = TrashStore::open(dir.path().join("trash")).expect("store");
+
+    let entry = store
+        .delete(&root, &link, None, |_| false)
+        .expect("delete link");
+    assert!(!link.exists(), "the link itself must move");
+    assert_eq!(
+        fs::read_to_string(&target).expect("target"),
+        "target body",
+        "deleting a link must never touch its target"
+    );
+    assert!(target.exists());
+
+    let restored = store
+        .restore(&root, &entry.id, TrashRestoreMode::Original, None, |_| {
+            false
+        })
+        .expect("restore link");
+    assert_eq!(restored.relative_path, "link.md");
+    assert_eq!(
+        fs::read_link(&link).expect("link"),
+        PathBuf::from("target.md")
+    );
+    assert_eq!(
+        fs::read_to_string(&link).expect("read through link"),
+        "target body"
+    );
+}
+
+#[test]
+fn deleting_and_restoring_a_large_file_streams_without_a_size_limit() {
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    let source = root.join("large.md");
+    let body = vec![b'x'; 4 * 1024 * 1024];
+    fs::write(&source, &body).expect("fixture");
+    let store = TrashStore::open(dir.path().join("trash")).expect("store");
+
+    let entry = store
+        .delete(&root, &source, None, |_| false)
+        .expect("delete");
+    assert_eq!(entry.size_bytes, body.len() as u64);
+    store
+        .restore(&root, &entry.id, TrashRestoreMode::Original, None, |_| {
+            false
+        })
+        .expect("restore");
+    assert_eq!(
+        fs::metadata(&source).expect("restored").len(),
+        body.len() as u64
+    );
+}

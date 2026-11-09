@@ -559,6 +559,17 @@ export function useWorkspaceNavigation(
     void reveal(docToken);
   }, [docToken, reveal, workspace]);
 
+  useEffect(() => {
+    if (!workspace || !docToken || docToken === UNTITLED_DOC_TOKEN) {
+      return;
+    }
+    return ipc.onDocumentRelocated((relocated) => {
+      if (relocated.docToken === docToken) {
+        void reveal(docToken);
+      }
+    });
+  }, [docToken, ipc, reveal, workspace]);
+
   const rows = flattenWorkspaceRows(state);
 
   return {

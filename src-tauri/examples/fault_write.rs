@@ -20,6 +20,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let record = registry.get(&payload.doc_token)?;
 
     AtomicWriter::write(&record, "new-content\n", None)?;
-    println!("committed {}", record.canonical_target.display());
+    println!("committed {}", record.canonical_target()?.display());
     Ok(())
 }

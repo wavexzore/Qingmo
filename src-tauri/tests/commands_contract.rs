@@ -64,6 +64,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
             "app://update-flush-request",
             "app://menu-action",
             "app://document-changed",
+            "app://document-relocated",
             "app://document-new-failed",
             "app://workspace-changed",
             "app://workspace-index-status"
@@ -348,6 +349,25 @@ fn invoke_handler_registers_every_contract_command() {
         .build()
         .expect("mock webview must build");
 
+    // View-state authorization is workspace-scoped: the native window may
+    // only read/write keys inside a workspace it currently owns.
+    let view_root = tempfile::tempdir().expect("view root must be creatable");
+    let canonical_root = fs::canonicalize(view_root.path()).expect("canonical view root");
+    let (workspace_token, _) = app
+        .state::<qingmo_lib::state::WorkspaceRegistry>()
+        .open_canonical(canonical_root.clone());
+    app.state::<qingmo_lib::state::WindowSessions>()
+        .set_workspace("main", workspace_token, 0)
+        .expect("workspace authorization must succeed");
+    let absent_path = canonical_root
+        .join("absent.md")
+        .to_string_lossy()
+        .into_owned();
+    let note_path = canonical_root
+        .join("note.md")
+        .to_string_lossy()
+        .into_owned();
+
     // `document_open` is registered but cannot be invoked here: it opens a
     // native dialog. Registration is asserted from the single handler source.
     let handler_source = read_text("src/commands/mod.rs");
@@ -506,7 +526,7 @@ fn invoke_handler_registers_every_contract_command() {
     let absent = invoke(
         &webview,
         "session_view_state_get",
-        json!({"path": "/docs/absent.md"}),
+        json!({"path": absent_path}),
     )
     .expect("an unknown view key must resolve to null");
     assert_eq!(absent, Value::Null);
@@ -515,7 +535,7 @@ fn invoke_handler_registers_every_contract_command() {
         &webview,
         "session_view_state_set",
         json!({
-            "path": "/docs/note.md",
+            "path": note_path,
             "state": {
                 "anchor": -4,
                 "head": 12,
@@ -530,7 +550,7 @@ fn invoke_handler_registers_every_contract_command() {
     let restored = invoke(
         &webview,
         "session_view_state_get",
-        json!({"path": "/docs/note.md"}),
+        json!({"path": note_path}),
     )
     .expect("view state reads must succeed");
     assert_eq!(

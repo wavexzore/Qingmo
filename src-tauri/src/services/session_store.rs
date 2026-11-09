@@ -31,6 +31,10 @@ use crate::ipc::dto::{
     DraftKind, DraftMeta, DraftRecord, DraftWriteRequest, EditorViewState, EditorViewStateInput,
     WindowIntent, DRAFT_SCHEMA_VERSION, VIEW_STATE_SCHEMA_VERSION,
 };
+use crate::services::document_identity::{
+    DocumentId, DocumentIdentityStore, IdentityStatus, LiveDocuments,
+};
+use crate::services::file_identity::{observe_path, FileObservation};
 
 pub const VIEW_STATE_FILE: &str = "view-state.json";
 pub const WINDOWS_FILE: &str = "windows.json";
@@ -60,6 +64,8 @@ const CORRUPT_SUFFIX: &str = ".corrupt-";
 struct ViewStateFile {
     schema_version: u32,
     entries: BTreeMap<String, EditorViewState>,
+    #[serde(default)]
+    legacy: BTreeMap<String, EditorViewState>,
 }
 
 impl Default for ViewStateFile {
@@ -67,6 +73,7 @@ impl Default for ViewStateFile {
         Self {
             schema_version: VIEW_STATE_SCHEMA_VERSION,
             entries: BTreeMap::new(),
+            legacy: BTreeMap::new(),
         }
     }
 }
@@ -102,6 +109,7 @@ struct SessionStoreInner {
     root: PathBuf,
     ready: bool,
     state: Mutex<StoreState>,
+    identity: Mutex<Option<DocumentIdentityStore>>,
 }
 
 /// Shared handle to the session store. Cloning is cheap and required before
@@ -128,6 +136,7 @@ impl SessionStore {
                 root,
                 ready: true,
                 state: Mutex::new(StoreState { view }),
+                identity: Mutex::new(None),
             }),
         })
     }
@@ -140,6 +149,7 @@ impl SessionStore {
                 root: PathBuf::new(),
                 ready: false,
                 state: Mutex::new(StoreState::default()),
+                identity: Mutex::new(None),
             }),
         }
     }
@@ -160,18 +170,47 @@ impl SessionStore {
         self.gc_locked(&mut state, now)
     }
 
+    /// Legacy read keyed only by path. New callers use [`Self::view_get_for`].
     pub fn view_get(&self, path: &str) -> Option<EditorViewState> {
+        self.view_get_for(path, None)
+    }
+
+    pub fn view_get_for(
+        &self,
+        path: &str,
+        document_id: Option<&DocumentId>,
+    ) -> Option<EditorViewState> {
         if !self.inner.ready || validate_view_key(path).is_err() {
             return None;
         }
         let state = self.lock().ok()?;
-        state.view.entries.get(path).cloned()
+        if let Some(id) = document_id {
+            if let Some(entry) = state.view.entries.get(&id.to_string()) {
+                return Some(entry.clone());
+            }
+        }
+        state
+            .view
+            .legacy
+            .get(path)
+            .or_else(|| state.view.entries.get(path))
+            .cloned()
     }
 
-    /// Read-modify-write of the view file. The in-memory copy is replaced only
-    /// after the atomic write succeeds, so a failed write cannot fork memory
-    /// from disk.
+    /// Legacy write keyed only by path. New callers use [`Self::view_set_for`].
     pub fn view_set(&self, path: &str, input: EditorViewStateInput) -> Result<(), AppError> {
+        self.view_set_for(path, None, input)
+    }
+
+    /// Read-modify-write of the view file. With a live `DocumentId` the entry
+    /// is written under the id and mirrored under the path for v1 readers and
+    /// rollback.
+    pub fn view_set_for(
+        &self,
+        path: &str,
+        document_id: Option<&DocumentId>,
+        input: EditorViewStateInput,
+    ) -> Result<(), AppError> {
         validate_view_key(path)?;
         if !self.inner.ready {
             return Err(unavailable());
@@ -181,10 +220,89 @@ impl SessionStore {
         let now = now_ms();
         let entry = clamp_view(input, now);
         let mut next = state.view.clone();
-        next.entries.insert(path.to_string(), entry);
+        match document_id {
+            Some(id) => {
+                next.entries.insert(id.to_string(), entry.clone());
+                next.legacy.insert(path.to_string(), entry);
+            }
+            None => {
+                next.legacy.insert(path.to_string(), entry);
+            }
+        }
         prune_view(&mut next, now);
         let bytes = fit_view_file(&mut next)?;
 
+        write_private_atomic(&self.inner.root.join(VIEW_STATE_FILE), &bytes)?;
+        state.view = next;
+        Ok(())
+    }
+
+    /// Installs the identity store and migrates v1 path keys to DocumentId
+    /// entries. Degraded stores keep `legacy` untouched and remain readable.
+    pub fn configure_identity(&self, identity: Option<DocumentIdentityStore>) {
+        let enabled = identity
+            .as_ref()
+            .is_some_and(|store| store.status() == IdentityStatus::Enabled);
+        if let Ok(mut guard) = self.inner.identity.lock() {
+            *guard = identity.clone();
+        }
+        if !enabled || !self.inner.ready {
+            return;
+        }
+        let Ok(mut state) = self.lock() else {
+            return;
+        };
+        let Some(store) = identity else {
+            return;
+        };
+        let paths: Vec<String> = state.view.legacy.keys().cloned().collect();
+        let mut items = Vec::new();
+        for path in &paths {
+            let Ok(observation) = observe_path(Path::new(path)) else {
+                continue;
+            };
+            if matches!(observation, FileObservation::Absent) {
+                continue;
+            }
+            items.push((PathBuf::from(path), observation));
+        }
+        if items.is_empty() {
+            return;
+        }
+        if let Ok(ids) = store.resolve_open_batch(&items, &LiveDocuments::default()) {
+            let mut next = state.view.clone();
+            for ((path, _), id) in items.iter().zip(ids) {
+                if let Some(entry) = next.legacy.get(&path.to_string_lossy().into_owned()) {
+                    next.entries.insert(id.to_string(), entry.clone());
+                }
+            }
+            if let Ok(bytes) = fit_view_file(&mut next) {
+                if write_private_atomic(&self.inner.root.join(VIEW_STATE_FILE), &bytes).is_ok() {
+                    state.view = next;
+                }
+            }
+        }
+    }
+
+    /// Moves the legacy path entry to the id key (dual-write is kept).
+    pub fn view_adopt(&self, id: &DocumentId, path: &str) -> Result<(), AppError> {
+        if !self.inner.ready {
+            return Err(unavailable());
+        }
+        validate_view_key(path)?;
+        let mut state = self.lock()?;
+        let Some(entry) = state
+            .view
+            .legacy
+            .get(path)
+            .or_else(|| state.view.entries.get(path))
+            .cloned()
+        else {
+            return Ok(());
+        };
+        let mut next = state.view.clone();
+        next.entries.insert(id.to_string(), entry);
+        let bytes = fit_view_file(&mut next)?;
         write_private_atomic(&self.inner.root.join(VIEW_STATE_FILE), &bytes)?;
         state.view = next;
         Ok(())
@@ -389,9 +507,9 @@ impl SessionStore {
 
     /// Runs GC with the lock already held. Never calls `lock()` itself.
     fn gc_locked(&self, state: &mut StoreState, now: i64) -> GcReport {
-        let before = state.view.entries.len();
+        let before = state.view.entries.len() + state.view.legacy.len();
         prune_view(&mut state.view, now);
-        let view_entries_removed = before - state.view.entries.len();
+        let view_entries_removed = before - (state.view.entries.len() + state.view.legacy.len());
         if view_entries_removed > 0 {
             // Best effort: a failed view rewrite must not block draft writes.
             if let Ok(bytes) = fit_view_file(&mut state.view.clone()) {
@@ -702,18 +820,30 @@ fn prune_view(view: &mut ViewStateFile, now: i64) {
     view.schema_version = VIEW_STATE_SCHEMA_VERSION;
     view.entries
         .retain(|_, entry| now.saturating_sub(entry.updated_at_ms) <= VIEW_TTL_MS);
-    if view.entries.len() <= MAX_VIEW_ENTRIES {
+    view.legacy
+        .retain(|_, entry| now.saturating_sub(entry.updated_at_ms) <= VIEW_TTL_MS);
+    let total = view.entries.len() + view.legacy.len();
+    if total <= MAX_VIEW_ENTRIES {
         return;
     }
-    let mut keys: Vec<(i64, String)> = view
+    let mut keys: Vec<(i64, bool, String)> = view
         .entries
         .iter()
-        .map(|(key, entry)| (entry.updated_at_ms, key.clone()))
+        .map(|(key, entry)| (entry.updated_at_ms, true, key.clone()))
+        .chain(
+            view.legacy
+                .iter()
+                .map(|(key, entry)| (entry.updated_at_ms, false, key.clone())),
+        )
         .collect();
     keys.sort();
-    let excess = view.entries.len() - MAX_VIEW_ENTRIES;
-    for (_, key) in keys.into_iter().take(excess) {
-        view.entries.remove(&key);
+    let excess = total - MAX_VIEW_ENTRIES;
+    for (_, is_entry, key) in keys.into_iter().take(excess) {
+        if is_entry {
+            view.entries.remove(&key);
+        } else {
+            view.legacy.remove(&key);
+        }
     }
 }
 
@@ -728,11 +858,20 @@ fn fit_view_file(view: &mut ViewStateFile) -> Result<Vec<u8>, AppError> {
         let oldest = view
             .entries
             .iter()
-            .min_by_key(|(_, entry)| entry.updated_at_ms)
-            .map(|(key, _)| key.clone());
+            .map(|(key, entry)| (entry.updated_at_ms, true, key.clone()))
+            .chain(
+                view.legacy
+                    .iter()
+                    .map(|(key, entry)| (entry.updated_at_ms, false, key.clone())),
+            )
+            .min();
         match oldest {
-            Some(key) => {
-                view.entries.remove(&key);
+            Some((_, is_entry, key)) => {
+                if is_entry {
+                    view.entries.remove(&key);
+                } else {
+                    view.legacy.remove(&key);
+                }
             }
             None => {
                 return Err(AppError::new(
@@ -756,10 +895,23 @@ fn load_view(root: &Path) -> ViewStateFile {
         backup_corrupt(root, &path);
         return ViewStateFile::default();
     }
-    match fs::read_to_string(&path)
+    let parsed = fs::read_to_string(&path)
         .ok()
-        .and_then(|text| serde_json::from_str::<ViewStateFile>(&text).ok())
-    {
+        .and_then(|text| serde_json::from_str::<ViewStateFile>(&text).ok());
+    match parsed {
+        Some(mut view) if view.schema_version == 1 => {
+            // Copy, never rename, the only v1 file. A crash after this point
+            // must leave both the backup and a readable v2 file.
+            let backup = root.join(format!("{VIEW_STATE_FILE}.v1-backup-{}", now_ms()));
+            let _ = fs::copy(&path, &backup);
+            let _ = set_file_private(&backup);
+            view.legacy.extend(std::mem::take(&mut view.entries));
+            view.schema_version = VIEW_STATE_SCHEMA_VERSION;
+            if let Ok(bytes) = serde_json::to_vec(&view) {
+                let _ = write_private_atomic(&path, &bytes);
+            }
+            view
+        }
         Some(view) if view.schema_version == VIEW_STATE_SCHEMA_VERSION => view,
         _ => {
             backup_corrupt(root, &path);

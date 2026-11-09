@@ -30,6 +30,7 @@ pub enum AppErrorCode {
     InvalidLocale,
     SearchTimeout,
     IndexDisabled,
+    IdentityDegraded,
 }
 
 /// The only error shape returned by the four P1 commands.

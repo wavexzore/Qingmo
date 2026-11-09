@@ -8,13 +8,16 @@ use notify_debouncer_full::notify::{Event, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{
     new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache,
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
-use crate::ipc::contract::EVENT_WORKSPACE_CHANGED;
+use crate::ipc::contract::{EVENT_DOCUMENT_RELOCATED, EVENT_WORKSPACE_CHANGED};
+use crate::ipc::dto::DocumentRelocatedPayload;
 use crate::services::search_index::SearchIndexService;
-use crate::services::workspace_service::is_ignored_relative_path;
+use crate::services::workspace_service::{
+    is_document_name, is_ignored_relative_path, is_indexable_current,
+};
 use crate::state::workspace_registry::WorkspaceRegistry;
-use crate::state::WindowSessions;
+use crate::state::{DocumentRegistry, WindowSessions};
 
 /// Debounce window for filesystem batches.
 pub const WORKSPACE_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -26,6 +29,9 @@ pub type EventHandler = Arc<dyn Fn(DebounceEventResult) + Send + Sync + 'static>
 /// Receives one empty `workspace-changed` event per affected window.
 pub trait WorkspaceEventSink: Send + Sync + 'static {
     fn emit(&self, label: &str);
+
+    /// One targeted `document-relocated` event for a rekeyed document.
+    fn relocated(&self, _label: &str, _payload: &DocumentRelocatedPayload) {}
 }
 
 /// Owns the platform watcher; dropping it stops watching.
@@ -110,6 +116,22 @@ impl<R: tauri::Runtime> WorkspaceEventSink for TauriEventSink<R> {
             tracing::debug!(%error, "failed to emit a workspace change");
         }
     }
+
+    fn relocated(&self, label: &str, payload: &DocumentRelocatedPayload) {
+        // The document moved; its asset scope and native title must follow
+        // before the webview updates its path.
+        if let Some(window) = self.app.get_webview_window(label) {
+            crate::commands::document::allow_document_assets(&self.app, Path::new(&payload.path));
+            if let Some(locale) = self.app.try_state::<crate::state::ShellLocale>() {
+                if let Some(labels) = locale.labels() {
+                    crate::apply_window_titles(&self.app, &labels);
+                }
+            }
+            if let Err(error) = window.emit_to(label, EVENT_DOCUMENT_RELOCATED, payload.clone()) {
+                tracing::debug!(%error, window = label, "failed to emit a document relocation");
+            }
+        }
+    }
 }
 
 struct RootWatch {
@@ -131,6 +153,7 @@ struct BuildContext {
     sessions: WindowSessions,
     registry: WorkspaceRegistry,
     index: Arc<RwLock<Option<SearchIndexService>>>,
+    documents: Arc<RwLock<Option<DocumentRegistry>>>,
     inner: Arc<Mutex<Inner>>,
 }
 
@@ -173,6 +196,7 @@ impl WorkspaceWatcher {
                 sessions,
                 registry,
                 index: Arc::new(RwLock::new(None)),
+                documents: Arc::new(RwLock::new(None)),
                 inner: Arc::new(Mutex::new(Inner::default())),
             },
             factory,
@@ -185,6 +209,14 @@ impl WorkspaceWatcher {
     pub fn attach_index(&self, index: SearchIndexService) {
         if let Ok(mut slot) = self.ctx.index.write() {
             *slot = Some(index);
+        }
+    }
+
+    /// Attaches the live document registry so rename events rekey open
+    /// documents even when the search index is unavailable.
+    pub fn attach_registry(&self, documents: DocumentRegistry) {
+        if let Ok(mut slot) = self.ctx.documents.write() {
+            *slot = Some(documents);
         }
     }
 
@@ -358,6 +390,7 @@ fn build_root(
     let handler_registry = context.registry.clone();
     let handler_sink = Arc::clone(&context.sink);
     let handler_index = Arc::clone(&context.index);
+    let handler_documents = Arc::clone(&context.documents);
     let handler = Arc::new(move |result: DebounceEventResult| {
         handle_events(
             weak.clone(),
@@ -365,6 +398,7 @@ fn build_root(
             &handler_registry,
             handler_sink.as_ref(),
             handler_index.as_ref(),
+            handler_documents.as_ref(),
             &handler_root,
             generation,
             result,
@@ -432,6 +466,7 @@ fn handle_events(
     registry: &WorkspaceRegistry,
     sink: &dyn WorkspaceEventSink,
     index: &RwLock<Option<SearchIndexService>>,
+    documents: &RwLock<Option<DocumentRegistry>>,
     root: &Path,
     generation: u64,
     result: DebounceEventResult,
@@ -453,33 +488,76 @@ fn handle_events(
             if !current {
                 return;
             }
-            if let Some(index) = index.read().ok().and_then(|index| index.clone()) {
-                let mut handled = false;
-                for event in &events {
-                    match event.event.kind {
-                        EventKind::Modify(ModifyKind::Name(_)) if event.paths.len() < 2 => {
-                            index.notify_rescan(root.to_path_buf());
+            let index = index.read().ok().and_then(|index| index.clone());
+            let documents = documents
+                .read()
+                .ok()
+                .and_then(|documents| documents.clone());
+            let mut handled = false;
+            let mut rescan = false;
+            for event in &events {
+                match event.event.kind {
+                    EventKind::Modify(ModifyKind::Name(_)) => {
+                        if event.paths.len() >= 2 {
+                            if handle_rename(
+                                root,
+                                index.as_ref(),
+                                documents.as_ref(),
+                                sessions,
+                                sink,
+                                &event.paths[0],
+                                &event.paths[1],
+                            ) {
+                                handled = true;
+                            }
+                        } else {
+                            rescan = true;
                             handled = true;
                         }
-                        EventKind::Remove(_) => {
-                            for path in &event.paths {
-                                if is_indexable(root, path) {
-                                    index.remove_path(root, path);
-                                    handled = true;
-                                }
+                    }
+                    EventKind::Remove(_) => {
+                        for path in &event.paths {
+                            let path = normalize_notify_path(path);
+                            let Some(relative) = relative_to_root(root, &path) else {
+                                continue;
+                            };
+                            if relative.as_os_str().is_empty() {
+                                continue;
                             }
+                            if let Some(index) = index.as_ref() {
+                                let key = relative.to_string_lossy().replace('\\', "/");
+                                let _ = index.remove_path_or_prefix(root, &key);
+                            }
+                            handled = true;
                         }
-                        _ => {
-                            for path in &event.paths {
-                                if is_indexable(root, path) {
+                    }
+                    _ => {
+                        for path in &event.paths {
+                            let path = normalize_notify_path(path);
+                            if is_indexable_current(root, &path) {
+                                if let Some(index) = index.as_ref() {
                                     index.notify_upsert(root.to_path_buf(), path.clone());
-                                    handled = true;
+                                }
+                                handled = true;
+                            } else if is_document_name(&path) {
+                                // A supported name that is now a directory,
+                                // oversized, ignored or outside the jail must
+                                // not keep its old row.
+                                if let Some(index) = index.as_ref() {
+                                    if let Ok(relative) = path.strip_prefix(root) {
+                                        let key = relative.to_string_lossy().replace('\\', "/");
+                                        if !key.is_empty() {
+                                            let _ = index.remove_path_or_prefix(root, &key);
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                if !handled && !events.is_empty() {
+            }
+            if let Some(index) = index.as_ref() {
+                if rescan || (!handled && !events.is_empty()) {
                     index.notify_rescan(root.to_path_buf());
                 }
             }
@@ -529,21 +607,107 @@ fn emit_to_root(
     }
 }
 
-/// Whether one debounced event can change a visible tree row.
-fn is_indexable(root: &Path, path: &Path) -> bool {
-    let Ok(relative) = path.strip_prefix(root) else {
-        return false;
-    };
-    if is_ignored_relative_path(relative) {
-        return false;
+/// Pairs one rename event. Registry rekey and the relocated event are
+/// independent of the index so an unavailable/disabled index never stops a
+/// window from following its file.
+#[allow(clippy::too_many_arguments)]
+fn handle_rename(
+    root: &Path,
+    index: Option<&SearchIndexService>,
+    documents: Option<&DocumentRegistry>,
+    sessions: &WindowSessions,
+    sink: &dyn WorkspaceEventSink,
+    old_path: &Path,
+    new_path: &Path,
+) -> bool {
+    let old_path = normalize_notify_path(old_path);
+    let new_path = normalize_notify_path(new_path);
+    let old_in_root = relative_to_root(root, &old_path);
+    let new_in_root = relative_to_root(root, &new_path);
+
+    match (old_in_root, new_in_root) {
+        (Some(old_relative), Some(_new_relative)) => {
+            if let Some(index) = index {
+                if let Err(error) = index.rename_path(root, &old_path, &new_path) {
+                    tracing::warn!(%error, "search index rename failed; scheduling a rescan");
+                    index.notify_rescan(root.to_path_buf());
+                }
+            }
+            if let Some(documents) = documents {
+                let old_is_open_file = documents.is_path_open(&old_path);
+                let old_has_open_child = documents.has_child_prefix(&old_path);
+                let outcome = if old_is_open_file {
+                    documents.rekey_path(&old_path, &new_path, root)
+                } else if old_has_open_child {
+                    documents.rekey_prefix(&old_path, &new_path, root)
+                } else {
+                    Ok(Default::default())
+                };
+                match outcome {
+                    Ok(outcome) => {
+                        emit_relocated(sessions, sink, &outcome.relocated);
+                        if outcome.requires_rescan {
+                            if let Some(index) = index {
+                                index.notify_rescan(root.to_path_buf());
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "document rekey failed after a rename");
+                        if let Some(index) = index {
+                            index.notify_rescan(root.to_path_buf());
+                        }
+                    }
+                }
+            }
+            let _ = old_relative;
+            true
+        }
+        (Some(old_relative), None) => {
+            // Moved out of the workspace: drop the index row, but leave the
+            // open record at the old path so a save reports NOT_FOUND/CONFLICT
+            // instead of silently writing outside the jail.
+            if let Some(index) = index {
+                let key = old_relative.to_string_lossy().replace('\\', "/");
+                let _ = index.remove_path_or_prefix(root, &key);
+            }
+            true
+        }
+        (None, Some(_)) => {
+            // Moved into the workspace: index the new copy.
+            if let Some(index) = index {
+                index.notify_upsert(root.to_path_buf(), new_path.clone());
+            }
+            true
+        }
+        (None, None) => false,
     }
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("md")
-                || extension.eq_ignore_ascii_case("markdown")
-                || extension.eq_ignore_ascii_case("mdx")
-        })
+}
+
+fn emit_relocated(
+    sessions: &WindowSessions,
+    sink: &dyn WorkspaceEventSink,
+    relocated: &[crate::state::document_registry::RelocatedDocument],
+) {
+    for document in relocated {
+        let Some(label) = sessions.label_for_current(&document.token) else {
+            continue;
+        };
+        let name = document
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string();
+        sink.relocated(
+            &label,
+            &DocumentRelocatedPayload {
+                doc_token: document.token.clone(),
+                path: document.path.to_string_lossy().into_owned(),
+                name,
+            },
+        );
+    }
 }
 
 pub fn should_refresh(event: &DebouncedEvent, root: &Path) -> bool {

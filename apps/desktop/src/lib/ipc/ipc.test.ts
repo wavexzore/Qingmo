@@ -33,7 +33,13 @@ const payload: FilePayload = {
   readOnlyReason: null,
 };
 
-const saveResult: SaveResult = { hash: "hash-2", size: 4, mtimeMs: 2 };
+const saveResult: SaveResult = {
+  hash: "hash-2",
+  size: 4,
+  mtimeMs: 2,
+  docToken: "token-1",
+  generation: 0,
+};
 
 function localeRequest(): ApplyLocaleRequest {
   return {
@@ -53,7 +59,7 @@ beforeEach(() => {
 
 describe("AppError normalization", () => {
   it("lists every generated error code exactly once", () => {
-    expect(APP_ERROR_CODES).toHaveLength(22);
+    expect(APP_ERROR_CODES).toHaveLength(23);
     expect(new Set(APP_ERROR_CODES).size).toBe(APP_ERROR_CODES.length);
     for (const code of APP_ERROR_CODES) {
       expect(isAppErrorCode(code)).toBe(true);
@@ -185,8 +191,8 @@ describe("Tauri IpcPort adapter", () => {
       .mockResolvedValueOnce(true);
     const ipc = createTauriIpc();
 
-    await expect(ipc.sessionViewStateGet("/docs/a.md")).resolves.toBeNull();
-    await expect(ipc.sessionViewStateSet("/docs/a.md", state)).resolves.toBeUndefined();
+    await expect(ipc.sessionViewStateGet("/docs/a.md", "token-1")).resolves.toBeNull();
+    await expect(ipc.sessionViewStateSet("/docs/a.md", state, "token-1")).resolves.toBeUndefined();
     await expect(ipc.sessionDraftWrite(request)).resolves.toBeNull();
     await expect(ipc.sessionDraftList()).resolves.toEqual([]);
     await expect(ipc.sessionDraftRead("id")).resolves.toEqual({ schemaVersion: 1 });
@@ -194,10 +200,12 @@ describe("Tauri IpcPort adapter", () => {
 
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(1, "session_view_state_get", {
       path: "/docs/a.md",
+      docToken: "token-1",
     });
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(2, "session_view_state_set", {
       path: "/docs/a.md",
       state,
+      docToken: "token-1",
     });
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(3, "session_draft_write", { request });
     expect(tauriMocks.invoke).toHaveBeenNthCalledWith(4, "session_draft_list", {});

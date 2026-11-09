@@ -4,6 +4,8 @@ use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{
     WorkspaceEntry, WorkspaceEntryKind, WorkspaceListing, WorkspaceTruncationReason,
 };
+use crate::services::file_identity::{observe_path, FileIdentity, FileObservation};
+use crate::services::file_service::MAX_DOCUMENT_BYTES;
 use crate::state::document_registry::ensure_supported_extension;
 
 /// Deepest directory chain accepted from the webview.
@@ -252,6 +254,210 @@ pub fn resolve_document(root: &Path, segments: &[String]) -> Result<PathBuf, App
     }
     ensure_supported_extension(&canonical)?;
     Ok(canonical)
+}
+
+/// A document resolved through the workspace jail, with the parent identity
+/// captured for the later verified read/write. `raw_path` keeps the user's
+/// segment spelling (a symlink row is not expanded); `canonical_target` is the
+/// actual file that will be read or written.
+#[derive(Debug, Clone)]
+pub struct ResolvedDocument {
+    pub raw_path: PathBuf,
+    pub canonical_target: PathBuf,
+    pub parent_identity: Option<FileIdentity>,
+}
+
+/// What one delete acts on. A symlink delete must move the link itself, never
+/// the file it points at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteKind {
+    File,
+    Symlink,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedDelete {
+    pub raw_path: PathBuf,
+    pub canonical_target: PathBuf,
+    pub kind: DeleteKind,
+}
+
+/// Resolves one trash entry target below a canonical workspace root.
+///
+/// Every component must already exist except the final one; an existing
+/// symlink anywhere in the chain is refused so a tampered entry cannot use a
+/// link to escape the workspace. The final component may be missing because
+/// that is the normal restore target.
+pub fn resolve_relative_target(root: &Path, relative: &str) -> Result<PathBuf, AppError> {
+    if relative.is_empty() {
+        return Err(AppError::new(
+            AppErrorCode::InvalidPath,
+            "the trash entry has an empty path",
+        ));
+    }
+    let segments: Vec<String> = relative.split('/').map(str::to_string).collect();
+    validate_segments(&segments)?;
+    let mut target = root.to_path_buf();
+    for (index, segment) in segments.iter().enumerate() {
+        target.push(segment);
+        let is_last = index + 1 == segments.len();
+        match std::fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return Err(outside_scope()),
+            Ok(metadata) if !is_last && !metadata.is_dir() => return Err(outside_scope()),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if !is_last {
+                    return Err(AppError::new(
+                        AppErrorCode::NotFound,
+                        "the restore parent directory is missing",
+                    ));
+                }
+            }
+            Err(error) => return Err(AppError::from_io(&error)),
+        }
+    }
+    let parent = target.parent().ok_or_else(|| {
+        AppError::new(AppErrorCode::InvalidPath, "the restore path has no parent")
+    })?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|error| AppError::from_io(&error))?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| AppError::from_io(&error))?;
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err(outside_scope());
+    }
+    Ok(target)
+}
+
+/// Resolves one delete target while preserving the raw (link) path.
+pub fn resolve_delete(root: &Path, segments: &[String]) -> Result<ResolvedDelete, AppError> {
+    validate_segments(segments)?;
+    if segments.is_empty() {
+        return Err(invalid_segment());
+    }
+    let mut raw_path = root.to_path_buf();
+    for segment in segments {
+        raw_path.push(segment);
+    }
+    let mut parent = root.to_path_buf();
+    for segment in &segments[..segments.len() - 1] {
+        parent.push(segment);
+        let metadata =
+            std::fs::symlink_metadata(&parent).map_err(|error| canonicalize_error(&error))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(outside_scope());
+        }
+    }
+    let metadata =
+        std::fs::symlink_metadata(&raw_path).map_err(|error| canonicalize_error(&error))?;
+    if metadata.file_type().is_symlink() {
+        let canonical_target =
+            std::fs::canonicalize(&raw_path).map_err(|error| canonicalize_error(&error))?;
+        if !canonical_target.starts_with(root) {
+            return Err(outside_scope());
+        }
+        let target_metadata =
+            std::fs::metadata(&canonical_target).map_err(|error| canonicalize_error(&error))?;
+        if !target_metadata.is_file() {
+            return Err(AppError::new(AppErrorCode::NotAFile, "path is not a file"));
+        }
+        ensure_supported_extension(&canonical_target)?;
+        return Ok(ResolvedDelete {
+            raw_path,
+            canonical_target,
+            kind: DeleteKind::Symlink,
+        });
+    }
+    if !metadata.is_file() {
+        return Err(AppError::new(AppErrorCode::NotAFile, "path is not a file"));
+    }
+    ensure_supported_extension(&raw_path)?;
+    let canonical_target =
+        std::fs::canonicalize(&raw_path).map_err(|error| canonicalize_error(&error))?;
+    if !canonical_target.starts_with(root) {
+        return Err(outside_scope());
+    }
+    Ok(ResolvedDelete {
+        raw_path,
+        canonical_target,
+        kind: DeleteKind::File,
+    })
+}
+
+/// Resolves a document chain below one canonical root and captures the
+/// canonical parent identity. Existing callers keep using
+/// [`resolve_document`]; only document open/save use this richer result.
+pub fn resolve_document_verified(
+    root: &Path,
+    segments: &[String],
+) -> Result<ResolvedDocument, AppError> {
+    validate_segments(segments)?;
+    let mut raw_path = root.to_path_buf();
+    for segment in segments {
+        raw_path.push(segment);
+    }
+    let canonical_target = canonical_child(root, segments)?;
+    let metadata =
+        std::fs::metadata(&canonical_target).map_err(|error| canonicalize_error(&error))?;
+    if !metadata.is_file() {
+        return Err(AppError::new(AppErrorCode::NotAFile, "path is not a file"));
+    }
+    ensure_supported_extension(&canonical_target)?;
+    let parent_identity = canonical_target
+        .parent()
+        .map(observe_path)
+        .transpose()?
+        .and_then(|observation| match observation {
+            FileObservation::Present(identity) => Some(identity),
+            FileObservation::Unavailable | FileObservation::Absent => None,
+        });
+    Ok(ResolvedDocument {
+        raw_path,
+        canonical_target,
+        parent_identity,
+    })
+}
+
+/// Extension-only check used for rename pairing: it must not stat the file,
+/// because a rename event can arrive before the destination is visible.
+pub fn is_document_name(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("md")
+                || extension.eq_ignore_ascii_case("markdown")
+                || extension.eq_ignore_ascii_case("mdx")
+        })
+}
+
+/// Whether a current filesystem entry belongs in the search index.
+///
+/// Inside-file symlinks are allowed and indexed by their link path; a link
+/// whose canonical target leaves the workspace is rejected.
+pub fn is_indexable_current(root: &Path, path: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    if relative.as_os_str().is_empty() || is_ignored_relative_path(relative) {
+        return false;
+    }
+    if !is_document_name(path) {
+        return false;
+    }
+    if let Ok(link) = std::fs::symlink_metadata(path) {
+        if link.file_type().is_symlink() {
+            let Ok(target) = std::fs::canonicalize(path) else {
+                return false;
+            };
+            if !target.starts_with(root) {
+                return false;
+            }
+        }
+    }
+    std::fs::metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= MAX_DOCUMENT_BYTES)
 }
 
 fn classify_symlink(path: &Path) -> WorkspaceEntryKind {

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "path": "/work/notes/a.md",
+  "entries": [
+    {
+      "id": "entry-a",
+      "hash": "2b806e7d75371072494f629b7fe1a565ea2fa36342c06ebba5482d248ff27df3",
+      "size": 6,
+      "createdAtMs": 1700000000000,
+      "lastSeenAtMs": 1700000000000,
+      "appVersion": "0.1.4"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 export const WORKSPACE_ROW_HEIGHT = 28;
 export const WORKSPACE_OVERSCAN = 8;
+/** First-frame fallback when ResizeObserver has not measured the panel yet. */
+export const DEFAULT_VIEWPORT_HEIGHT = 560;
 
 export interface VisibleRange {
   start: number;

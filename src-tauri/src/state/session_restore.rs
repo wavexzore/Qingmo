@@ -39,12 +39,19 @@ pub fn capture_windows_before_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
             .ok()
             .map(|size| size.to_logical::<f64>(scale))
             .unwrap_or(tauri::LogicalSize::new(1200.0, 800.0));
-        let document_path = sessions.token_for(&label).and_then(|token| {
-            documents
-                .get(&token)
+        let document = sessions
+            .token_for(&label)
+            .and_then(|token| documents.get(&token).ok());
+        let document_path = document.as_ref().and_then(|record| {
+            record
+                .canonical_target()
                 .ok()
-                .map(|record| record.canonical_target.to_string_lossy().to_string())
+                .map(|path| path.to_string_lossy().to_string())
         });
+        let document_id = document
+            .as_ref()
+            .and_then(|record| record.document_id())
+            .map(|id| id.to_string());
         let workspace_root = sessions.workspace_for(&label).and_then(|token| {
             workspaces
                 .get(&token)
@@ -62,6 +69,7 @@ pub fn capture_windows_before_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
             },
             workspace_root,
             document_path: document_path.clone(),
+            document_id,
             untitled: document_path.is_none(),
         });
     }

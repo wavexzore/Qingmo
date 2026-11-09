@@ -156,7 +156,7 @@ interface ControlledIpc extends Pick<
   "documentWriteAtomic" | "documentReload" | "documentSaveAs"
 > {
   writes: SaveRequest[];
-  resolve(index: number, result?: SaveResult): void;
+  resolve(index: number, result?: Partial<SaveResult>): void;
   reject(index: number, error: unknown): void;
   maxConcurrent: number;
 }
@@ -194,8 +194,15 @@ function controlledIpc(reloadPayload: FilePayload = payload()): ControlledIpc {
     documentReload: () => Promise.resolve(reloadPayload),
     documentSaveAs: (text) =>
       Promise.resolve(payload({ docToken: "saved-token", path: "/docs/untitled.md", text })),
-    resolve(index, result = { hash: "saved-hash", size: 1, mtimeMs: 2 }) {
-      pending[index]?.resolve(result);
+    resolve(index, result: Partial<SaveResult> = {}) {
+      pending[index]?.resolve({
+        hash: "saved-hash",
+        size: 1,
+        mtimeMs: 2,
+        docToken: "token-1",
+        generation: 0,
+        ...result,
+      });
     },
     reject(index, error) {
       pending[index]?.reject(error);
@@ -269,6 +276,42 @@ describe("SaveCoordinator single-flight and flush loop", () => {
       expect(session.getSnapshot().size).toBe(5);
       expect(session.getSnapshot().mtimeMs).toBe(3);
       expect(ipc.maxConcurrent).toBe(1);
+    } finally {
+      coordinator.dispose();
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+  });
+
+  it("discards a save result whose token is no longer current", async () => {
+    vi.useFakeTimers();
+    const session = EditorSession.create(payload({ text: "abc" }));
+    const { view, parent } = attachSession(session);
+    const ipc = controlledIpc();
+    const coordinator = new SaveCoordinator({ session, ipc });
+
+    try {
+      const initial = session.getSnapshot();
+      insert(view, "d");
+      const flush = coordinator.flush("manual");
+      await settle();
+      expect(ipc.writes).toHaveLength(1);
+
+      // The window switched documents while the write was in flight: the
+      // bytes belong to the old document and must not update this baseline.
+      ipc.resolve(0, {
+        hash: "stale-hash",
+        size: 99,
+        mtimeMs: 99,
+        docToken: "old-token",
+        generation: 1,
+      });
+      expect((await flush).ok).toBe(true);
+
+      expect(session.getSnapshot().hash).toBe(initial.hash);
+      expect(session.getSnapshot().size).toBe(initial.size);
+      expect(session.getSnapshot().mtimeMs).toBe(initial.mtimeMs);
     } finally {
       coordinator.dispose();
       session.detach(view);

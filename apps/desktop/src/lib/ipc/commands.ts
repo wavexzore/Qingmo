@@ -143,6 +143,7 @@ export const EVENTS = {
   updateFlushRequest: "app://update-flush-request",
   menuAction: "app://menu-action",
   documentChanged: "app://document-changed",
+  documentRelocated: "app://document-relocated",
   documentNewFailed: "app://document-new-failed",
   workspaceChanged: "app://workspace-changed",
   workspaceIndexStatus: "app://workspace-index-status",
@@ -158,6 +159,7 @@ export const EVENT_NAMES = [
   EVENTS.updateFlushRequest,
   EVENTS.menuAction,
   EVENTS.documentChanged,
+  EVENTS.documentRelocated,
   EVENTS.documentNewFailed,
   EVENTS.workspaceChanged,
   EVENTS.workspaceIndexStatus,
@@ -269,8 +271,12 @@ export interface CommandRequestMap {
   [COMMANDS.appLogsOpenDir]: Record<string, never>;
   [COMMANDS.appLogsClear]: { keepDays?: number };
   [COMMANDS.appApplyLocale]: { request: ApplyLocaleRequest };
-  [COMMANDS.sessionViewStateGet]: { path: string };
-  [COMMANDS.sessionViewStateSet]: { path: string; state: EditorViewStateInput };
+  [COMMANDS.sessionViewStateGet]: { path: string; docToken?: string };
+  [COMMANDS.sessionViewStateSet]: {
+    path: string;
+    state: EditorViewStateInput;
+    docToken?: string;
+  };
   [COMMANDS.sessionDraftWrite]: { request: DraftWriteRequest };
   [COMMANDS.sessionDraftList]: Record<string, never>;
   [COMMANDS.sessionDraftRead]: { id: string };

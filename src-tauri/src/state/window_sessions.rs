@@ -43,6 +43,18 @@ impl WindowRelease {
     }
 }
 
+/// The token ownership change produced by Save As.
+///
+/// `current` and `previous` are the tokens the window owned before the swap;
+/// the caller must deactivate, release and unwatch both of them. `accepted`
+/// is `false` when the window was destroyed while the dialog was open.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TokenSwap {
+    pub accepted: bool,
+    pub current: Option<String>,
+    pub previous: Option<String>,
+}
+
 /// The token ownership change produced by one in-window document switch.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DocumentActivation {
@@ -194,9 +206,65 @@ impl WindowSessions {
             .map(|payload| std::path::PathBuf::from(&payload.path))
     }
 
+    /// Replaces the current token and drops the rollback token in one lock.
+    ///
+    /// Save As creates a fresh document; neither the old current nor the old
+    /// rollback token may remain reachable.
+    pub fn replace_token(&self, label: &str, token: String) -> TokenSwap {
+        let mut inner = self.lock();
+        if inner.closed.contains(label) {
+            return TokenSwap {
+                accepted: false,
+                current: None,
+                previous: None,
+            };
+        }
+        let current = inner.tokens.insert(label.to_string(), token);
+        let previous = inner.previous_tokens.remove(label);
+        inner.untitled.remove(label);
+        TokenSwap {
+            accepted: true,
+            current,
+            previous,
+        }
+    }
+
     /// Document token currently owned by a window.
     pub fn token_for(&self, label: &str) -> Option<String> {
         self.lock().tokens.get(label).cloned()
+    }
+
+    /// Whether this window currently owns `token`.
+    ///
+    /// A rollback token is not owned: it is kept only so
+    /// `document_activate` can restore it, never for commands or events.
+    pub fn owns_current_document(&self, label: &str, token: &str) -> bool {
+        self.lock()
+            .tokens
+            .get(label)
+            .is_some_and(|value| value == token)
+    }
+
+    /// Whether `token` is this window's current or rollback token.
+    pub fn owns_any_document(&self, label: &str, token: &str) -> bool {
+        let inner = self.lock();
+        inner.tokens.get(label).is_some_and(|value| value == token)
+            || inner
+                .previous_tokens
+                .get(label)
+                .is_some_and(|value| value == token)
+    }
+
+    /// Label of the window that currently owns `token`.
+    ///
+    /// Rollback tokens are deliberately excluded: the watcher must not emit
+    /// into a window that is already showing another document.
+    pub fn label_for_current(&self, token: &str) -> Option<String> {
+        self.lock()
+            .tokens
+            .iter()
+            .find(|(_, value)| value.as_str() == token)
+            .map(|(label, _)| label.clone())
     }
 
     /// Whether another window already owns or retains this doc token.
@@ -740,5 +808,60 @@ mod tests {
             .activate_document("doc-1", Some("token-2".to_string()))
             .is_err());
         assert!(sessions.token_for("doc-1").is_none());
+    }
+
+    #[test]
+    fn replace_token_returns_current_and_rollback_tokens() {
+        let sessions = WindowSessions::new();
+        sessions.stage("doc-1", payload("token-1"));
+        sessions.take_pending("doc-1");
+        sessions
+            .activate_document("doc-1", Some("token-2".to_string()))
+            .expect("switch");
+
+        let swap = sessions.replace_token("doc-1", "token-3".to_string());
+        assert!(swap.accepted);
+        assert_eq!(swap.current.as_deref(), Some("token-2"));
+        assert_eq!(swap.previous.as_deref(), Some("token-1"));
+        assert_eq!(sessions.token_for("doc-1").as_deref(), Some("token-3"));
+
+        let released = sessions.release("doc-1");
+        assert_eq!(released.doc_token.as_deref(), Some("token-3"));
+        assert!(released.previous_doc_token.is_none());
+    }
+
+    #[test]
+    fn replace_token_on_a_closed_window_is_refused() {
+        let sessions = WindowSessions::new();
+        sessions.release("doc-1");
+        let swap = sessions.replace_token("doc-1", "token-2".to_string());
+        assert!(!swap.accepted);
+        assert!(swap.current.is_none());
+        assert!(swap.previous.is_none());
+        assert!(sessions.token_for("doc-1").is_none());
+    }
+
+    #[test]
+    fn only_the_current_token_is_owned_and_routable() {
+        let sessions = WindowSessions::new();
+        sessions.stage("doc-1", payload("token-1"));
+        sessions.take_pending("doc-1");
+        sessions
+            .activate_document("doc-1", Some("token-2".to_string()))
+            .expect("switch");
+
+        assert!(sessions.owns_current_document("doc-1", "token-2"));
+        assert!(sessions.owns_any_document("doc-1", "token-1"));
+        assert!(!sessions.owns_current_document("doc-1", "token-1"));
+        assert!(!sessions.owns_current_document("doc-2", "token-2"));
+
+        assert_eq!(
+            sessions.label_for_current("token-2").as_deref(),
+            Some("doc-1")
+        );
+        assert!(
+            sessions.label_for_current("token-1").is_none(),
+            "a rollback token must not receive events"
+        );
     }
 }

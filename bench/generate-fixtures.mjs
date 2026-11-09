@@ -2,9 +2,9 @@
 /**
  * Deterministic Markdown fixture generator for T-017.
  *
- * The 10 MiB file is intentionally not committed; `pnpm bench` regenerates it
- * from this script. Small/medium fixtures are committed so reviews can inspect
- * exactly what the numbers refer to.
+ * The 10 MiB and 16 MiB files are intentionally not committed; `pnpm bench`
+ * regenerates them from this script. Small/medium fixtures are committed so
+ * reviews can inspect exactly what the numbers refer to.
  */
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -18,6 +18,7 @@ export const FIXTURES = {
   small: { bytes: 10 * 1024, file: "small.md" },
   medium: { bytes: 1024 * 1024, file: "medium.md" },
   large: { bytes: 10 * 1024 * 1024, file: "large.md" },
+  xlarge: { bytes: 16 * 1024 * 1024, file: "xlarge.md" },
 };
 
 const BLOCKS = [

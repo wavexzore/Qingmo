@@ -17,10 +17,12 @@ use tempfile::TempDir;
 type MockApp = tauri::App<tauri::test::MockRuntime>;
 type MockWebview = tauri::WebviewWindow<tauri::test::MockRuntime>;
 
-fn mock_webview(registry: DocumentRegistry) -> (MockApp, MockWebview) {
+fn mock_webview(registry: DocumentRegistry, doc_token: &str) -> (MockApp, MockWebview) {
+    let sessions = qingmo_lib::state::WindowSessions::new();
+    sessions.set_token("main", doc_token.to_string());
     let app = tauri::test::mock_builder()
         .manage(registry)
-        .manage(qingmo_lib::state::WindowSessions::new())
+        .manage(sessions)
         .manage(qingmo_lib::state::WorkspaceRegistry::new())
         .invoke_handler(qingmo_lib::commands::handler())
         .build(tauri::generate_context!())
@@ -37,7 +39,7 @@ fn reload_command_refreshes_the_base_hash_after_an_external_change() {
     let target = write_file(&dir, "reload.md", b"base\n");
     let registry = DocumentRegistry::new();
     let payload = open_file(&registry, target.clone());
-    let (app, webview) = mock_webview(registry);
+    let (app, webview) = mock_webview(registry, &payload.doc_token);
     let _ = &app;
 
     fs::write(&target, b"external\n").expect("external change");
@@ -95,7 +97,7 @@ fn utf16_conflict_overwrite_preserves_bom_and_crlf() {
     );
     let registry = DocumentRegistry::new();
     let payload = open_file(&registry, target.clone());
-    let (app, webview) = mock_webview(registry);
+    let (app, webview) = mock_webview(registry, &payload.doc_token);
     let _ = &app;
 
     let external = encode_utf16("external\r\n", true, true);
@@ -153,7 +155,7 @@ fn read_only_mdx_command_rejects_writes_and_preserves_bytes() {
     let registry = DocumentRegistry::new();
     let payload = open_file(&registry, target.clone());
     assert!(payload.read_only);
-    let (app, webview) = mock_webview(registry);
+    let (app, webview) = mock_webview(registry, &payload.doc_token);
     let _ = &app;
 
     let error = invoke(

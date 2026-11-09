@@ -29,10 +29,11 @@ BENCH_SKIP_RUST=1 pnpm bench
 | `small.md` | 10 KiB（10,240 B） | 419 | 是 |
 | `medium.md` | 1 MiB（1,048,576 B） | 41,618 | 是 |
 | `large.md` | 10 MiB（10,485,760 B） | 408,423 | 否（`.gitignore`，运行时生成） |
+| `xlarge.md` | 16 MiB（16,777,216 B） | 650,316 | 否（`.gitignore`，运行时生成） |
 
-生成是确定性的：`manifest.json` 记录字节数与 SHA-256；`pnpm bench` 每次都重新生成，若小/中 fixture 被手改会得到不同哈希。10 MiB 不提交，避免仓库膨胀；任何拿到仓库的人都能用 `pnpm bench:fixtures` 复现同一文件。
+生成是确定性的：`manifest.json` 记录字节数与 SHA-256；`pnpm bench` 每次都重新生成，若小/中 fixture 被手改会得到不同哈希。10 MiB / 16 MiB 不提交，避免仓库膨胀；任何拿到仓库的人都能用 `pnpm bench:fixtures` 复现同一文件。
 
-> `large.md` 正好等于 10 MiB 上限。`save.bench.ts` 用“替换末尾 3 字节”而不是追加，确保不会因为超过上限而被拒绝。
+> `large.md` 是 10 MiB；`xlarge.md` 是统一后的 16 MiB 上限。`save.bench.ts` 用“替换末尾 3 字节”而不是追加，确保不会因为超过上限而被拒绝。
 
 ## 指标口径
 
@@ -41,13 +42,13 @@ BENCH_SKIP_RUST=1 pnpm bench
 | `open_ms` | `EditorSession.create(payload)`，即 `createEditorState`；包含 Markdown/语言扩展初始化、`PreviewPolicy` 分档判断 | 不含原生读盘、Tauri IPC 传输、首次 DOM 渲染 |
 | `ipc_copy_ms` | `JSON.stringify` + `JSON.parse` 一个 `FilePayload` | 不是真实 Tauri 传输；只是字符串跨边界的代理值 |
 | `decorate_ms` | 80 行视口 + `ensureSyntaxTree(8ms)` + `buildLivePreviewDecorations`；10 KiB/1 MiB 另挂真实 `EditorView` 记录 `viewMountMs` | 不是像素级重绘时间 |
-| `key_p95_ms` | 单字符 dispatch/update 的 p95。10 KiB/1 MiB 用真实 `EditorView.dispatch`；10 MiB 关闭 LP 后用 `EditorState.update` | 10 MiB 不含渲染/合成器；不代表真实键盘端到端 |
+| `key_p95_ms` | 单字符 dispatch/update 的 p95。10 KiB/1 MiB 用真实 `EditorView.dispatch`；10/16 MiB 关闭 LP 后用 `EditorState.update` | 大文件不含渲染/合成器；不代表真实键盘端到端 |
 | `save_ms` | release 构建的 `AtomicWriter::write`：锁内重读 + BLAKE3 + 编码 + `atomic-write-file` 提交；临时副本 | 不是 Tauri 命令/IPC 往返 |
 | `max_rss_mb` | 真实 Tauri 打开文件后 `ps -o rss= -p <pid>` | 不是峰值，不含 WebView 多进程的完整 footprint |
 | `view_mount_ms` | jsdom 中 `new EditorView({state, parent})` 的耗时 | 不是浏览器首屏；jsdom 无布局 |
 | `fake_save_ms` | `FakeIpc.documentWriteAtomic`（UTF-8 编码 + FNV 哈希 + 字符串替换） | 不是磁盘 I/O；只用于对比 JS 侧成本 |
 
-10 MiB 默认关闭 Live Preview（`PREVIEW_PARTIAL_MAX_UNITS = 2_000_000`，只有 source 档关闭），所以 `decorate_ms` 记为 `skipped`、装饰规格为 0，而不是伪造一个全量装饰耗时。`open_ms` 对 10 MiB 只是状态创建；真实首屏以手动 Tauri 的 AX 上界为准。
+10/16 MiB 默认关闭 Live Preview（`PREVIEW_PARTIAL_MAX_UNITS = 2_000_000`，只有 source 档关闭），所以 `decorate_ms` 记为 `skipped`、装饰规格为 0，而不是伪造一个全量装饰耗时。`open_ms` 对大文件只是状态创建；真实首屏以手动 Tauri 的 AX 上界为准。
 
 1 MiB（1,048,576 UTF-16 units）落在 **partial** 档（`200_000 < units ≤ 2_000_000`）：行内装饰仍运行，11 个块级组件关闭。不要把 1 MiB 的数字当作 full 档基线。
 
@@ -67,13 +68,16 @@ BENCH_SKIP_RUST=1 pnpm bench
 }
 ```
 
+> `xlarge`（16 MiB）debug 于 2026-11-10 采集：open 中位数 1954.9 ms、save 1853.8 ms、RSS 403.9 MB（3 次，每次前重启 debug 应用），作为开发构建上界保留。同日 release build（`tauri build --release --no-bundle`，独立 identifier）3 次：open 中位数 **615.0 ms**、save **205.2 ms**、RSS **352.5 MB**，均低于 C-021 目标（1500 ms / 1100 MB）。release 数据见 `fixtures.xlargeRelease`。
+
 记录方法：
 
-1. `pnpm tauri dev`，用原生对话框打开对应 fixture 的副本。
+1. `pnpm tauri dev`，用原生对话框打开对应 fixture 的副本。若正式版正在运行，可用 `--config '{"identifier":"com.wavexzore.qingmo.devtest"}'` 启动独立实例，避免单实例拦截。
 2. 用 Accessibility API 轮询文档标题/状态栏出现的时间，作为 `openMs` 上界（轮询本身有开销，真实值只会更低）。
 3. 编辑一个字符后 `Cmd+S`，轮询“已同步”出现时间，作为 `saveMs` 上界。
 4. `ps -o rss= -p <pid>` 记录打开后的 RSS。
-5. 10 MiB 必须确认状态栏显示“大文档 · 预览关闭”。
+5. 10/16 MiB 必须确认状态栏显示“大文档”（10 MiB 通常为“预览关闭”，16 MiB 为“源码模式”）。
+6. release 复测：`pnpm tauri build --no-bundle --config '{"identifier":"com.wavexzore.qingmo.releasebench"}'`，运行 `src-tauri/target/release/qingmo`，其余步骤相同；原生面板默认目录不是目标目录时，可把侧栏名称作为第 5 个参数传给 `measure.swift`（例如 `Code`）。
 
 本仓库的 `bench/tauri/measure.swift` 实现了上述轮询（macOS Accessibility）：
 
@@ -83,7 +87,7 @@ pnpm tauri dev
 swift bench/tauri/measure.swift <pid> bench-large-1.md 180
 ```
 
-脚本会通过 Cmd+O 打开原生面板、按文件名选中并点 Open，轮询“标题 + 编辑器就绪”作为 open 上界；随后聚焦编辑器，10 MiB 用前向删除（避免越过 10 MiB 上限）、其余插入 `z`，再按 Cmd+S 并轮询“已同步”作为 save 上界。目标文件应是仓库根目录下的**临时副本**，不要直接编辑 fixture。
+脚本会通过 Cmd+O 打开原生面板、按文件名选中并点 Open，轮询“标题 + 编辑器就绪”作为 open 上界；随后聚焦编辑器，10/16 MiB 用前向删除（避免越过 16 MiB 上限）、其余插入 `z`，再按 Cmd+S 并轮询“已同步”作为 save 上界。目标文件应是仓库外或仓库根目录下的**临时副本**，不要直接编辑 fixture，也不要把副本放进 `src-tauri/`（会触发 dev watcher 重建，污染测量）。
 
 该文件是可选的：不存在时报告仍会生成，只是标记“不含真实 Tauri 数据”。
 
@@ -96,4 +100,4 @@ swift bench/tauri/measure.swift <pid> bench-large-1.md 180
 - jsdom 没有真实布局/合成器，`key_p95_ms` 与 `view_mount_ms` 不能替代浏览器 Performance 面板。
 - `ipc_copy_ms` 是 JSON 往返代理，真实 Tauri IPC 的序列化/协议开销未单独拆分。
 - Node 的 `maxRSS` 是进程峰值；Tauri 的 `ps` 是打开后的瞬时 RSS，两者不可直接相加。
-- 10 MiB 的 `decorate_ms` 为 skipped；若未来调高 `PREVIEW_PARTIAL_MAX_UNITS`，这里必须重新测，不能沿用本基线。
+- 10/16 MiB 的 `decorate_ms` 为 skipped；若未来调高 `PREVIEW_PARTIAL_MAX_UNITS`，这里必须重新测，不能沿用本基线。

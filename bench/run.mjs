@@ -22,8 +22,8 @@ process.chdir(ROOT);
 const RESULTS_DIR = path.join(ROOT, "bench", "results");
 const RAW_DIR = path.join(RESULTS_DIR, ".raw");
 const MANUAL_PATH = path.join(RESULTS_DIR, "tauri-manual.json");
-const SIZES = ["small", "medium", "large"];
-const SAVE_ITERATIONS = { small: 30, medium: 12, large: 5 };
+const SIZES = ["small", "medium", "large", "xlarge"];
+const SAVE_ITERATIONS = { small: 30, medium: 12, large: 5, xlarge: 3 };
 
 mkdirSync(RAW_DIR, { recursive: true });
 rmSync(RAW_DIR, { recursive: true, force: true });

@@ -38,7 +38,7 @@ export async function createDocumentSession(
 ): Promise<CreatedDocumentSession> {
   let viewState: EditorViewState | null = null;
   try {
-    viewState = await ipc.sessionViewStateGet(payload.path);
+    viewState = await ipc.sessionViewStateGet(payload.path, payload.docToken);
   } catch (error) {
     console.warn("failed to read the persisted view state", error);
   }

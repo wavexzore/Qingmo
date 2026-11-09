@@ -127,6 +127,17 @@ test("navigates and opens with the keyboard", async ({ page }) => {
   await expect(page.getByTestId("status-bar")).toContainText("a.md");
 });
 
+test("Home and End reach the first and last root row", async ({ page }) => {
+  await openWorkspaceApp(page, WORKSPACE);
+
+  await workspaceRow(page, "notes").focus();
+  await page.keyboard.press("End");
+  await expect(workspaceRow(page, "readme.md")).toBeFocused();
+
+  await page.keyboard.press("Home");
+  await expect(workspaceRow(page, "notes")).toBeFocused();
+});
+
 test("manual refresh picks up created and deleted files", async ({ page }) => {
   await openWorkspaceApp(page, WORKSPACE);
   await addWorkspaceFile(page, "/work/new.md", "# New\n");

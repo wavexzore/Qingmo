@@ -10,7 +10,12 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { FlatRow } from "./workspaceTree";
-import { visibleRange, WORKSPACE_OVERSCAN, WORKSPACE_ROW_HEIGHT } from "./virtualRows";
+import {
+  DEFAULT_VIEWPORT_HEIGHT,
+  visibleRange,
+  WORKSPACE_OVERSCAN,
+  WORKSPACE_ROW_HEIGHT,
+} from "./virtualRows";
 
 interface VirtualWorkspaceTreeProps {
   rows: FlatRow[];
@@ -42,6 +47,22 @@ function kindIcon(row: FlatRow): string {
   }
 }
 
+/** Localized item-kind text used as part of the accessible name. */
+function kindKey(row: FlatRow): string {
+  switch (row.kind) {
+    case "directory":
+      return "tree.kindDirectory";
+    case "symlinkDirectory":
+      return "tree.kindSymlinkDirectory";
+    case "symlinkFile":
+      return "tree.kindSymlinkFile";
+    case "file":
+      return "tree.kindFile";
+  }
+}
+
+const TYPE_AHEAD_TIMEOUT_MS = 500;
+
 export function VirtualWorkspaceTree({
   rows,
   focusedKey,
@@ -70,6 +91,19 @@ export function VirtualWorkspaceTree({
   } | null>(null);
   const currentKeyRef = useRef(currentKey);
   currentKeyRef.current = currentKey;
+  const typeAhead = useRef<{ buffer: string; timer: number | null }>({
+    buffer: "",
+    timer: null,
+  });
+
+  useEffect(() => {
+    const state = typeAhead.current;
+    return () => {
+      if (state.timer !== null) {
+        window.clearTimeout(state.timer);
+      }
+    };
+  }, []);
 
   useLayoutEffect(() => {
     if (!active) {
@@ -152,6 +186,16 @@ export function VirtualWorkspaceTree({
     if (element) {
       onFocusKey(restoreTarget);
       element.focus({ preventScroll: true });
+      // A focused virtual row can unmount while this frame scrolls; the
+      // browser then moves focus to the body after our layout-effect focus.
+      // Re-assert once the commit/settle pass is over.
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => {
+          if (element.isConnected && document.activeElement !== element) {
+            element.focus({ preventScroll: true });
+          }
+        });
+      }
       element.scrollIntoView?.({ block: "nearest" });
       setRestoreTarget(null);
       return;
@@ -175,7 +219,7 @@ export function VirtualWorkspaceTree({
         ? visibleRange(
             rows.length,
             scrollTop,
-            viewportHeight || rows.length * WORKSPACE_ROW_HEIGHT,
+            viewportHeight || DEFAULT_VIEWPORT_HEIGHT,
             WORKSPACE_ROW_HEIGHT,
             WORKSPACE_OVERSCAN,
           )
@@ -223,7 +267,15 @@ export function VirtualWorkspaceTree({
   const focusRow = useCallback(
     (key: string): void => {
       onFocusKey(key);
-      findRow(scrollRef.current, key)?.focus({ preventScroll: true });
+      const element = findRow(scrollRef.current, key);
+      if (element) {
+        element.focus({ preventScroll: true });
+        return;
+      }
+      // The row is outside the virtual window. The layout effect scrolls it
+      // on screen and focuses it after the next render, so Home/End/Arrow can
+      // never leave focus on a detached or invisible element.
+      setRestoreTarget(key);
     },
     [onFocusKey],
   );
@@ -312,6 +364,30 @@ export function VirtualWorkspaceTree({
           }
           break;
         default:
+          if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            event.preventDefault();
+            const state = typeAhead.current;
+            state.buffer += event.key.toLocaleLowerCase();
+            if (state.timer !== null) {
+              window.clearTimeout(state.timer);
+            }
+            state.timer = window.setTimeout(() => {
+              state.buffer = "";
+              state.timer = null;
+            }, TYPE_AHEAD_TIMEOUT_MS);
+            const needle = state.buffer;
+            const start = index + 1;
+            const match =
+              rows
+                .slice(start)
+                .find((candidate) => candidate.name.toLocaleLowerCase().startsWith(needle)) ??
+              rows
+                .slice(0, start)
+                .find((candidate) => candidate.name.toLocaleLowerCase().startsWith(needle));
+            if (match) {
+              focusRow(match.key);
+            }
+          }
           break;
       }
     },
@@ -323,6 +399,7 @@ export function VirtualWorkspaceTree({
       ref={scrollRef}
       role="tree"
       aria-label={t("workspace:tree.region")}
+      aria-multiselectable="false"
       data-testid="workspace-tree"
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onKeyDown={handleKeyDown}
@@ -342,10 +419,11 @@ export function VirtualWorkspaceTree({
               aria-level={row.depth + 1}
               aria-expanded={row.expandable ? row.expanded : undefined}
               aria-selected={row.key === selectedKey}
+              aria-current={isCurrent ? "true" : undefined}
               aria-posinset={row.posInSet}
               aria-setsize={row.setSize}
               aria-busy={row.loadState === "loading" || undefined}
-              aria-label={row.name}
+              aria-label={`${row.name}, ${t(`workspace:${kindKey(row)}`)}`}
               tabIndex={row.key === activeKey ? 0 : -1}
               title={row.errorCode ? t("workspace:tree.rowError") : row.name}
               style={{

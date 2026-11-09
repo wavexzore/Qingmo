@@ -3250,6 +3250,8 @@ dependencies = [
  "blake3",
  "core-foundation 0.10.1",
  "encoding_rs",
+ "file-id",
+ "libc",
  "notify-debouncer-full",
  "rusqlite",
  "serde",
@@ -3270,6 +3272,7 @@ dependencies = [
  "tracing-subscriber",
  "ts-rs",
  "uuid",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

@@ -573,7 +573,10 @@ fn resolve_window_title(
     }
     if let Some(token) = sessions.token_for(label) {
         return registry.get(&token).ok().map(|record| {
-            commands::document::window_title_for(&record.canonical_target, &labels.app_name)
+            commands::document::window_title_for(
+                &record.canonical_target().unwrap_or_default(),
+                &labels.app_name,
+            )
         });
     }
     if sessions.is_untitled(label) {
@@ -586,7 +589,7 @@ fn resolve_window_title(
 }
 
 /// Applies the projected labels to every open native window title.
-fn apply_window_titles<R: Runtime>(app: &AppHandle<R>, labels: &NativeShellLabels) {
+pub(crate) fn apply_window_titles<R: Runtime>(app: &AppHandle<R>, labels: &NativeShellLabels) {
     let sessions = app.state::<state::WindowSessions>();
     let registry = app.state::<state::DocumentRegistry>();
     for window in app.webview_windows().values() {
@@ -997,19 +1000,19 @@ pub fn run() {
             services::logging::install_panic_hook();
             init_tracing(log_dir.as_ref());
             let registry = app.state::<state::DocumentRegistry>().inner().clone();
+            let sessions = app.state::<state::WindowSessions>().inner().clone();
             app.manage(state::DocumentWatcher::start(
                 app.handle().clone(),
-                registry,
+                registry.clone(),
+                sessions.clone(),
             ));
             // Workspace trees share one watcher per canonical root. It is
             // managed here because it needs the app handle for targeted emits.
-            let sessions = app.state::<state::WindowSessions>().inner().clone();
             let workspaces = app.state::<state::WorkspaceRegistry>().inner().clone();
-            app.manage(state::WorkspaceWatcher::new(
-                app.handle().clone(),
-                sessions,
-                workspaces,
-            ));
+            let workspace_watcher =
+                state::WorkspaceWatcher::new(app.handle().clone(), sessions, workspaces);
+            workspace_watcher.attach_registry(registry);
+            app.manage(workspace_watcher);
             // Storage is optional: a broken data directory disables persistence
             // but must never block startup or fall back to /tmp, which would
             // leak plaintext drafts outside the app sandbox.
@@ -1034,6 +1037,20 @@ pub fn run() {
                         services::HistoryStore::disabled()
                     }),
                 None => services::HistoryStore::disabled(),
+            };
+            let identity = match local_data.as_ref() {
+                Some(dir) => match services::DocumentIdentityStore::open_with_recovery(
+                    dir.join("identity"),
+                    Some(dir.join("history")),
+                    Some(dir.join("session")),
+                ) {
+                    Ok(store) => Some(store),
+                    Err(error) => {
+                        tracing::warn!(%error, "document identity storage is unavailable");
+                        None
+                    }
+                },
+                None => None,
             };
             let trash = match local_data.as_ref() {
                 Some(dir) => services::TrashStore::open(dir.join("trash"))
@@ -1060,7 +1077,16 @@ pub fn run() {
                 None => services::SearchIndexService::disabled(),
             };
             app.state::<state::DocumentRegistry>()
-                .configure_services(Some(history.clone()), Some(locks.clone()));
+                .configure_services(
+                    Some(history.clone()),
+                    Some(locks.clone()),
+                    identity.clone(),
+                );
+            if let Some(identity) = identity.clone() {
+                history.configure_identity(Some(identity.clone()));
+                session_store.configure_identity(Some(identity.clone()));
+                app.manage(identity);
+            }
             app.manage(history.clone());
             app.manage(trash.clone());
             app.manage(locks.clone());

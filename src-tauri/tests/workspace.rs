@@ -454,3 +454,49 @@ fn open_path_with_root_accepts_a_file_inside_the_root() {
         std::fs::canonicalize(&payload.path).expect("canonical payload path")
     );
 }
+
+#[test]
+fn resolve_delete_keeps_the_link_path_and_rejects_a_symlink_parent() {
+    use qingmo_lib::services::workspace_service::{
+        resolve_delete, resolve_relative_target, DeleteKind,
+    };
+
+    let (_dir, root) = canonical_tempdir();
+    let target = root.join("target.md");
+    std::fs::write(&target, "body").expect("target");
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("target.md", root.join("link.md")).expect("link");
+        let resolved =
+            resolve_delete(&root, &["link.md".to_string()]).expect("resolve link delete");
+        assert_eq!(resolved.kind, DeleteKind::Symlink);
+        assert_eq!(resolved.raw_path, root.join("link.md"));
+        assert_eq!(
+            resolved.canonical_target,
+            std::fs::canonicalize(&target).unwrap()
+        );
+
+        let file = resolve_delete(&root, &["target.md".to_string()]).expect("resolve file delete");
+        assert_eq!(file.kind, DeleteKind::File);
+
+        let outside = tempfile::tempdir().expect("outside");
+        let outside_root = std::fs::canonicalize(outside.path()).expect("canonical outside");
+        std::fs::write(outside_root.join("secret.md"), "secret").expect("secret");
+        std::os::unix::fs::symlink(&outside_root, root.join("linked")).expect("parent link");
+        let error = resolve_delete(&root, &["linked".to_string(), "secret.md".to_string()])
+            .expect_err("a symlinked parent is outside the visible tree");
+        assert_eq!(error.code, AppErrorCode::OutsideScope);
+    }
+
+    let error =
+        resolve_relative_target(&root, "../escaped.md").expect_err("dotdot must be rejected");
+    assert!(matches!(
+        error.code,
+        AppErrorCode::InvalidPath | AppErrorCode::OutsideScope
+    ));
+    assert!(resolve_relative_target(&root, "missing/child.md").is_err());
+    assert_eq!(
+        resolve_relative_target(&root, "later.md").expect("fresh target"),
+        root.join("later.md")
+    );
+}

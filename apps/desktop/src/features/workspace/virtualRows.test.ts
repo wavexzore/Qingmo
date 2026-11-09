@@ -37,3 +37,9 @@ describe("visibleRange", () => {
     });
   });
 });
+
+it("a 560px first frame keeps 10k rows bounded", () => {
+  const range = visibleRange(10_000, 0, 560);
+  expect(range.start).toBe(0);
+  expect(range.end - range.start).toBeLessThanOrEqual(40);
+});

@@ -35,7 +35,7 @@ async function measureOpen(name: FixtureName, text: string) {
     session.dispose();
 
     if (index === 0) {
-      expect(sourceTier).toBe(name === "large");
+      expect(sourceTier).toBe(name === "large" || name === "xlarge");
       continue;
     }
 

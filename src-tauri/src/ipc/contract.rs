@@ -64,6 +64,8 @@ pub const EVENT_UPDATE_FLUSH_REQUEST: &str = "app://update-flush-request";
 pub const EVENT_MENU_ACTION: &str = "app://menu-action";
 /// The watcher found a different (or missing) disk version for an open document.
 pub const EVENT_DOCUMENT_CHANGED: &str = "app://document-changed";
+/// A rename moved an open document; the payload carries its new path.
+pub const EVENT_DOCUMENT_RELOCATED: &str = "app://document-relocated";
 /// Native New failed after the menu handled it without a webview hop.
 pub const EVENT_DOCUMENT_NEW_FAILED: &str = "app://document-new-failed";
 /// A watched workspace root changed; the payload is empty.
@@ -77,6 +79,7 @@ pub const EVENTS: &[&str] = &[
     EVENT_UPDATE_FLUSH_REQUEST,
     EVENT_MENU_ACTION,
     EVENT_DOCUMENT_CHANGED,
+    EVENT_DOCUMENT_RELOCATED,
     EVENT_DOCUMENT_NEW_FAILED,
     EVENT_WORKSPACE_CHANGED,
     EVENT_WORKSPACE_INDEX_STATUS,

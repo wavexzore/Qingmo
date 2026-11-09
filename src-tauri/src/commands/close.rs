@@ -217,15 +217,26 @@ fn spawn_exit_rollback<R: tauri::Runtime>(app: AppHandle<R>, generation: Option<
 }
 
 /// Releases every token owned by a window and stops its watchers.
+///
+/// Order matters: `deactivate` takes the document `io_lock`, so a save that
+/// was already in flight finishes before `release` removes the record. A save
+/// that starts afterwards observes `active == false` and is rejected.
 pub(crate) fn release_window_state<R: tauri::Runtime>(app: &AppHandle<R>, label: &str) {
     let released = app.state::<WindowSessions>().release(label);
-    for token in [released.doc_token, released.previous_doc_token]
+    let tokens: Vec<String> = [released.doc_token, released.previous_doc_token]
         .into_iter()
         .flatten()
-    {
-        app.state::<DocumentRegistry>().release(&token);
+        .collect();
+    let documents = app.state::<DocumentRegistry>();
+    for token in &tokens {
+        if let Err(error) = documents.deactivate(token) {
+            tracing::warn!(%error, token, "failed to deactivate document before release");
+        }
+    }
+    for token in &tokens {
+        documents.release(token);
         if let Some(watcher) = app.try_state::<DocumentWatcher>() {
-            watcher.unwatch(&token);
+            watcher.unwatch(token);
         }
     }
     if let Some(token) = released.workspace_token {

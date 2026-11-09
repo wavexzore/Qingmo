@@ -10,7 +10,7 @@ use qingmo_lib::ipc::dto::{
 use qingmo_lib::services::session_store::{
     SessionStore, DRAFT_TTL_MS, MAX_DRAFT_BYTES, MAX_VIEW_ENTRIES, VIEW_STATE_FILE,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 
 fn store() -> (TempDir, SessionStore) {
@@ -156,10 +156,11 @@ fn view_state_is_capped_at_two_hundred_entries() {
     let raw =
         fs::read_to_string(_dir.path().join("session").join(VIEW_STATE_FILE)).expect("view file");
     let parsed: serde_json::Value = serde_json::from_str(&raw).expect("view json");
-    assert_eq!(
-        parsed["entries"].as_object().map(serde_json::Map::len),
-        Some(MAX_VIEW_ENTRIES)
-    );
+    let entries = parsed["entries"]
+        .as_object()
+        .map_or(0, serde_json::Map::len);
+    let legacy = parsed["legacy"].as_object().map_or(0, serde_json::Map::len);
+    assert_eq!(entries + legacy, MAX_VIEW_ENTRIES);
 }
 
 #[test]
@@ -631,4 +632,69 @@ fn disabled_store_reads_empty_and_rejects_writes() {
         AppErrorCode::Io
     );
     assert_eq!(store.gc(), Default::default());
+}
+
+#[test]
+fn v1_view_state_is_copied_and_dual_read() {
+    let dir = TempDir::new().expect("temp dir");
+    let root = dir.path().join("session");
+    fs::create_dir_all(root.join("drafts")).expect("dirs");
+    let document = dir.path().join("note.md");
+    fs::write(&document, "body").expect("document");
+    let path = document.to_string_lossy().to_string();
+    let v1 = json!({
+        "schemaVersion": 1,
+        "entries": {
+            path.clone(): {
+                "anchor": 1,
+                "head": 1,
+                "topPos": 0,
+                "topOffset": 0.0,
+                "scrollLeft": 0.0,
+                "livePreviewPreferred": true,
+                "updatedAtMs": now_ms()
+            }
+        }
+    });
+    fs::write(
+        root.join(VIEW_STATE_FILE),
+        serde_json::to_vec(&v1).expect("json"),
+    )
+    .expect("v1 fixture");
+
+    let store = SessionStore::open(root.clone()).expect("store");
+    assert!(store.view_get(&path).is_some(), "v1 legacy read");
+    assert!(
+        fs::read_dir(&root)
+            .expect("root")
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().contains("v1-backup-")),
+        "v1 copy backup"
+    );
+
+    let identity = qingmo_lib::services::document_identity::DocumentIdentityStore::open(
+        dir.path().join("identity"),
+    )
+    .expect("identity");
+    store.configure_identity(Some(identity.clone()));
+    let observation =
+        qingmo_lib::services::file_identity::observe_path(&document).expect("observe");
+    let outcome = identity
+        .resolve_open(
+            &document,
+            observation,
+            &qingmo_lib::services::document_identity::LiveDocuments::default(),
+        )
+        .expect("resolve");
+    let id = match outcome {
+        qingmo_lib::services::document_identity::ResolveOutcome::Existing { id, .. }
+        | qingmo_lib::services::document_identity::ResolveOutcome::Created { id } => id,
+        _ => panic!("unexpected unmanaged"),
+    };
+    assert!(store.view_get_for(&path, Some(&id)).is_some());
+    let raw = fs::read_to_string(root.join(VIEW_STATE_FILE)).expect("v2 file");
+    let parsed: Value = serde_json::from_str(&raw).expect("v2 json");
+    assert_eq!(parsed["schemaVersion"], 2);
+    assert!(parsed["entries"].get(id.to_string()).is_some());
+    assert!(parsed["legacy"].get(&path).is_some());
 }

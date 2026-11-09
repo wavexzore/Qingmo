@@ -9,6 +9,7 @@ export type { CloseRequestedPayload } from "./CloseRequestedPayload";
 export type { ConflictDetails } from "./ConflictDetails";
 export type { DocumentChangedPayload } from "./DocumentChangedPayload";
 export type { DocumentChangeKind } from "./DocumentChangeKind";
+export type { DocumentRelocatedPayload } from "./DocumentRelocatedPayload";
 export type { DraftKind } from "./DraftKind";
 export type { DraftMeta } from "./DraftMeta";
 export type { DraftRecord } from "./DraftRecord";

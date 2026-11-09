@@ -80,9 +80,9 @@ jobs:
           retention-days: 7
 
   contract:
-    name: Ubuntu / contract + generated + negative probes
+    name: Ubuntu / contract + generated + negative probes + all targets
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
@@ -126,6 +126,9 @@ jobs:
 
       - name: Contract + security config
         run: cargo test --manifest-path src-tauri/Cargo.toml --test commands_contract --test security_config
+
+      - name: Rust tests (Linux, all targets)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 
       - name: Generated bindings are current
         run: bash scripts/ci/check-generated.sh
@@ -198,9 +201,9 @@ jobs:
           retention-days: 7
 
   windows:
-    name: Windows / cargo check
+    name: Windows / cargo test (targeted)
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -225,5 +228,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Cargo check (compile-only)
+      - name: Cargo check (all targets)
         run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: Rust tests (Windows, targeted)
+        run: >
+          cargo test --manifest-path src-tauri/Cargo.toml
+          --lib
+          --test file_identity
+          --test document_identity
+          --test document_roundtrip
+          --test document_save_as
+          --test document_token
+          --test history_store
+          --test session_store
+          --test trash_store
+          --test workspace
+          --test workspace_watcher
+          --test search_index
+          --test security_config
+          --test commands_contract

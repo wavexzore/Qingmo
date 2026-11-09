@@ -172,6 +172,7 @@ describe("ViewStateRecorder", () => {
     const [write] = ipc.viewStateWrites;
     expect(write).toMatchObject({
       path: PATH,
+      docToken: "token-view",
       state: { anchor: 2, head: 2, livePreviewPreferred: true },
     });
     expect(write?.state.topPos).toBe(0);

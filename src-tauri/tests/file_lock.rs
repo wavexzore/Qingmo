@@ -76,3 +76,34 @@ fn disabled_store_is_a_safe_noop() {
     let _guard = store.acquire(&path).expect("disabled acquire");
     let _second = store.acquire(&path).expect("disabled acquire is reentrant");
 }
+
+#[test]
+fn with_read_lock_waits_for_the_writer_and_then_reads() {
+    use qingmo_lib::services::atomic_writer::AtomicWriter;
+
+    let (_dir, store, path) = fixture();
+    let guard = store.acquire(&path).expect("writer lock");
+    let waiting = store.clone();
+    let waiting_path = path.clone();
+    let (started_sender, started_receiver) = mpsc::channel();
+    let (done_sender, done_receiver) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        started_sender.send(()).expect("started");
+        let result = AtomicWriter::with_read_lock(Some(&waiting), &waiting_path, || Ok::<_, _>(()));
+        done_sender.send(result.is_ok()).expect("done");
+    });
+
+    started_receiver.recv().expect("reader started");
+    assert!(
+        done_receiver
+            .recv_timeout(Duration::from_millis(200))
+            .is_err(),
+        "reload must not read while a writer owns the lock"
+    );
+    drop(guard);
+    assert!(done_receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("reader must finish after the writer releases"));
+    handle.join().expect("thread join");
+    drop(_dir);
+}

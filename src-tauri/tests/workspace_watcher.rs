@@ -10,11 +10,12 @@ use notify_debouncer_full::notify::event::{
 };
 use notify_debouncer_full::notify::Event;
 use notify_debouncer_full::DebouncedEvent;
+use qingmo_lib::ipc::dto::DocumentRelocatedPayload;
 use qingmo_lib::state::workspace_watcher::{
     BuildScheduler, EventHandler, ImmediateScheduler, WatchHandle, WatcherFactory,
     WorkspaceEventSink, WorkspaceWatcher,
 };
-use qingmo_lib::state::{WindowSessions, WorkspaceRegistry, WorkspaceToken};
+use qingmo_lib::state::{DocumentRegistry, WindowSessions, WorkspaceRegistry, WorkspaceToken};
 
 struct NoopHandle;
 
@@ -23,6 +24,7 @@ impl WatchHandle for NoopHandle {}
 #[derive(Clone, Default)]
 struct RecordingSink {
     emits: Arc<Mutex<Vec<String>>>,
+    relocated: Arc<Mutex<Vec<(String, DocumentRelocatedPayload)>>>,
 }
 
 impl WorkspaceEventSink for RecordingSink {
@@ -31,6 +33,13 @@ impl WorkspaceEventSink for RecordingSink {
             .lock()
             .expect("sink lock")
             .push(label.to_string());
+    }
+
+    fn relocated(&self, label: &str, payload: &DocumentRelocatedPayload) {
+        self.relocated
+            .lock()
+            .expect("relocated lock")
+            .push((label.to_string(), payload.clone()));
     }
 }
 
@@ -144,6 +153,10 @@ impl Harness {
 
     fn take_emits(&self) -> Vec<String> {
         std::mem::take(&mut *self.sink.emits.lock().expect("sink lock"))
+    }
+
+    fn take_relocated(&self) -> Vec<(String, DocumentRelocatedPayload)> {
+        std::mem::take(&mut *self.sink.relocated.lock().expect("relocated lock"))
     }
 
     fn trigger(&self, root: &std::path::Path, handler_index: usize, events: Vec<Event>) {
@@ -503,4 +516,149 @@ fn two_roots_are_watched_independently() {
     h.watcher.sync_watchers();
     assert_eq!(h.watcher.watched_root_count(), 0);
     drop(other_dir);
+}
+
+#[test]
+fn a_file_rename_rekeys_the_open_document_and_emits_relocated() {
+    let h = harness();
+    h.attach("doc-1");
+    let documents = DocumentRegistry::new();
+    h.watcher.attach_registry(documents.clone());
+    let old = h.root.join("old.md");
+    std::fs::write(&old, "body").expect("fixture");
+    let payload = documents.open_path(old.clone()).expect("open");
+    h.sessions.set_token("doc-1", payload.doc_token.clone());
+    h.watcher.sync_watchers();
+    let _ = h.take_emits();
+
+    let new = h.root.join("new.md");
+    std::fs::rename(&old, &new).expect("rename");
+    h.trigger(
+        &h.root,
+        0,
+        vec![Event {
+            kind: EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            paths: vec![old.clone(), new.clone()],
+            attrs: Default::default(),
+        }],
+    );
+
+    let relocated = h.take_relocated();
+    assert_eq!(relocated.len(), 1);
+    assert_eq!(relocated[0].0, "doc-1");
+    assert_eq!(relocated[0].1.doc_token, payload.doc_token);
+    assert_eq!(
+        relocated[0].1.path,
+        std::fs::canonicalize(&new)
+            .expect("canonical new")
+            .to_string_lossy()
+    );
+    let record = documents.get(&payload.doc_token).expect("record");
+    assert_eq!(
+        record.paths().expect("paths").canonical_target,
+        std::fs::canonicalize(&new).expect("canonical new")
+    );
+}
+
+#[test]
+fn a_directory_rename_uses_prefix_rekey_for_open_children() {
+    let h = harness();
+    h.attach("doc-1");
+    let documents = DocumentRegistry::new();
+    h.watcher.attach_registry(documents.clone());
+    let docs = h.root.join("docs");
+    std::fs::create_dir(&docs).expect("docs");
+    let old = docs.join("note.md");
+    std::fs::write(&old, "body").expect("fixture");
+    let payload = documents.open_path(old.clone()).expect("open");
+    h.sessions.set_token("doc-1", payload.doc_token.clone());
+    h.watcher.sync_watchers();
+    let _ = h.take_emits();
+
+    let renamed = h.root.join("docs2");
+    std::fs::rename(&docs, &renamed).expect("rename dir");
+    h.trigger(
+        &h.root,
+        0,
+        vec![Event {
+            kind: EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            paths: vec![docs.clone(), renamed.clone()],
+            attrs: Default::default(),
+        }],
+    );
+
+    let record = documents.get(&payload.doc_token).expect("record");
+    assert_eq!(
+        record.paths().expect("paths").canonical_target,
+        std::fs::canonicalize(renamed.join("note.md")).expect("canonical child")
+    );
+    assert_eq!(h.take_relocated().len(), 1);
+}
+
+#[test]
+fn renaming_an_open_markdown_file_to_txt_rekeys_but_does_not_enter_the_directory_branch() {
+    let h = harness();
+    h.attach("doc-1");
+    let documents = DocumentRegistry::new();
+    h.watcher.attach_registry(documents.clone());
+    let old = h.root.join("note.md");
+    std::fs::write(&old, "body").expect("fixture");
+    let payload = documents.open_path(old.clone()).expect("open");
+    h.sessions.set_token("doc-1", payload.doc_token.clone());
+    h.watcher.sync_watchers();
+    let _ = h.take_emits();
+
+    let new = h.root.join("note.txt");
+    std::fs::rename(&old, &new).expect("rename");
+    h.trigger(
+        &h.root,
+        0,
+        vec![Event {
+            kind: EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            paths: vec![old, new.clone()],
+            attrs: Default::default(),
+        }],
+    );
+
+    let record = documents.get(&payload.doc_token).expect("record");
+    assert_eq!(
+        record.paths().expect("paths").canonical_target,
+        std::fs::canonicalize(&new).expect("canonical")
+    );
+    assert_eq!(h.take_relocated().len(), 1);
+}
+
+#[test]
+fn moving_an_open_document_out_of_the_workspace_does_not_rekey_it() {
+    let h = harness();
+    h.attach("doc-1");
+    let documents = DocumentRegistry::new();
+    h.watcher.attach_registry(documents.clone());
+    let old = h.root.join("note.md");
+    std::fs::write(&old, "body").expect("fixture");
+    let canonical_old = std::fs::canonicalize(&old).expect("canonical old");
+    let payload = documents.open_path(old.clone()).expect("open");
+    h.sessions.set_token("doc-1", payload.doc_token.clone());
+    h.watcher.sync_watchers();
+    let _ = h.take_emits();
+
+    let outside = tempfile::tempdir().expect("outside");
+    let new = outside.path().join("note.md");
+    std::fs::rename(&old, &new).expect("move out");
+    h.trigger(
+        &h.root,
+        0,
+        vec![Event {
+            kind: EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            paths: vec![old.clone(), new],
+            attrs: Default::default(),
+        }],
+    );
+
+    let record = documents.get(&payload.doc_token).expect("record");
+    assert_eq!(
+        record.paths().expect("paths").canonical_target,
+        canonical_old
+    );
+    assert!(h.take_relocated().is_empty());
 }

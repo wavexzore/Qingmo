@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let text = fs::read_to_string(payload_path)?;
     let registry = DocumentRegistry::new();
-    registry.configure_services(None, Some(FileLockStore::open(locks)?));
+    registry.configure_services(None, Some(FileLockStore::open(locks)?), None);
     let payload = registry.open_path(target)?;
 
     // The barrier makes both processes finish opening, then contend for the

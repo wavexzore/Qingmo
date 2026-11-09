@@ -177,7 +177,11 @@ fn command_round_trip_conflict_and_invalid_token() {
 
     let app = tauri::test::mock_builder()
         .manage(registry.clone())
-        .manage(qingmo_lib::state::WindowSessions::new())
+        .manage({
+            let sessions = qingmo_lib::state::WindowSessions::new();
+            sessions.set_token("main", payload.doc_token.clone());
+            sessions
+        })
         .manage(qingmo_lib::state::WorkspaceRegistry::new())
         .invoke_handler(qingmo_lib::commands::handler())
         .build(tauri::generate_context!())

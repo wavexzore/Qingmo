@@ -269,3 +269,52 @@ describe("VirtualWorkspaceTree context menu", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });
+
+describe("VirtualWorkspaceTree virtualization and accessibility", () => {
+  function manyRows(count: number): FlatRow[] {
+    return Array.from({ length: count }, (_, index) =>
+      row([`file-${String(index).padStart(4, "0")}.md`], "file", {
+        posInSet: index + 1,
+        setSize: count,
+      }),
+    );
+  }
+
+  it("renders a bounded first frame for 10k rows while the panel is unmeasured", () => {
+    render(<Harness rows={manyRows(10_000)} />);
+    const items = screen.getAllByRole("treeitem");
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBeLessThanOrEqual(40);
+  });
+
+  it("reaches the last and first row with End and Home", async () => {
+    render(<Harness rows={manyRows(10_000)} />);
+    fireEvent.keyDown(rowElement("file-0000.md"), { key: "End" });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(rowElement("file-9999.md"));
+    });
+
+    fireEvent.keyDown(rowElement("file-9999.md"), { key: "Home" });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(rowElement("file-0000.md"));
+    });
+  });
+
+  it("marks the current document and exposes single-select semantics", () => {
+    render(<Harness rows={[DOCS, NOTE, ROOT_FILE]} currentKey="docs/note.md" />);
+    expect(screen.getByRole("tree")).toHaveAttribute("aria-multiselectable", "false");
+    expect(rowElement("docs/note.md")).toHaveAttribute("aria-current", "true");
+    expect(rowElement("docs")).not.toHaveAttribute("aria-current");
+    expect(rowElement("docs/note.md")).toHaveAttribute("aria-label", "note.md, 文件");
+  });
+
+  it("moves focus with a 500ms type-ahead buffer", async () => {
+    const rows = [row(["alpha.md"], "file"), row(["beta.md"], "file"), row(["charlie.md"], "file")];
+    render(<Harness rows={rows} />);
+
+    fireEvent.keyDown(rowElement("alpha.md"), { key: "b" });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(rowElement("beta.md"));
+    });
+  });
+});

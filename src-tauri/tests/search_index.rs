@@ -168,3 +168,118 @@ fn an_empty_query_returns_a_hint_instead_of_a_database_error() {
     assert!(response.results.is_empty());
     assert!(response.error.is_some());
 }
+
+#[test]
+fn rename_path_moves_one_row_and_reprefixes_directories() {
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    write(&root, "docs/a.md", "# A\n\nneedle one\n");
+    write(&root, "docs/b.md", "# B\n\nneedle two\n");
+    let index = SearchIndexService::open(dir.path().join("index")).expect("index");
+    index.scan_root(&root).expect("scan");
+
+    let old = root.join("docs/a.md");
+    let new = root.join("docs/a-renamed.md");
+    fs::rename(&old, &new).expect("rename file");
+    index.rename_path(&root, &old, &new).expect("rename index");
+    let hits = index.search(&root, "needle", 10, 0).expect("search");
+    let paths: Vec<&str> = hits.results.iter().map(|hit| hit.path.as_str()).collect();
+    assert!(paths.contains(&"docs/a-renamed.md"));
+    assert!(!paths.contains(&"docs/a.md"));
+
+    let old_dir = root.join("docs");
+    let new_dir = root.join("docs2");
+    fs::rename(&old_dir, &new_dir).expect("rename dir");
+    index
+        .rename_path(&root, &old_dir, &new_dir)
+        .expect("rename prefix");
+    let hits = index
+        .search(&root, "needle", 10, 0)
+        .expect("search after dir");
+    let paths: Vec<&str> = hits.results.iter().map(|hit| hit.path.as_str()).collect();
+    assert!(paths.iter().all(|path| path.starts_with("docs2/")));
+    assert_eq!(paths.len(), 2);
+}
+
+#[test]
+fn rename_to_a_non_markdown_name_removes_the_old_row() {
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    write(&root, "note.md", "# Note\n\nunique-token\n");
+    let index = SearchIndexService::open(dir.path().join("index")).expect("index");
+    index.scan_root(&root).expect("scan");
+
+    let old = root.join("note.md");
+    let new = root.join("note.txt");
+    fs::rename(&old, &new).expect("rename");
+    let result = index.rename_path(&root, &old, &new).expect("rename index");
+    assert!(!result.renamed);
+    assert!(index
+        .search(&root, "unique-token", 10, 0)
+        .expect("search")
+        .results
+        .is_empty());
+}
+
+#[test]
+fn upsert_path_removes_a_row_when_the_path_is_no_longer_indexable() {
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    write(&root, "note.md", "# Note\n\nstale-token\n");
+    let index = SearchIndexService::open(dir.path().join("index")).expect("index");
+    index.scan_root(&root).expect("scan");
+    assert_eq!(
+        index
+            .search(&root, "stale-token", 10, 0)
+            .expect("search")
+            .results
+            .len(),
+        1
+    );
+
+    fs::remove_file(root.join("note.md")).expect("remove file");
+    fs::create_dir(root.join("note.md")).expect("replace with dir");
+    index
+        .upsert_path(&root, &root.join("note.md"))
+        .expect("upsert");
+    assert!(index
+        .search(&root, "stale-token", 10, 0)
+        .expect("search")
+        .results
+        .is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinks_are_indexed_by_link_name_only_inside_the_root() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().expect("temp dir");
+    let root = canonical(&dir);
+    let outside = TempDir::new().expect("outside");
+    let outside_root = fs::canonicalize(outside.path()).expect("outside canonical");
+    write(&root, "target.md", "# Target\n\ninside-token\n");
+    write(&outside_root, "outside.md", "# Outside\n\noutside-token\n");
+    symlink(root.join("target.md"), root.join("link.md")).expect("inside link");
+    symlink(
+        outside_root.join("outside.md"),
+        root.join("outside-link.md"),
+    )
+    .expect("outside link");
+
+    let index = SearchIndexService::open(dir.path().join("index")).expect("index");
+    index.scan_root(&root).expect("scan");
+
+    let inside = index.search(&root, "inside-token", 10, 0).expect("inside");
+    let paths: Vec<&str> = inside.results.iter().map(|hit| hit.path.as_str()).collect();
+    assert!(paths.contains(&"link.md"), "link name must be searchable");
+    assert!(
+        paths.contains(&"target.md"),
+        "the target itself is also a real file"
+    );
+    assert!(index
+        .search(&root, "outside-token", 10, 0)
+        .expect("outside")
+        .results
+        .is_empty());
+}

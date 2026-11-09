@@ -31,7 +31,7 @@ export function useExternalDocumentChanges(
   coordinatorRef.current = coordinator;
 
   useEffect(() => {
-    return ipc.onDocumentChanged((change) => {
+    const stopChanged = ipc.onDocumentChanged((change) => {
       const current = sessionRef.current;
       const save = coordinatorRef.current;
       if (!save || current.isUntitled || change.docToken !== current.docToken) {
@@ -74,5 +74,19 @@ export function useExternalDocumentChanges(
           toast.push(i18n.t("editor:external.reloadFailed"));
         });
     });
+
+    // A rename keeps the token and the buffer; only the path/title move.
+    const stopRelocated = ipc.onDocumentRelocated((relocated) => {
+      const current = sessionRef.current;
+      if (current.isUntitled || relocated.docToken !== current.docToken) {
+        return;
+      }
+      current.relocate(relocated.path);
+    });
+
+    return () => {
+      stopChanged();
+      stopRelocated();
+    };
   }, [ipc, toast]);
 }

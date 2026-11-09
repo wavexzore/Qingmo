@@ -96,6 +96,47 @@ describe("useExternalDocumentChanges", () => {
     expect(screen.getByRole("status")).toHaveTextContent("磁盘上的文件已更新，已重新加载。");
   });
 
+  it("applies an external rename without discarding unsaved edits", async () => {
+    const harness = await mount("hello\n");
+    const token = harness.session.docToken;
+    const view = attachView(harness);
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: "local" },
+    });
+    expect(harness.session.getSnapshot().dirty).toBe(true);
+
+    act(() => {
+      harness.ipc.emitDocumentRelocated({
+        docToken: token,
+        path: "/docs/renamed.md",
+        name: "renamed.md",
+      });
+    });
+
+    const snapshot = harness.session.getSnapshot();
+    expect(snapshot.docId).toBe("/docs/renamed.md");
+    expect(snapshot.fileName).toBe("renamed.md");
+    expect(snapshot.docToken).toBe(token);
+    expect(snapshot.dirty).toBe(true);
+    expect(harness.session.readText()).toBe("hello\nlocal");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("ignores a relocation for a different document token", async () => {
+    const harness = await mount("hello\n");
+
+    act(() => {
+      harness.ipc.emitDocumentRelocated({
+        docToken: "another-token",
+        path: "/docs/renamed.md",
+        name: "renamed.md",
+      });
+    });
+
+    expect(harness.session.getSnapshot().docId).toBe(PATH);
+    expect(harness.session.getSnapshot().fileName).toBe("note.md");
+  });
+
   it("opens a conflict instead of discarding unsaved edits", async () => {
     const harness = await mount("hello\n");
     const view = attachView(harness);

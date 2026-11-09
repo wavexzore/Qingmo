@@ -370,6 +370,34 @@ export class EditorSession {
   }
 
   /**
+   * Applies an external rename to the open document. The token is unchanged;
+   * only the path-derived metadata and the relative image resolver move.
+   */
+  relocate(path: string): void {
+    if (this.disposed || this.untitled || path.length === 0) {
+      return;
+    }
+    if (path === this.metadata.docId) {
+      return;
+    }
+    this.metadata = Object.freeze({
+      ...this.metadata,
+      docId: path,
+      fileName: fileNameOf(path),
+    });
+    this.snapshot = Object.freeze({
+      ...this.snapshot,
+      ...this.metadata,
+      version: this.snapshot.version + 1,
+    });
+    this.applyImageResolver(path);
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
+    this.flushStatus();
+  }
+
+  /**
    * Binds an untitled session to the file created by native Save As without
    * rebuilding EditorState, so text, selection and undo history survive.
    */
