@@ -11,12 +11,12 @@ import { SettingsWindow } from "./SettingsWindow";
 
 const controllers: LocaleController[] = [];
 
-function renderSettings(options: { settings?: FakeSettings } = {}) {
+function renderSettings(options: { settings?: FakeSettings; section?: "general" | "ai" } = {}) {
   const settings = options.settings ?? new FakeSettings();
   const controller = new LocaleController({ store: uiStore, i18n, native: null });
   controller.start();
   controllers.push(controller);
-  render(<SettingsWindow settings={settings} />);
+  render(<SettingsWindow settings={settings} initialSection={options.section ?? "general"} />);
   return { settings };
 }
 
@@ -35,6 +35,30 @@ afterEach(async () => {
 });
 
 describe("SettingsWindow", () => {
+  it("keeps only General and AI in the rail and follows ?section=ai", async () => {
+    renderSettings({ section: "ai" });
+
+    expect(await screen.findByRole("heading", { name: "AI 设置" })).toBeInTheDocument();
+    expect(screen.getByTestId("nav-general")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-ai")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { name: "转写模型" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "摘要模型" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "范围与产物" })).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^nav-/)).toHaveLength(2);
+  });
+
+  it("switches between General and AI without leaving the sheet", async () => {
+    renderSettings();
+
+    fireEvent.click(screen.getByTestId("nav-ai"));
+    expect(await screen.findByRole("heading", { name: "AI 设置" })).toBeInTheDocument();
+    expect(window.location.search).toContain("section=ai");
+
+    fireEvent.click(screen.getByTestId("nav-general"));
+    expect(await screen.findByRole("heading", { name: "通用设置" })).toBeInTheDocument();
+    expect(window.location.search).not.toContain("section=ai");
+  });
+
   it("renders the General sections with the current language", async () => {
     renderSettings();
 

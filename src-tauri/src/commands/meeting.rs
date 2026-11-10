@@ -19,17 +19,22 @@ use crate::commands::settings::{ensure_settings_window, open_settings, SETTINGS_
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::contract::EVENT_MEETING_MODEL_PROGRESS;
 use crate::ipc::dto::{
-    Accel, AsrBackend, Degraded, DownloadState, KeyStatus, LlmMode, MeetingConfigGetResponse,
-    MeetingConfigPatch, MeetingConfigSetResponse, MeetingOutcome, MeetingResult,
-    MeetingRetryResponse, MeetingStage, MeetingStartResponse, MeetingStats, ModelDownloadResponse,
-    ModelView,
+    Accel, AsrBackend, AsrConfigView, AsrMode, Degraded, DiskStatus, DownloadState, KeyStatus,
+    LlmConfigView, LlmMode, MeetingConfigGetResponse, MeetingConfigPatch, MeetingConfigSetResponse,
+    MeetingConfigView, MeetingOutcome, MeetingResult, MeetingRetryResponse, MeetingStage,
+    MeetingStartResponse, MeetingStats, ModelDownloadResponse, ModelOrigin, ModelView,
+    ResolvedModelsView, RuntimeMode, RuntimeNote, RuntimePreview, RuntimeView, TierDefaultsView,
 };
 use crate::services::meeting::asr::SherpaAsr;
+use crate::services::meeting::budget;
 use crate::services::meeting::decode::{decode_windows, ensure_duration, probe_audio};
 use crate::services::meeting::download::{self, DiskProbe};
-use crate::services::meeting::models::{manifest, ModelCatalog, ModelState};
+use crate::services::meeting::keys::KeyService;
+use crate::services::meeting::models::{find, manifest, ModelCatalog, ModelPack, ModelState};
 use crate::services::meeting::pipeline::{exit_for, run_local, StopExit};
-use crate::services::meeting::runtime::{self, resolve_models, tier_defaults, HardwareProfile};
+use crate::services::meeting::runtime::{
+    self, resolve_models, tier_defaults, HardwareProfile, Origin,
+};
 use crate::services::meeting::summarize;
 use crate::state::meeting::config::MeetingConfigStore;
 use crate::state::meeting::downloads::ModelDownloads;
@@ -466,55 +471,279 @@ fn format_ms(ms: u64) -> String {
 // Configuration, keys and models (T-010/T-011)
 // ---------------------------------------------------------------------------
 
+fn key_slot(config: &crate::state::meeting::MeetingConfig, slot: &str) -> Result<String, AppError> {
+    match slot {
+        "asr" => Ok(config.asr_key_ref()),
+        "llm" => Ok(config.llm_key_ref()),
+        _ => Err(AppError::new(
+            AppErrorCode::InvalidConfig,
+            format!("unknown key slot: {slot}"),
+        )
+        .with_details(serde_json::json!({ "field": "slot" }))),
+    }
+}
+
+/// Missing members of the first-use transcription set, in enqueue order.
+fn transcription_gaps(
+    config: &crate::state::meeting::MeetingConfig,
+    catalog: &dyn ModelCatalog,
+    profile: &HardwareProfile,
+) -> Vec<&'static ModelPack> {
+    let defaults = tier_defaults(profile);
+    let resolved = resolve_models(
+        config.asr.local_model.as_deref(),
+        config.llm.local_model.as_deref(),
+        profile,
+    )
+    .ok()
+    .map(|resolved| resolved.asr);
+    let mut ids: Vec<&'static str> = vec![defaults.asr_model];
+    if let Some(selected) = config.asr.local_model.as_deref().and_then(find) {
+        ids.push(selected.id);
+    }
+    if let Some(resolved) = resolved {
+        ids.push(resolved);
+    }
+    ids.extend([
+        "silero-vad",
+        "pyannote-segmentation-3-int8",
+        "campplus-zh-en-advanced",
+    ]);
+    let mut unique: Vec<&'static str> = Vec::new();
+    for id in ids {
+        if !unique.contains(&id) {
+            unique.push(id);
+        }
+    }
+    unique
+        .into_iter()
+        .filter(|id| catalog.state(id) != ModelState::Ready)
+        .filter_map(find)
+        .collect()
+}
+
+fn required_bytes(packs: &[&ModelPack]) -> u64 {
+    packs.iter().fold(0u64, |total, pack| {
+        total.saturating_add(download::required_bytes(
+            pack.download_bytes,
+            pack.install_bytes,
+        ))
+    })
+}
+
 #[tauri::command]
 pub fn meeting_config_get<R: Runtime>(
     window: WebviewWindow<R>,
+    catalog: State<'_, Arc<dyn ModelCatalog>>,
+    config: State<'_, MeetingConfigStore>,
+    keys: State<'_, Arc<KeyService>>,
+    disk: State<'_, Arc<dyn DiskProbe>>,
 ) -> Result<MeetingConfigGetResponse, AppError> {
     ensure_reading_window(&window)?;
-    Err(AppError::not_implemented("meeting_config_get"))
+    let snapshot = config.get();
+    let profile = HardwareProfile::detect();
+    let defaults = tier_defaults(&profile);
+    let resolved = resolve_models(
+        snapshot.config.asr.local_model.as_deref(),
+        snapshot.config.llm.local_model.as_deref(),
+        &profile,
+    );
+    let (resolved_view, unsupported) = match resolved {
+        Ok(resolved) => (
+            Some(ResolvedModelsView {
+                asr: resolved.asr.to_owned(),
+                llm: resolved.llm.to_owned(),
+                asr_origin: match resolved.asr_origin {
+                    Origin::Auto => ModelOrigin::Auto,
+                    Origin::Pinned => ModelOrigin::Pinned,
+                },
+                llm_origin: match resolved.llm_origin {
+                    Origin::Auto => ModelOrigin::Auto,
+                    Origin::Pinned => ModelOrigin::Pinned,
+                },
+            }),
+            None,
+        ),
+        Err(_) => (None, Some(crate::ipc::dto::ReasonCode::ModelUnsupported)),
+    };
+    let asr_gaps = transcription_gaps(&snapshot.config, catalog.inner().as_ref(), &profile);
+    let llm_gaps: Vec<&'static ModelPack> = resolved_view
+        .as_ref()
+        .and_then(|resolved| find(&resolved.llm))
+        .filter(|pack| catalog.state(pack.id) != ModelState::Ready)
+        .into_iter()
+        .collect();
+    let free_bytes = disk.free_bytes(catalog.root()).unwrap_or(0);
+    Ok(MeetingConfigGetResponse {
+        config: MeetingConfigView {
+            runtime: RuntimeView {
+                mode: match snapshot.config.runtime.mode {
+                    crate::state::meeting::RuntimeMode::Auto => RuntimeMode::Auto,
+                    crate::state::meeting::RuntimeMode::Cpu => RuntimeMode::Cpu,
+                },
+            },
+            asr: AsrConfigView {
+                mode: match snapshot.config.asr.mode {
+                    crate::services::meeting::asr_route::AsrMode::Local => AsrMode::Local,
+                    crate::services::meeting::asr_route::AsrMode::Remote => AsrMode::Remote,
+                },
+                local_model: snapshot.config.asr.local_model.clone(),
+                provider: match snapshot.config.asr.provider {
+                    crate::services::meeting::remote_asr::RemoteProvider::OpenAi => {
+                        crate::ipc::dto::RemoteProvider::OpenAi
+                    }
+                    crate::services::meeting::remote_asr::RemoteProvider::Groq => {
+                        crate::ipc::dto::RemoteProvider::Groq
+                    }
+                    crate::services::meeting::remote_asr::RemoteProvider::Deepgram => {
+                        crate::ipc::dto::RemoteProvider::Deepgram
+                    }
+                },
+                model: snapshot.config.asr.model.clone(),
+                api_key_ref: snapshot.config.asr.api_key_ref.clone(),
+                key_status: keys.status(&snapshot.config.asr_key_ref()),
+            },
+            llm: LlmConfigView {
+                mode: match snapshot.config.llm.mode {
+                    crate::services::meeting::summarize::LlmMode::Local => LlmMode::Local,
+                    crate::services::meeting::summarize::LlmMode::Remote => LlmMode::Remote,
+                },
+                local_model: snapshot.config.llm.local_model.clone(),
+                base_url: snapshot.config.llm.base_url.clone(),
+                model: snapshot.config.llm.model.clone(),
+                api_key_ref: snapshot.config.llm.api_key_ref.clone(),
+                key_status: keys.status(&snapshot.config.llm_key_ref()),
+            },
+            keep_transcript: snapshot.config.keep_transcript,
+            max_minutes: snapshot.config.max_minutes,
+            revision: snapshot.revision,
+        },
+        preview: RuntimePreview {
+            defaults: TierDefaultsView {
+                asr_model: defaults.asr_model.to_owned(),
+                llm_model: defaults.llm_model.to_owned(),
+                threads: defaults.threads,
+                accel: match defaults.accel {
+                    runtime::Accel::Cpu => Accel::Cpu,
+                    runtime::Accel::Metal => Accel::Metal,
+                },
+                notes: defaults
+                    .notes
+                    .iter()
+                    .map(|note| match note {
+                        runtime::RuntimeNote::FireRedHighMemory => RuntimeNote::FireRedHighMemory,
+                        runtime::RuntimeNote::LlmEightBRequires32GiB => {
+                            RuntimeNote::LlmEightBRequires32GiB
+                        }
+                        runtime::RuntimeNote::WindowsSlowLlm => RuntimeNote::WindowsSlowLlm,
+                    })
+                    .collect(),
+            },
+            resolved: resolved_view,
+            unsupported,
+            asr_budget_mb: budget::asr_budget_mb(
+                profile.available_memory_mb,
+                profile.total_memory_mb,
+            ),
+            llm_budget_mb: budget::llm_budget_mb(profile.available_memory_mb),
+        },
+        disk: DiskStatus {
+            free_bytes,
+            asr_required_bytes: required_bytes(&asr_gaps),
+            llm_required_bytes: required_bytes(&llm_gaps),
+        },
+    })
 }
 
 #[tauri::command]
 pub fn meeting_config_set<R: Runtime>(
     window: WebviewWindow<R>,
+    config: State<'_, MeetingConfigStore>,
     patch: MeetingConfigPatch,
     expected_revision: u64,
 ) -> Result<MeetingConfigSetResponse, AppError> {
     ensure_settings_window(&window)?;
-    let _ = (patch, expected_revision);
-    Err(AppError::not_implemented("meeting_config_set"))
+    let patch = crate::state::meeting::config::MeetingConfigPatch {
+        runtime_mode: patch.runtime_mode.map(|mode| match mode {
+            RuntimeMode::Auto => crate::state::meeting::config::RuntimeMode::Auto,
+            RuntimeMode::Cpu => crate::state::meeting::config::RuntimeMode::Cpu,
+        }),
+        asr_mode: patch.asr_mode.map(|mode| match mode {
+            AsrMode::Local => crate::services::meeting::asr_route::AsrMode::Local,
+            AsrMode::Remote => crate::services::meeting::asr_route::AsrMode::Remote,
+        }),
+        asr_local_model: patch.asr_local_model,
+        asr_provider: patch.asr_provider.map(|provider| match provider {
+            crate::ipc::dto::RemoteProvider::OpenAi => {
+                crate::services::meeting::remote_asr::RemoteProvider::OpenAi
+            }
+            crate::ipc::dto::RemoteProvider::Groq => {
+                crate::services::meeting::remote_asr::RemoteProvider::Groq
+            }
+            crate::ipc::dto::RemoteProvider::Deepgram => {
+                crate::services::meeting::remote_asr::RemoteProvider::Deepgram
+            }
+        }),
+        asr_model: patch.asr_model,
+        asr_api_key_ref: patch.asr_api_key_ref,
+        llm_mode: patch.llm_mode.map(|mode| match mode {
+            LlmMode::Local => crate::services::meeting::summarize::LlmMode::Local,
+            LlmMode::Remote => crate::services::meeting::summarize::LlmMode::Remote,
+        }),
+        llm_local_model: patch.llm_local_model,
+        llm_base_url: patch.llm_base_url,
+        llm_model: patch.llm_model,
+        llm_api_key_ref: patch.llm_api_key_ref,
+        keep_transcript: patch.keep_transcript,
+        max_minutes: patch.max_minutes,
+    };
+    let revision = config.set(patch, expected_revision)?;
+    Ok(MeetingConfigSetResponse { revision })
 }
 
 #[tauri::command]
 pub fn meeting_key_status<R: Runtime>(
     window: WebviewWindow<R>,
+    config: State<'_, MeetingConfigStore>,
+    keys: State<'_, Arc<KeyService>>,
     slot: String,
 ) -> Result<KeyStatus, AppError> {
     ensure_settings_window(&window)?;
-    let _ = slot;
-    Err(AppError::not_implemented("meeting_key_status"))
+    let reference = key_slot(&config.get().config, &slot)?;
+    Ok(keys.status(&reference))
 }
 
 #[tauri::command]
 pub fn meeting_key_set<R: Runtime>(
     window: WebviewWindow<R>,
+    config: State<'_, MeetingConfigStore>,
+    keys: State<'_, Arc<KeyService>>,
     slot: String,
     value: String,
 ) -> Result<(), AppError> {
     ensure_settings_window(&window)?;
-    let _ = (slot, value);
-    Err(AppError::not_implemented("meeting_key_set"))
+    let reference = key_slot(&config.get().config, &slot)?;
+    keys.set(&reference, value.trim())?;
+    let _ = config.note_key_ref(&reference)?;
+    Ok(())
 }
 
 #[tauri::command]
 pub fn meeting_key_clear<R: Runtime>(
     window: WebviewWindow<R>,
+    config: State<'_, MeetingConfigStore>,
+    keys: State<'_, Arc<KeyService>>,
     slot: String,
     all: Option<bool>,
 ) -> Result<(), AppError> {
     ensure_settings_window(&window)?;
-    let _ = (slot, all);
-    Err(AppError::not_implemented("meeting_key_clear"))
+    let snapshot = config.get();
+    for reference in
+        crate::services::meeting::keys::clear_set(&snapshot.config, &slot, all == Some(true))?
+    {
+        keys.clear(&reference);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -740,9 +969,8 @@ pub fn app_settings_open<R: Runtime>(
             ))
         }
     };
-    let already_open = app.get_webview_window(SETTINGS_WINDOW_LABEL).is_some();
     open_settings(&app)?;
-    if let (true, Some(section)) = (already_open, section) {
+    if let Some(section) = section {
         if let Some(settings) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
             if let Err(error) = settings.eval(format!(
                 "window.location.assign('settings.html?section={section}')"

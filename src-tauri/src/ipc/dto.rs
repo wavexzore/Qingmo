@@ -1230,11 +1230,22 @@ pub struct RuntimePreview {
     pub llm_budget_mb: u32,
 }
 
+/// Free space and headroom for both first-use sets. The settings page uses
+/// this to disable download buttons before the command rejects them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskStatus {
+    pub free_bytes: u64,
+    pub asr_required_bytes: u64,
+    pub llm_required_bytes: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MeetingConfigGetResponse {
     pub config: MeetingConfigView,
     pub preview: RuntimePreview,
+    pub disk: DiskStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -1065,6 +1065,7 @@ pub fn run() {
             app.manage(Arc::clone(&meeting_catalog));
             app.manage(state::MeetingRegistry::new(app.handle().clone()));
             app.manage(Arc::new(state::meeting::ModelDownloads::new()));
+            app.manage(Arc::new(services::meeting::keys::KeyService::system()));
             app.manage(Arc::new(
                 services::meeting::download::SystemDiskProbe,
             ) as Arc<dyn services::meeting::download::DiskProbe>);

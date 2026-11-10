@@ -213,7 +213,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-007 | 命令层、契约、capability、错误码 | done（2026-11-10） | T-006 | contract 62/36/13/15 | — |
 | T-008 | 结果窗口接入（query 参数 + 首屏进度 + StatusBar 分支 + 失败重试） | done（2026-11-10） | T-007 | 6/6 + 前端 13 | — |
 | T-009 | 菜单、命令面板、i18n、树内音频行 | done（2026-11-10） | T-008, Q-008 | 菜单/树 211 项 | — |
-| T-010 | 设置页：转写/摘要双模型、本地/远程与密钥 | todo | T-007, T-011, Q-003, Q-004, Q-009, Q-010, Q-011 | none | — |
+| T-010 | 设置页：转写/摘要双模型、本地/远程与密钥 | done（2026-11-10） | T-007, T-011, Q-003, Q-004, Q-009, Q-010, Q-011 | settings 35/35、keys 4/4 | — |
 | T-011 | 模型 manifest、下载/校验/存储（含 3 个 LLM） | todo | T-003, T-006, T-007, T-008, Q-002, Q-006, Q-010, Q-011 | none | — |
 | T-012 | 单元/契约/集成/E2E 测试 | todo | T-005, T-009, T-010, T-011, T-004b, T-004c, Q-007, Q-009, Q-010, Q-011 | none | — |
 | T-013 | 打包、公证、体积与许可核验 | todo | Q-001, Q-002, Q-006, Q-007, Q-010, Q-011 | none | — |
@@ -329,7 +329,7 @@ ASR 清单不变（Paraformer 默认、small、SenseVoice、Zipformer、FireRed�
 | AC-004 | 超限音频在选文件阶段被拒 | T-001, T-012 | `cargo test --test meeting_decode` | todo |
 | AC-005 | 取消后无残留线程/临时文件（ASR ≤30 s、分离 ≤60 s 内停机） | T-006, T-012 | `cargo test --test meeting_cancel` | todo |
 | AC-006 | 命令/权限/生成绑定零漂移 | T-007, T-012 | `pnpm ci:generated && pnpm ci:negative` + `cargo test --test meeting_contract` | todo |
-| AC-007 | 设置页配置往返、密钥不入 localStorage、模型列表与下载态往返 | T-010, T-012 | `pnpm test -- meeting` | todo |
+| AC-007 | 设置页配置往返、密钥不入 localStorage、模型列表与下载态往返 | T-010, T-012 | settings 35/35 + `meeting_keys` 4/4 + `commands_contract` | done |
 | AC-008 | 安装包零模型、公证通过、转写组合可下载并校验、摘要模型可单独下载、NOTICE 覆盖全部模型许可 | T-013 | `make build` + E2E-004/010 + `pnpm test -- settings` | todo |
 | AC-009 | 无重复实现：仅一处窗口构建、一处保存路径 | 全量 | `git grep` 窗口构建各 1 处 + `AtomicWriter` 唯一写路径 + `detect_changes` + 人工复核 | todo |
 | AC-010 | 中英文案完整、无硬编码 | T-009, T-012 | `pnpm test -- i18n` | todo |

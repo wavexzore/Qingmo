@@ -437,13 +437,22 @@ fn invoke_handler_registers_every_contract_command() {
             let catalog: Arc<dyn ModelCatalog> = Arc::new(ManifestCatalog::new(root));
             catalog
         })
-        .manage(qingmo_lib::state::MeetingConfigStore::disabled(Arc::new(
-            ManifestCatalog::new(
-                std::env::temp_dir()
-                    .join(format!("qingmo-contract-config-{}", uuid::Uuid::new_v4())),
-            ),
-        )))
+        .manage({
+            let root = std::env::temp_dir()
+                .join(format!("qingmo-contract-config-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).expect("config root");
+            qingmo_lib::state::MeetingConfigStore::open(
+                root.join("meeting/config.json"),
+                Arc::new(ManifestCatalog::new(root.join("models"))),
+            )
+            .expect("config store")
+        })
         .manage(Arc::new(ModelDownloads::new()))
+        .manage(Arc::new(
+            qingmo_lib::services::meeting::keys::KeyService::new(Arc::new(
+                qingmo_lib::services::meeting::keys::MemoryKeyStore::default(),
+            )),
+        ))
         .manage(Arc::new(SystemDiskProbe) as Arc<dyn DiskProbe>)
         .manage(qingmo_lib::state::ShellLocale::default())
         .manage(qingmo_lib::state::UpdateFlushGate::new())
@@ -593,9 +602,7 @@ fn invoke_handler_registers_every_contract_command() {
                 .is_some_and(|message| message.contains("not allowed"));
         assert!(denied, "{command} must be settings-only: {error}");
 
-        let error =
-            invoke(&settings, command, body).expect_err("meeting command bodies are still stubs");
-        assert_eq!(error["code"], "IO", "{command} stub: {error}");
+        invoke(&settings, command, body).expect("settings may call the meeting command");
     }
 
     let error = invoke(&settings, "meeting_start", json!({}))
@@ -606,12 +613,41 @@ fn invoke_handler_registers_every_contract_command() {
             .is_some_and(|message| message.contains("not allowed"));
     assert!(denied, "meeting_start must be document-only: {error}");
 
-    let error = invoke(&settings, "meeting_config_get", json!({}))
-        .expect_err("read-only meeting command bodies are stubs");
-    assert_eq!(error["code"], "IO");
-    let error = invoke(&webview, "meeting_config_get", json!({}))
-        .expect_err("document windows may read meeting config");
-    assert_eq!(error["code"], "IO");
+    let config = invoke(&settings, "meeting_config_get", json!({}))
+        .expect("settings may read the meeting config");
+    assert_eq!(config["config"]["asr"]["mode"], "local");
+    assert_eq!(config["config"]["llm"]["mode"], "local");
+    assert!(config["disk"]["asrRequiredBytes"].is_number());
+    assert!(config["disk"]["llmRequiredBytes"].is_number());
+    assert!(config["disk"]["freeBytes"].is_number());
+    invoke(
+        &settings,
+        "meeting_config_set",
+        json!({"patch": {"maxMinutes": 42}, "expectedRevision": config["config"]["revision"]}),
+    )
+    .expect("settings may write the config");
+    let config =
+        invoke(&settings, "meeting_config_get", json!({})).expect("config write is visible");
+    assert_eq!(config["config"]["maxMinutes"], 42);
+    invoke(
+        &settings,
+        "meeting_key_set",
+        json!({"slot": "asr", "value": "sk-contract"}),
+    )
+    .expect("settings may save a key");
+    assert_eq!(
+        invoke(&settings, "meeting_key_status", json!({"slot": "asr"})).unwrap(),
+        "present"
+    );
+    invoke(&settings, "meeting_key_clear", json!({"slot": "asr"}))
+        .expect("settings may clear a key");
+    assert_eq!(
+        invoke(&settings, "meeting_key_status", json!({"slot": "asr"})).unwrap(),
+        "absent"
+    );
+    let config = invoke(&webview, "meeting_config_get", json!({}))
+        .expect("document windows may read the meeting config");
+    assert!(config["preview"]["defaults"]["threads"].is_number());
     let models =
         invoke(&settings, "meeting_models_list", json!({})).expect("settings may list models");
     assert_eq!(models.as_array().map(Vec::len), Some(11));

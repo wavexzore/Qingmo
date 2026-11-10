@@ -1230,6 +1230,7 @@ export class FakeIpc implements IpcPort {
         maxMinutes: 180,
         revision: 0,
       },
+      disk: { freeBytes: 0, asrRequiredBytes: 0, llmRequiredBytes: 0 },
       preview: {
         defaults: {
           asrModel: "paraformer-zh-en-int8",
