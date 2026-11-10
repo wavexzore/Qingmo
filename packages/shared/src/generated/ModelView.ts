@@ -5,4 +5,8 @@ import type { ModelKind } from "./ModelKind";
 import type { ModelState } from "./ModelState";
 import type { PeakBasis } from "./PeakBasis";
 
-export type ModelView = { id: string, display: string, kind: ModelKind, family?: AsrFamily, license: string, licenseUrl: string, languages: Array<string>, downloadBytes: number, installBytes: number, localBytes: number, peakMemoryMb: number, peakBasis: PeakBasis, group?: string, state: ModelState, error?: AppError, };
+export type ModelView = { id: string, display: string, kind: ModelKind, family?: AsrFamily, license: string, licenseUrl: string, languages: Array<string>, downloadBytes: number, installBytes: number, localBytes: number, peakMemoryMb: number, peakBasis: PeakBasis, group?: string, state: ModelState, 
+/**
+ * Resolved on-disk directory; `None` only for an unknown id.
+ */
+path?: string, error?: AppError, };

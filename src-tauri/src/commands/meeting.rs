@@ -10,25 +10,29 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
-use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::commands::settings::{ensure_settings_window, open_settings, SETTINGS_WINDOW_LABEL};
 use crate::error::{AppError, AppErrorCode};
+use crate::ipc::contract::EVENT_MEETING_MODEL_PROGRESS;
 use crate::ipc::dto::{
-    Accel, AsrBackend, Degraded, KeyStatus, LlmMode, MeetingConfigGetResponse, MeetingConfigPatch,
-    MeetingConfigSetResponse, MeetingOutcome, MeetingResult, MeetingRetryResponse, MeetingStage,
-    MeetingStartResponse, MeetingStats, ModelDownloadResponse, ModelView,
+    Accel, AsrBackend, Degraded, DownloadState, KeyStatus, LlmMode, MeetingConfigGetResponse,
+    MeetingConfigPatch, MeetingConfigSetResponse, MeetingOutcome, MeetingResult,
+    MeetingRetryResponse, MeetingStage, MeetingStartResponse, MeetingStats, ModelDownloadResponse,
+    ModelView,
 };
 use crate::services::meeting::asr::SherpaAsr;
 use crate::services::meeting::decode::{decode_windows, ensure_duration, probe_audio};
-use crate::services::meeting::models::{ModelCatalog, ModelState};
+use crate::services::meeting::download::{self, DiskProbe};
+use crate::services::meeting::models::{manifest, ModelCatalog, ModelState};
 use crate::services::meeting::pipeline::{exit_for, run_local, StopExit};
 use crate::services::meeting::runtime::{self, resolve_models, tier_defaults, HardwareProfile};
 use crate::services::meeting::summarize;
 use crate::state::meeting::config::MeetingConfigStore;
+use crate::state::meeting::downloads::ModelDownloads;
 use crate::state::meeting::job::MeetingSource;
 use crate::state::meeting::registry::MeetingRegistry;
 use crate::state::workspace_registry::WorkspaceToken;
@@ -516,39 +520,206 @@ pub fn meeting_key_clear<R: Runtime>(
 #[tauri::command]
 pub fn meeting_models_list<R: Runtime>(
     window: WebviewWindow<R>,
+    catalog: State<'_, Arc<dyn ModelCatalog>>,
+    downloads: State<'_, Arc<ModelDownloads>>,
 ) -> Result<Vec<ModelView>, AppError> {
     ensure_reading_window(&window)?;
-    Err(AppError::not_implemented("meeting_models_list"))
+    let mut views = Vec::with_capacity(manifest().len());
+    for pack in manifest() {
+        let overlay = downloads.overlay(pack.id);
+        let error = overlay.as_ref().and_then(|(_, error)| error.clone());
+        let state =
+            overlay
+                .map(|(state, _)| state)
+                .unwrap_or_else(|| match catalog.state(pack.id) {
+                    ModelState::Ready => crate::ipc::dto::ModelState::Ready,
+                    ModelState::NotVerified => crate::ipc::dto::ModelState::NotVerified,
+                    ModelState::NotDownloaded => crate::ipc::dto::ModelState::NotDownloaded,
+                    ModelState::Partial => crate::ipc::dto::ModelState::Partial,
+                    ModelState::Missing => crate::ipc::dto::ModelState::Missing,
+                    ModelState::Verifying => crate::ipc::dto::ModelState::Verifying,
+                    ModelState::Downloading => crate::ipc::dto::ModelState::Downloading,
+                    ModelState::Corrupt => crate::ipc::dto::ModelState::Corrupt,
+                    ModelState::Failed => crate::ipc::dto::ModelState::Failed,
+                });
+        let path = catalog.path(pack.id);
+        let local_bytes = path
+            .as_deref()
+            .and_then(|dir| std::fs::read_dir(dir).ok())
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter_map(|entry| entry.metadata().ok())
+                    .filter(|meta| meta.is_file())
+                    .map(|meta| meta.len())
+                    .sum()
+            })
+            .unwrap_or(0);
+        views.push(ModelView {
+            id: pack.id.to_owned(),
+            display: pack.display.to_owned(),
+            kind: match pack.kind {
+                crate::services::meeting::models::ModelKind::Asr => crate::ipc::dto::ModelKind::Asr,
+                crate::services::meeting::models::ModelKind::Segmentation => {
+                    crate::ipc::dto::ModelKind::Segmentation
+                }
+                crate::services::meeting::models::ModelKind::Embedding => {
+                    crate::ipc::dto::ModelKind::Embedding
+                }
+                crate::services::meeting::models::ModelKind::Vad => crate::ipc::dto::ModelKind::Vad,
+                crate::services::meeting::models::ModelKind::Llm => crate::ipc::dto::ModelKind::Llm,
+            },
+            family: pack.family.map(|family| match family {
+                crate::services::meeting::models::AsrFamily::Paraformer => {
+                    crate::ipc::dto::AsrFamily::Paraformer
+                }
+                crate::services::meeting::models::AsrFamily::SenseVoice => {
+                    crate::ipc::dto::AsrFamily::SenseVoice
+                }
+                crate::services::meeting::models::AsrFamily::ZipformerTransducer => {
+                    crate::ipc::dto::AsrFamily::ZipformerTransducer
+                }
+                crate::services::meeting::models::AsrFamily::FireRedCtc => {
+                    crate::ipc::dto::AsrFamily::FireRedCtc
+                }
+            }),
+            license: pack.license.as_str().to_owned(),
+            license_url: pack.license_url.to_owned(),
+            languages: pack
+                .languages
+                .iter()
+                .map(|language| language.as_str().to_owned())
+                .collect(),
+            download_bytes: pack.download_bytes,
+            install_bytes: pack.install_bytes,
+            local_bytes,
+            peak_memory_mb: pack.peak_memory_mb,
+            peak_basis: match pack.peak_basis {
+                crate::services::meeting::models::PeakBasis::MeasuredRss => {
+                    crate::ipc::dto::PeakBasis::MeasuredRss
+                }
+                crate::services::meeting::models::PeakBasis::Estimated => {
+                    crate::ipc::dto::PeakBasis::Estimated
+                }
+            },
+            group: pack.group.map(str::to_owned),
+            state,
+            path: path.map(|path| path.to_string_lossy().into_owned()),
+            error,
+        });
+    }
+    Ok(views)
 }
 
 #[tauri::command]
 pub fn meeting_model_download<R: Runtime>(
+    app: AppHandle<R>,
     window: WebviewWindow<R>,
+    catalog: State<'_, Arc<dyn ModelCatalog>>,
+    downloads: State<'_, Arc<ModelDownloads>>,
+    disk: State<'_, Arc<dyn DiskProbe>>,
     id: String,
 ) -> Result<ModelDownloadResponse, AppError> {
     ensure_reading_window(&window)?;
-    let _ = id;
-    Err(AppError::not_implemented("meeting_model_download"))
+    let pack = crate::services::meeting::models::find(&id)
+        .ok_or_else(|| AppError::new(AppErrorCode::ModelNotReady, "unknown model id"))?;
+    download::ensure_space(disk.inner().as_ref(), catalog.root(), pack)?;
+    let (download_id, token) = downloads.begin(pack.id, pack.download_bytes)?;
+    let app_for_worker = app.clone();
+    let root = catalog.root().to_path_buf();
+    let downloads_for_worker = Arc::clone(downloads.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        downloads_for_worker.start(download_id);
+        emit_model_progress(&app_for_worker, downloads_for_worker.as_ref(), download_id);
+        let mut last_emit = Instant::now();
+        let result = {
+            let mut report = |done: u64, state: DownloadState| {
+                downloads_for_worker.set_progress(download_id, done, pack.download_bytes);
+                if state == DownloadState::Verifying {
+                    downloads_for_worker.verifying(download_id);
+                }
+                if state == DownloadState::Verifying
+                    || last_emit.elapsed() >= Duration::from_millis(250)
+                {
+                    last_emit = Instant::now();
+                    emit_model_progress(
+                        &app_for_worker,
+                        downloads_for_worker.as_ref(),
+                        download_id,
+                    );
+                }
+            };
+            download::run(&root, pack, download_id, &token, &mut report)
+        };
+        match result {
+            Ok(()) => {
+                downloads_for_worker.done(download_id);
+                emit_model_progress(&app_for_worker, downloads_for_worker.as_ref(), download_id);
+            }
+            Err(error) => {
+                downloads_for_worker.fail(download_id, error);
+                emit_model_progress(&app_for_worker, downloads_for_worker.as_ref(), download_id);
+            }
+        }
+    });
+    Ok(ModelDownloadResponse {
+        download_id: download_id.to_string(),
+    })
+}
+
+fn emit_model_progress<R: Runtime>(
+    app: &AppHandle<R>,
+    downloads: &ModelDownloads,
+    download_id: Uuid,
+) {
+    if let Some(progress) = downloads.snapshot(download_id) {
+        if let Err(error) = app.emit(EVENT_MEETING_MODEL_PROGRESS, progress) {
+            tracing::warn!(%error, "failed to emit model download progress");
+        }
+    }
 }
 
 #[tauri::command]
 pub fn meeting_model_download_cancel<R: Runtime>(
     window: WebviewWindow<R>,
+    downloads: State<'_, Arc<ModelDownloads>>,
     download_id: String,
 ) -> Result<(), AppError> {
     ensure_reading_window(&window)?;
-    let _ = download_id;
-    Err(AppError::not_implemented("meeting_model_download_cancel"))
+    let id = Uuid::parse_str(&download_id).map_err(|_| {
+        AppError::new(AppErrorCode::InvalidConfig, "downloadId must be a UUID")
+            .with_details(serde_json::json!({ "field": "download_id" }))
+    })?;
+    downloads.cancel(id)
 }
 
 #[tauri::command]
 pub fn meeting_model_remove<R: Runtime>(
     window: WebviewWindow<R>,
+    catalog: State<'_, Arc<dyn ModelCatalog>>,
+    downloads: State<'_, Arc<ModelDownloads>>,
+    config: State<'_, MeetingConfigStore>,
     id: String,
 ) -> Result<(), AppError> {
     ensure_reading_window(&window)?;
-    let _ = id;
-    Err(AppError::not_implemented("meeting_model_remove"))
+    let Some(path) = catalog.path(&id) else {
+        return Err(AppError::new(
+            AppErrorCode::ModelNotReady,
+            "unknown model id",
+        ));
+    };
+    let not_downloaded = || {
+        AppError::new(AppErrorCode::ModelNotReady, "model is not downloaded")
+            .with_details(serde_json::json!({ "model_id": id }))
+    };
+    if !path.is_dir() {
+        return Err(not_downloaded());
+    }
+    downloads.cancel_and_wait(&id, Duration::from_secs(5));
+    std::fs::remove_dir_all(&path).map_err(|error| AppError::from_io(&error))?;
+    download::remove_staging(catalog.root(), &id);
+    config.clear_local_model(&id)?;
+    Ok(())
 }
 
 /// Opens (or focuses) Settings. When the window is already open, `section`

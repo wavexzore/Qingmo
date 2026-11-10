@@ -5,10 +5,14 @@ use qingmo_lib::ipc::dto::{
     UpdateInfo, UpdatePhase, UpdateSnapshot,
 };
 use qingmo_lib::ipc::{command_permissions, COMMANDS, EVENTS};
+use qingmo_lib::services::meeting::download::{DiskProbe, SystemDiskProbe};
+use qingmo_lib::services::meeting::{ManifestCatalog, ModelCatalog};
+use qingmo_lib::state::meeting::downloads::ModelDownloads;
 use qingmo_lib::state::CloseGuard;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::Manager;
 
 fn manifest_dir() -> PathBuf {
@@ -427,6 +431,20 @@ fn invoke_handler_registers_every_contract_command() {
         .manage(CloseGuard::new())
         .manage(qingmo_lib::state::FocusTracker::new())
         .manage(qingmo_lib::state::PreviewModes::new())
+        .manage({
+            let root = std::env::temp_dir()
+                .join(format!("qingmo-contract-models-{}", uuid::Uuid::new_v4()));
+            let catalog: Arc<dyn ModelCatalog> = Arc::new(ManifestCatalog::new(root));
+            catalog
+        })
+        .manage(qingmo_lib::state::MeetingConfigStore::disabled(Arc::new(
+            ManifestCatalog::new(
+                std::env::temp_dir()
+                    .join(format!("qingmo-contract-config-{}", uuid::Uuid::new_v4())),
+            ),
+        )))
+        .manage(Arc::new(ModelDownloads::new()))
+        .manage(Arc::new(SystemDiskProbe) as Arc<dyn DiskProbe>)
         .manage(qingmo_lib::state::ShellLocale::default())
         .manage(qingmo_lib::state::UpdateFlushGate::new())
         .manage(qingmo_lib::state::UpdateManager::new(env!(
@@ -594,9 +612,12 @@ fn invoke_handler_registers_every_contract_command() {
     let error = invoke(&webview, "meeting_config_get", json!({}))
         .expect_err("document windows may read meeting config");
     assert_eq!(error["code"], "IO");
+    let models =
+        invoke(&settings, "meeting_models_list", json!({})).expect("settings may list models");
+    assert_eq!(models.as_array().map(Vec::len), Some(11));
     let error = invoke(&webview, "meeting_model_remove", json!({"id": "x"}))
-        .expect_err("model removal is a stub");
-    assert_eq!(error["code"], "IO");
+        .expect_err("an unknown model cannot be removed");
+    assert_eq!(error["code"], "MODEL_NOT_READY");
 
     let stats = invoke(&webview, "app_logs_stats", json!({}))
         .expect("log stats must work without the plugin");

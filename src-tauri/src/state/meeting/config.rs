@@ -351,6 +351,33 @@ impl MeetingConfigStore {
         Ok(revision)
     }
 
+    /// Clears an explicit local model that was just removed.
+    ///
+    /// Returns the (possibly bumped) revision. A `null` update only happens
+    /// when the removed id is the current explicit value.
+    pub fn clear_local_model(&self, id: &str) -> Result<u64, AppError> {
+        let mut state = self.lock();
+        let mut candidate = state.config.clone();
+        let mut changed = false;
+        if candidate.asr.local_model.as_deref() == Some(id) {
+            candidate.asr.local_model = None;
+            changed = true;
+        }
+        if candidate.llm.local_model.as_deref() == Some(id) {
+            candidate.llm.local_model = None;
+            changed = true;
+        }
+        if !changed {
+            return Ok(state.revision);
+        }
+        let revision = state.revision.saturating_add(1);
+        let stored = StoredFile::from_config(&candidate, revision);
+        self.persist(&stored)?;
+        state.config = candidate;
+        state.revision = revision;
+        Ok(revision)
+    }
+
     /// Remember a key reference for `clear(all=true)`; oldest entries fall out.
     pub fn note_key_ref(&self, reference: &str) -> Result<u64, AppError> {
         if !valid_slug(reference) {

@@ -1284,6 +1284,9 @@ pub struct ModelView {
     #[ts(optional)]
     pub group: Option<String>,
     pub state: ModelState,
+    /// Resolved on-disk directory; `None` only for an unknown id.
+    #[ts(optional)]
+    pub path: Option<String>,
     #[ts(optional)]
     pub error: Option<AppError>,
 }

@@ -1030,10 +1030,21 @@ pub fn run() {
             // but must never block startup or fall back to /tmp, which would
             // leak plaintext drafts outside the app sandbox.
             let local_data = app.path().app_local_data_dir().ok();
+            #[cfg(debug_assertions)]
+            let meeting_root = std::env::var_os("MEETING_E2E_MODELS")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    local_data
+                        .as_ref()
+                        .map(|dir| dir.join("meeting-models"))
+                })
+                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-meeting-models"));
+            #[cfg(not(debug_assertions))]
             let meeting_root = local_data
                 .as_ref()
                 .map(|dir| dir.join("meeting-models"))
                 .unwrap_or_else(|| std::env::temp_dir().join("qingmo-meeting-models"));
+            services::meeting::download::recover_orphans(&meeting_root);
             let meeting_catalog: Arc<dyn services::meeting::ModelCatalog> =
                 Arc::new(services::meeting::ManifestCatalog::new(meeting_root));
             let meeting_config = match local_data.as_ref() {
@@ -1053,6 +1064,10 @@ pub fn run() {
             app.manage(meeting_config);
             app.manage(Arc::clone(&meeting_catalog));
             app.manage(state::MeetingRegistry::new(app.handle().clone()));
+            app.manage(Arc::new(state::meeting::ModelDownloads::new()));
+            app.manage(Arc::new(
+                services::meeting::download::SystemDiskProbe,
+            ) as Arc<dyn services::meeting::download::DiskProbe>);
             app.manage(state::AssetScope::new(app.handle().clone()));
             let session_store = match local_data.as_ref() {
                 Some(dir) => match services::SessionStore::open(dir.join("session")) {

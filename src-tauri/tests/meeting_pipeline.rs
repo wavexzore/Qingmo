@@ -130,12 +130,14 @@ fn deadline_after_segments_is_partial() {
     let path = wav("late.wav", 660);
     let windows = decode_windows(&path, CancellationToken::new()).unwrap();
     let mut asr = Late { calls: 0 };
+    // 3 s lands inside the first window's ASR: the per-window deadline check
+    // only fires at the next window, after at least one segment exists.
     let outcome = run_local(
         windows,
         None,
         &mut asr,
         &CancellationToken::new(),
-        Some(Instant::now() + Duration::from_millis(2_000)),
+        Some(Instant::now() + Duration::from_millis(3_000)),
     )
     .unwrap();
     assert_eq!(outcome.stop_reason, StopReason::Deadline);

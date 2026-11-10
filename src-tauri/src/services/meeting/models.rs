@@ -4,9 +4,9 @@
 //! `app_local_data_dir/meeting-models/<id>/` and resolved through the
 //! `.ready` marker so a normal task never re-hashes gigabytes of weights.
 //!
-//! SHA-256 values are filled from the official release on first download
-//! (T-011); an empty hash is treated as "not pinned yet" and only checked for
-//! length until T-011 replaces it.
+//! Every file pins its official URL, commit and SHA-256. An empty hash is
+//! still accepted as "not pinned yet" for future packs, but the shipped
+//! manifest has no empty hash.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -111,12 +111,16 @@ pub struct ModelFile {
     pub role: FileRole,
     pub sha256: &'static str,
     pub bytes: u64,
+    /// Direct download location for this file.
+    pub source: SourceUrl,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct ArchiveSpec {
     pub format: ArchiveFormat,
     pub root: &'static str,
+    /// Files that must exist under `root` and are moved to the pack root.
+    pub root_files: &'static [&'static str],
     pub bytes: u64,
     pub sha256: &'static str,
 }
@@ -168,12 +172,14 @@ const PARAFORMER_FILES: &[ModelFile] = &[
         role: FileRole::Model,
         sha256: "f36a0433bcf096bd6d6f11b80a3ac8bed110bdca632fe0d731df8d1a84475945",
         bytes: 243_371_218,
+        source: PARA_SOURCE[0],
     },
     ModelFile {
         name: "tokens.txt",
         role: FileRole::Tokens,
         sha256: "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
         bytes: 75_756,
+        source: PARA_SOURCE[0],
     },
 ];
 
@@ -183,24 +189,28 @@ const ZIPFORMER_FILES: &[ModelFile] = &[
         role: FileRole::Encoder,
         sha256: "28780a73b0fc5a05ec579ad4dbbc7d8fcd09fed5e6c431f84dcaab8f8170d9bf",
         bytes: 68_779_404,
+        source: ZIP_SOURCE[0],
     },
     ModelFile {
         name: "decoder-epoch-34-avg-19.onnx",
         role: FileRole::Decoder,
         sha256: "110dc19143f0731ce0f64513e524d7d8f729e37107e1392da790f66d6c936a0b",
         bytes: 5_089_010,
+        source: ZIP_SOURCE[0],
     },
     ModelFile {
         name: "joiner-epoch-34-avg-19.int8.onnx",
         role: FileRole::Joiner,
         sha256: "498861ff0963ecbbff101a940ed533a715e5d68ee96431a3b092d0ca00c3ba38",
         bytes: 1_048_576,
+        source: ZIP_SOURCE[0],
     },
     ModelFile {
         name: "tokens.txt",
         role: FileRole::Tokens,
         sha256: "2d5d6245197582cea396b23fa29d592705be31bac9a97bb74a8d1bca3ca6a0e0",
         bytes: 25_600,
+        source: ZIP_SOURCE[0],
     },
 ];
 
@@ -209,6 +219,101 @@ const VAD_FILES: &[ModelFile] = &[ModelFile {
     role: FileRole::Vad,
     sha256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
     bytes: 629_145,
+    source: VAD_SOURCE[0],
+}];
+const SMALL_FILES: &[ModelFile] = &[
+    ModelFile {
+        name: "model.int8.onnx",
+        role: FileRole::Model,
+        sha256: "3ef6c19369b912f7caf3cef8e545c5ccd1a33d9d7ec792a46668dc41c4b229ec",
+        bytes: 81_828_675,
+        source: SMALL_SOURCE[0],
+    },
+    ModelFile {
+        name: "tokens.txt",
+        role: FileRole::Tokens,
+        sha256: "4b2d964e18b9cf139b473003b6698fb2ed9a2a5ec55b93daa677b28f578897aa",
+        bytes: 75_352,
+        source: SMALL_SOURCE[0],
+    },
+];
+
+const FIRE_FILES: &[ModelFile] = &[
+    ModelFile {
+        name: "model.int8.onnx",
+        role: FileRole::Model,
+        sha256: "ca3dbabd82170110cc0b343c2890866d449984bc9cd92b9a18371ff80a81bb99",
+        bytes: 775_861_420,
+        source: FIRE_SOURCE[0],
+    },
+    ModelFile {
+        name: "tokens.txt",
+        role: FileRole::Tokens,
+        sha256: "1bc613de2112d257e61a349c3e72d1b1a9cf19c33d3ca954197ad2171e5ea07b",
+        bytes: 79_172,
+        source: FIRE_SOURCE[0],
+    },
+];
+
+const SENSE_FILES: &[ModelFile] = &[
+    ModelFile {
+        name: "model.int8.onnx",
+        role: FileRole::Model,
+        sha256: "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+        bytes: 239_233_841,
+        source: SENSE_SOURCE[0],
+    },
+    ModelFile {
+        name: "tokens.txt",
+        role: FileRole::Tokens,
+        sha256: "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+        bytes: 315_894,
+        source: SENSE_SOURCE[0],
+    },
+];
+
+const QWEN_17_FILES: &[ModelFile] = &[ModelFile {
+    name: "Qwen3-1.7B-Q4_K_M.gguf",
+    role: FileRole::Model,
+    sha256: "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+    bytes: 1_107_409_472,
+    source: QWEN_17_SOURCE[0],
+}];
+const QWEN_4_FILES: &[ModelFile] = &[ModelFile {
+    name: "Qwen3-4B-Q4_K_M.gguf",
+    role: FileRole::Model,
+    sha256: "f6f851777709861056efcdad3af01da38b31223a3ba26e61a4f8bf3a2195813a",
+    bytes: 2_497_281_312,
+    source: QWEN_4_SOURCE[0],
+}];
+const QWEN_8_FILES: &[ModelFile] = &[ModelFile {
+    name: "Qwen3-8B-Q4_K_M.gguf",
+    role: FileRole::Model,
+    sha256: "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
+    bytes: 5_027_784_512,
+    source: QWEN_8_SOURCE[0],
+}];
+const SPEAKER_SEG_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main",
+    commit: "9403a6902bb58e3d5ae8c7e77c3422de279db2e0",
+}];
+const SPEAKER_EMB_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url: "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main",
+    commit: "0743f301363dec56491a490f6d6cbc9d67f9a3bf",
+}];
+const SPEAKER_SEG_FILES: &[ModelFile] = &[ModelFile {
+    name: "model.int8.onnx",
+    role: FileRole::Segmentation,
+    sha256: "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d",
+    bytes: 1_540_506,
+    source: SPEAKER_SEG_SOURCE[0],
+}];
+const SPEAKER_EMB_FILES: &[ModelFile] = &[ModelFile {
+    name: "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
+    role: FileRole::Embedding,
+    sha256: "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2",
+    bytes: 28_281_164,
+    source: SPEAKER_EMB_SOURCE[0],
 }];
 
 const PARA_SOURCE: &[SourceUrl] = &[SourceUrl {
@@ -222,6 +327,31 @@ const ZIP_SOURCE: &[SourceUrl] = &[SourceUrl {
 const VAD_SOURCE: &[SourceUrl] = &[SourceUrl {
     url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
     commit: "asr-models",
+}];
+const SMALL_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url:
+        "https://huggingface.co/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main",
+    commit: "63ddc3cd0f2810b68289a7b3876e62ef5d53d6df",
+}];
+const FIRE_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url: "https://huggingface.co/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/main",
+    commit: "423be1acfdc5d8aaa5a485fb6263fe4ea8570b06",
+}];
+const SENSE_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url: "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main",
+    commit: "2365baeacb507f821a0c8120fcee3d484dba7a07",
+}];
+const QWEN_17_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url: "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main",
+    commit: "d7f544eead698dbd1f15126ef60b45a1e1933222",
+}];
+const QWEN_4_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url: "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main",
+    commit: "22c9fc8a8c7700b76a1789366280a6a5a1ad1120",
+}];
+const QWEN_8_SOURCE: &[SourceUrl] = &[SourceUrl {
+    url: "https://huggingface.co/unsloth/Qwen3-8B-GGUF/resolve/main",
+    commit: "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
 }];
 
 pub static CATALOG: &[ModelPack] = &[
@@ -242,6 +372,7 @@ pub static CATALOG: &[ModelPack] = &[
         archive: Some(ArchiveSpec {
             format: ArchiveFormat::TarBz2,
             root: "sherpa-onnx-paraformer-zh-2023-09-14",
+            root_files: &["model.int8.onnx", "tokens.txt"],
             bytes: 223_400_000,
             sha256: "",
         }),
@@ -258,11 +389,11 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 700,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 81_800_000,
-        install_bytes: 81_800_000,
-        source: PARA_SOURCE,
+        download_bytes: 81_904_027,
+        install_bytes: 81_904_027,
+        source: SMALL_SOURCE,
         archive: None,
-        files: PARAFORMER_FILES,
+        files: SMALL_FILES,
     },
     ModelPack {
         id: "zipformer-zh-en-int8",
@@ -281,6 +412,12 @@ pub static CATALOG: &[ModelPack] = &[
         archive: Some(ArchiveSpec {
             format: ArchiveFormat::TarBz2,
             root: "sherpa-onnx-zipformer-zh-en-2023-11-22",
+            root_files: &[
+                "encoder-epoch-34-avg-19.int8.onnx",
+                "decoder-epoch-34-avg-19.onnx",
+                "joiner-epoch-34-avg-19.int8.onnx",
+                "tokens.txt",
+            ],
             bytes: 312_400_000,
             sha256: "",
         }),
@@ -297,11 +434,11 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 2000,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 740_000_000,
-        install_bytes: 742_000_000,
-        source: &[],
+        download_bytes: 775_940_592,
+        install_bytes: 775_940_592,
+        source: FIRE_SOURCE,
         archive: None,
-        files: &[],
+        files: FIRE_FILES,
     },
     ModelPack {
         id: "sensevoice-small-int8",
@@ -314,11 +451,45 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 1000,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 239_200_000,
-        install_bytes: 239_200_000,
-        source: &[],
+        download_bytes: 239_549_735,
+        install_bytes: 239_549_735,
+        source: SENSE_SOURCE,
         archive: None,
-        files: &[],
+        files: SENSE_FILES,
+    },
+    ModelPack {
+        id: "pyannote-segmentation-3-int8",
+        display: "pyannote segmentation 3.0 · int8",
+        kind: ModelKind::Segmentation,
+        family: None,
+        license: License::Mit,
+        license_url: "https://github.com/pyannote/pyannote-audio/blob/develop/LICENSE",
+        languages: &[],
+        peak_memory_mb: 40,
+        peak_basis: PeakBasis::Estimated,
+        group: Some("speaker-pack"),
+        download_bytes: 1_540_506,
+        install_bytes: 1_540_506,
+        source: SPEAKER_SEG_SOURCE,
+        archive: None,
+        files: SPEAKER_SEG_FILES,
+    },
+    ModelPack {
+        id: "campplus-zh-en-advanced",
+        display: "CAM++ zh_en · advanced",
+        kind: ModelKind::Embedding,
+        family: None,
+        license: License::Apache2,
+        license_url: "https://github.com/modelscope/3D-Speaker/blob/main/LICENSE",
+        languages: &[],
+        peak_memory_mb: 60,
+        peak_basis: PeakBasis::Estimated,
+        group: Some("speaker-pack"),
+        download_bytes: 28_281_164,
+        install_bytes: 28_281_164,
+        source: SPEAKER_EMB_SOURCE,
+        archive: None,
+        files: SPEAKER_EMB_FILES,
     },
     ModelPack {
         id: "silero-vad",
@@ -348,11 +519,11 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 2050,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 1_100_000_000,
-        install_bytes: 1_100_000_000,
-        source: &[],
+        download_bytes: 1_107_409_472,
+        install_bytes: 1_107_409_472,
+        source: QWEN_17_SOURCE,
         archive: None,
-        files: &[],
+        files: QWEN_17_FILES,
     },
     ModelPack {
         id: "qwen3-4b-instruct-q4km",
@@ -365,11 +536,11 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 3560,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 2_500_000_000,
-        install_bytes: 2_500_000_000,
-        source: &[],
+        download_bytes: 2_497_281_312,
+        install_bytes: 2_497_281_312,
+        source: QWEN_4_SOURCE,
         archive: None,
-        files: &[],
+        files: QWEN_4_FILES,
     },
     ModelPack {
         id: "qwen3-8b-instruct-q4km",
@@ -382,11 +553,11 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 6000,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 4_900_000_000,
-        install_bytes: 4_900_000_000,
-        source: &[],
+        download_bytes: 5_027_784_512,
+        install_bytes: 5_027_784_512,
+        source: QWEN_8_SOURCE,
         archive: None,
-        files: &[],
+        files: QWEN_8_FILES,
     },
 ];
 
@@ -454,10 +625,14 @@ pub fn resolve_pack(root: &Path, pack: &ModelPack, now_secs: u64) -> ModelState 
     }
 
     let mut sizes = Vec::with_capacity(pack.files.len());
-    for file in pack.files {
+    for (index, file) in pack.files.iter().enumerate() {
         let path = dir.join(file.name);
         let Ok(meta) = fs::metadata(&path) else {
-            return ModelState::Missing;
+            return if index > 0 {
+                ModelState::Partial
+            } else {
+                ModelState::Missing
+            };
         };
         if !meta.is_file() {
             return ModelState::Missing;
@@ -543,6 +718,10 @@ pub fn sha256_file(path: &Path) -> Result<String, AppError> {
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+pub fn unix_now_public() -> u64 {
+    unix_now()
 }
 
 fn unix_now() -> u64 {

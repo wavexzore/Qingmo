@@ -8,6 +8,7 @@ pub mod asr_route;
 pub mod budget;
 pub mod cards;
 pub mod decode;
+pub mod download;
 pub mod lang;
 pub mod llm;
 pub mod llm_local;
