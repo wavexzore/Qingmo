@@ -207,7 +207,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-003 | ASR 接入、绝对时间、运行时与逐窗骨架 | done（2026-11-10） | T-002, T-006, Q-002, Q-006, Q-009, Q-010, Q-011 | none | — |
 | T-004 | 结构卡片 map / reduce / 校验（含本地 LLM） | done（2026-11-10） | T-003, Q-003, Q-010 | 43/43 + 1 ignored 真 GGUF | — |
 | T-004b | 远程 ASR 与回退 | done（2026-11-10） | T-003, T-006, Q-009 | 20/20 | — |
-| T-004c | 离线说话人分离与降级 | todo | T-001, T-003, T-011, Q-002, Q-011 | none | — |
+| T-004c | 离线说话人分离与降级 | done（2026-11-10） | T-001, T-003, T-011, Q-002, Q-011 | 分离 5/5 + 2 ignored 真模型、speaker 3/3 | — |
 | T-005 | Markdown 渲染与降级路径 | todo | T-004, T-004c | none | — |
 | T-006 | MeetingRegistry 状态机、取消、进度事件 | done（2026-11-10） | T-001, Q-004, Q-005 | 35/35 | — |
 | T-007 | 命令层、契约、capability、错误码 | done（2026-11-10） | T-006 | contract 62/36/13/15 | — |
@@ -335,7 +335,7 @@ ASR 清单不变（Paraformer 默认、small、SenseVoice、Zipformer、FireRed�
 | AC-010 | 中英文案完整、无硬编码 | T-009, T-012 | `pnpm test -- i18n` | todo |
 | AC-011 | 远程失败只回退一次并标注 | T-004b, T-012 | `cargo test --test meeting_remote` | todo |
 | AC-012 | `asr.mode=local` 时 ASR 外传计数为 0 | T-004b, T-012 | wiremock 计数断言 | todo |
-| AC-013 | 说话人标签稳定、同人同色、失败降级有标注 | T-004c, T-012 | `cargo test --test meeting_diarize --test meeting_speaker` + E2E-011/012/013 | todo |
+| AC-013 | 说话人标签稳定、同人同色、失败降级有标注 | T-004c, T-012 | `meeting_diarize` 真模型 2/2 + `meeting_speaker` 3/3 | done（E2E 待 T-012） |
 | AC-014 | 每条结论都有时间戳与引句；缺引句渲染「待核」 | T-005, T-012 | `cargo test --test meeting_render` | todo |
 | AC-015 | 英文界面与英文纪要模板完整 | T-005, T-009, T-012 | `cargo test --test meeting_render` + `pnpm test -- i18n` | todo |
 | AC-016 | 分层/钉死/预算正确，`runtime.mode=cpu` 关 Metal，8B 仅 ≥32 GiB 且低配钉死被拒 | T-003, T-012 | `cargo test --test meeting_runtime --test meeting_budget` + E2E-017 | todo |

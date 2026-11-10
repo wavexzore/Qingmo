@@ -8,6 +8,7 @@ pub mod asr_route;
 pub mod budget;
 pub mod cards;
 pub mod decode;
+pub mod diarize;
 pub mod download;
 pub mod keys;
 pub mod lang;
@@ -40,7 +41,10 @@ pub use pipeline::{
 pub use reduce::reduce_cards;
 pub use remote_asr::{endpoint, HttpRemoteAsr, RemoteAsr, RemoteAsrConfig, RemoteProvider};
 pub use runtime::{Accel, HardwareProfile, RuntimePlan};
-pub use speaker::{SpeakerStitcher, Word};
+pub use speaker::{
+    join, DiarizationEngine, DiarizeError, SpeakerJoinStats, SpeakerModels, SpeakerStitcher,
+    SpeakerTurn, Word,
+};
 pub use summarize::{
     summarize, DefaultLlmFactory, LlmFactory, LlmMode, SummarizeOutcome, SummarizePlan,
 };

@@ -5,9 +5,86 @@
 //! words are dropped; genuinely new voices get the next id, and everything past
 //! eight collapses into `9` (`9+`).
 
+use std::path::PathBuf;
+
+use tokio_util::sync::CancellationToken;
+
+use super::asr::Segment;
+
 pub const MAX_SPEAKERS: u8 = 8;
 pub const OVERFLOW_SPEAKER: u8 = 9;
 pub const OVERLAP_MS: u64 = 2_000;
+
+/// Absolute diarization turn; one global speaker id per turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpeakerTurn {
+    pub t0_ms: u64,
+    pub t1_ms: u64,
+    pub speaker: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiarizeError {
+    Cancelled,
+    Failed {
+        message: String,
+        /// Turns already produced before the failing subwindow.
+        turns: Vec<SpeakerTurn>,
+    },
+}
+
+/// Two ONNX files resolved from the speaker-pack manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpeakerModels {
+    pub segmentation: PathBuf,
+    pub embedding: PathBuf,
+}
+
+/// Injected seam so pipeline tests never need the 30 MB real models.
+pub trait DiarizationEngine: Send {
+    fn push_window(
+        &mut self,
+        samples: &[f32],
+        subwindow_start_ms: u64,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SpeakerTurn>, DiarizeError>;
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct SpeakerJoinStats {
+    pub tagged: usize,
+    pub unmatched: usize,
+    pub speakers: u8,
+}
+
+/// One label per segment: longest absolute overlap, ties keep the later turn.
+pub fn join(segments: &mut [Segment], turns: &[SpeakerTurn]) -> SpeakerJoinStats {
+    let mut stats = SpeakerJoinStats::default();
+    for segment in segments.iter_mut() {
+        let best = turns
+            .iter()
+            .filter_map(|turn| {
+                let overlap = turn
+                    .t1_ms
+                    .min(segment.end_ms)
+                    .saturating_sub(turn.t0_ms.max(segment.start_ms));
+                (overlap > 0).then_some((overlap, turn.speaker))
+            })
+            .max_by_key(|(overlap, _)| *overlap);
+        match best {
+            Some((_, speaker)) => {
+                segment.speaker = Some(speaker);
+                stats.tagged += 1;
+                stats.speakers = stats.speakers.max(speaker);
+            }
+            None => {
+                segment.speaker = None;
+                stats.unmatched += 1;
+            }
+        }
+    }
+    stats
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Word {
@@ -124,5 +201,38 @@ mod tests {
         stitcher.stitch(&[], &mut words, 0);
         assert_eq!(words[8].speaker, Some(9));
         assert_eq!(words[9].speaker, Some(9));
+    }
+
+    fn segment(start: u64, end: u64) -> Segment {
+        let mut segment = Segment::failed(start, end);
+        segment.status = super::super::asr::SegmentStatus::Ok;
+        segment.text = "x".into();
+        segment
+    }
+
+    fn turn(t0: u64, t1: u64, speaker: u8) -> SpeakerTurn {
+        SpeakerTurn {
+            t0_ms: t0,
+            t1_ms: t1,
+            speaker,
+        }
+    }
+
+    #[test]
+    fn join_picks_the_longest_overlap_and_never_splits_a_segment() {
+        let mut segments = vec![segment(1_000, 3_000)];
+        let stats = join(&mut segments, &[turn(900, 1_400, 1), turn(1_400, 2_900, 2)]);
+        assert_eq!(segments[0].speaker, Some(2));
+        assert_eq!(stats.tagged, 1);
+        assert_eq!(stats.speakers, 2);
+    }
+
+    #[test]
+    fn join_leaves_non_overlapping_segments_unlabelled() {
+        let mut segments = vec![segment(5_000, 6_000), segment(1_000, 2_000)];
+        let stats = join(&mut segments, &[turn(0, 4_999, 1)]);
+        assert_eq!(segments[0].speaker, None);
+        assert_eq!(segments[1].speaker, Some(1));
+        assert_eq!(stats.unmatched, 1);
     }
 }

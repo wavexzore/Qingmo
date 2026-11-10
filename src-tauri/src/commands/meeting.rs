@@ -28,13 +28,15 @@ use crate::ipc::dto::{
 use crate::services::meeting::asr::SherpaAsr;
 use crate::services::meeting::budget;
 use crate::services::meeting::decode::{decode_windows, ensure_duration, probe_audio};
+use crate::services::meeting::diarize::{self, SherpaDiarizer};
 use crate::services::meeting::download::{self, DiskProbe};
 use crate::services::meeting::keys::KeyService;
 use crate::services::meeting::models::{find, manifest, ModelCatalog, ModelPack, ModelState};
-use crate::services::meeting::pipeline::{exit_for, run_local, StopExit};
+use crate::services::meeting::pipeline::{exit_for, run_local_with_diarizer, StopExit};
 use crate::services::meeting::runtime::{
     self, resolve_models, tier_defaults, HardwareProfile, Origin,
 };
+use crate::services::meeting::speaker::DiarizationEngine;
 use crate::services::meeting::summarize;
 use crate::state::meeting::config::MeetingConfigStore;
 use crate::state::meeting::downloads::ModelDownloads;
@@ -362,11 +364,18 @@ fn transcribe<R: Runtime>(
                 / 60_000)
                 .clamp(TRANSCRIBE_DEADLINE_MIN_DURATION, TRANSCRIBE_DEADLINE_MAX),
         );
+    let speaker_models = diarize::models_from_catalog(catalog.inner().as_ref());
+    let mut diarizer = speaker_models
+        .as_ref()
+        .and_then(|models| SherpaDiarizer::new(models).ok());
     let windows = decode_windows(&path, token.clone())?;
-    let outcome = run_local(
+    let outcome = run_local_with_diarizer(
         windows,
         vad_model.as_deref(),
         &mut asr,
+        diarizer
+            .as_mut()
+            .map(|diarizer| diarizer as &mut dyn DiarizationEngine),
         token,
         Some(deadline),
     )?;
@@ -381,15 +390,24 @@ fn transcribe<R: Runtime>(
     if partial {
         let _ = registry.set_partial(id, true);
     }
-    if outcome.partial_decode || outcome.partial_until_ms.is_some() {
+    if outcome.partial_decode
+        || outcome.partial_until_ms.is_some()
+        || outcome.speaker_degraded
+        || outcome.speaker_partial
+    {
         let _ = registry.degrade(
             id,
             Degraded {
                 partial_decode: outcome.partial_decode,
                 partial_until_ms: outcome.partial_until_ms,
+                speaker_degraded: outcome.speaker_degraded,
+                speaker_partial: outcome.speaker_partial,
                 ..Degraded::default()
             },
         );
+    }
+    if let Some(count) = outcome.speaker_count {
+        let _ = registry.set_speaker_count(id, count);
     }
     registry.advance_checked(id, MeetingStage::Releasing)?;
 
@@ -431,6 +449,11 @@ fn render_markdown(
         } else {
             markdown.push_str("> 转写不完整。\n\n");
         }
+    }
+    if outcome.speaker_degraded {
+        markdown.push_str("> 未分离说话人。\n\n");
+    } else if outcome.speaker_partial {
+        markdown.push_str("> 部分片段未分离说话人。\n\n");
     }
     markdown.push_str("## 转录\n\n");
     for segment in &outcome.segments {

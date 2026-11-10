@@ -13,6 +13,7 @@ use super::asr::{repeat_ratio, AsrEngine, Segment, SegmentStatus, REPEAT_LIMIT};
 use super::decode::{decode_windows, DecodeWindow};
 use super::remote_asr::RemoteAsr;
 use super::runtime::ReasonCode;
+use super::speaker::{join, DiarizationEngine, DiarizeError, SpeakerTurn};
 use super::vad::{segment_window, SpeechSegment};
 use crate::error::{AppError, AppErrorCode};
 
@@ -77,6 +78,9 @@ pub struct PipelineOutcome {
     pub actual_backend: ActualBackend,
     pub remote_fallback: bool,
     pub remote_last_error: Option<ReasonCode>,
+    pub speaker_degraded: bool,
+    pub speaker_partial: bool,
+    pub speaker_count: Option<u8>,
 }
 
 impl PipelineOutcome {
@@ -119,12 +123,29 @@ pub fn run_local(
     cancel: &CancellationToken,
     deadline: Option<Instant>,
 ) -> Result<PipelineOutcome, AppError> {
+    run_local_with_diarizer(windows, vad_model, asr, None, cancel, deadline)
+}
+
+/// Local loop with an optional diarizer. VAD and diarization run on the same
+/// immutable window in one scoped thread pair; ASR waits for both.
+pub fn run_local_with_diarizer(
+    windows: DecodeWindow,
+    vad_model: Option<&std::path::Path>,
+    asr: &mut dyn AsrEngine,
+    mut diarizer: Option<&mut dyn DiarizationEngine>,
+    cancel: &CancellationToken,
+    deadline: Option<Instant>,
+) -> Result<PipelineOutcome, AppError> {
     let mut segments = Vec::new();
     let mut total = 0usize;
     let mut failed = 0usize;
     let mut reason = StopReason::Completed;
+    let mut speaker_degraded = diarizer.is_none();
+    let mut speaker_partial = false;
+    let mut speaker_count = 0u8;
+    let mut successful_window = false;
 
-    for window in windows {
+    for (window_index, window) in windows.enumerate() {
         if cancel.is_cancelled() {
             return Err(AppError::new(AppErrorCode::Cancelled, "pipeline cancelled"));
         }
@@ -142,7 +163,58 @@ pub fn run_local(
             }
         };
 
-        let segmentation = segment_window(&window.samples, vad_model, window.start_ms, cancel);
+        let (segmentation, turns) = match diarizer.as_deref_mut() {
+            Some(engine) => {
+                let result = std::thread::scope(|scope| {
+                    let diarizer_handle = scope
+                        .spawn(|| engine.push_window(&window.samples, window.start_ms, cancel));
+                    let segmentation =
+                        segment_window(&window.samples, vad_model, window.start_ms, cancel);
+                    let turns = diarizer_handle.join().unwrap_or_else(|_| {
+                        Err(DiarizeError::Failed {
+                            message: "diarizer panicked".into(),
+                            turns: Vec::new(),
+                        })
+                    });
+                    (segmentation, Some(turns))
+                });
+                result
+            }
+            None => (
+                segment_window(&window.samples, vad_model, window.start_ms, cancel),
+                None,
+            ),
+        };
+
+        let turns: Vec<SpeakerTurn> = match turns {
+            Some(Ok(turns)) => {
+                successful_window = true;
+                turns
+            }
+            Some(Err(DiarizeError::Cancelled)) => {
+                return Err(AppError::new(AppErrorCode::Cancelled, "pipeline cancelled"));
+            }
+            Some(Err(DiarizeError::Failed { turns, .. })) => {
+                if turns.is_empty() && (window_index == 0 || !successful_window) {
+                    speaker_degraded = true;
+                } else {
+                    speaker_partial = true;
+                }
+                diarizer = None;
+                turns
+            }
+            None => {
+                if window_index == 0 || !successful_window {
+                    speaker_degraded = true;
+                } else {
+                    speaker_partial = true;
+                }
+                diarizer = None;
+                Vec::new()
+            }
+        };
+
+        let mut window_segments = Vec::new();
         for speech in segmentation.segments {
             if cancel.is_cancelled() {
                 return Err(AppError::new(AppErrorCode::Cancelled, "pipeline cancelled"));
@@ -155,15 +227,20 @@ pub fn run_local(
                     {
                         continue;
                     }
-                    segments.push(segment);
+                    window_segments.push(segment);
                 }
                 Err(error) if error.code == AppErrorCode::Cancelled => return Err(error),
                 Err(_) => {
                     failed += 1;
-                    segments.push(Segment::failed(speech.start_ms, speech.end_ms));
+                    window_segments.push(Segment::failed(speech.start_ms, speech.end_ms));
                 }
             }
         }
+        if !turns.is_empty() {
+            let stats = join(&mut window_segments, &turns);
+            speaker_count = speaker_count.max(stats.speakers);
+        }
+        segments.append(&mut window_segments);
     }
 
     let available = segments
@@ -204,6 +281,9 @@ pub fn run_local(
         actual_backend: ActualBackend::Local,
         remote_fallback: false,
         remote_last_error: None,
+        speaker_degraded,
+        speaker_partial,
+        speaker_count: (speaker_count > 0).then_some(speaker_count),
     })
 }
 
@@ -270,6 +350,9 @@ pub fn run_remote(
         actual_backend: ActualBackend::Remote,
         remote_fallback: false,
         remote_last_error: None,
+        speaker_degraded: false,
+        speaker_partial: false,
+        speaker_count: None,
     })
 }
 
@@ -279,6 +362,19 @@ pub fn run_remote_with_fallback(
     remote: &mut dyn RemoteAsr,
     local_asr: &mut dyn AsrEngine,
     vad_model: Option<&Path>,
+    cancel: &CancellationToken,
+    deadline: Option<Instant>,
+) -> Result<PipelineOutcome, AppError> {
+    run_remote_with_fallback_diarized(path, remote, local_asr, vad_model, None, cancel, deadline)
+}
+
+/// Fallback variant that runs local diarization after a remote failure.
+pub fn run_remote_with_fallback_diarized(
+    path: &Path,
+    remote: &mut dyn RemoteAsr,
+    local_asr: &mut dyn AsrEngine,
+    vad_model: Option<&Path>,
+    diarizer: Option<&mut dyn DiarizationEngine>,
     cancel: &CancellationToken,
     deadline: Option<Instant>,
 ) -> Result<PipelineOutcome, AppError> {
@@ -296,7 +392,8 @@ pub fn run_remote_with_fallback(
                 .and_then(|details| details["reason"].as_str())
                 .and_then(parse_reason);
             let windows = decode_windows(path, cancel.clone())?;
-            let mut outcome = run_local(windows, vad_model, local_asr, cancel, deadline)?;
+            let mut outcome =
+                run_local_with_diarizer(windows, vad_model, local_asr, diarizer, cancel, deadline)?;
             outcome.actual_backend = ActualBackend::Local;
             outcome.remote_fallback = true;
             outcome.remote_last_error = reason;
@@ -426,6 +523,9 @@ mod tests {
             actual_backend: ActualBackend::Local,
             remote_fallback: false,
             remote_last_error: None,
+            speaker_degraded: false,
+            speaker_partial: false,
+            speaker_count: None,
         };
         assert_eq!(outcome.available(), 1);
     }
