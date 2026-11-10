@@ -54,7 +54,7 @@ sysinfo = "0.37.2"
 sherpa-onnx = "=2.0.1"
 llama-cpp-2 = { version = "=0.1.161", default-features = false }
 self_cell = "1"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "blocking"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "blocking", "multipart"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

@@ -4,12 +4,15 @@
 //! never abort the loop: failed segments are kept as placeholders and the exit
 //! table decides the final state after the last window.
 
+use std::path::Path;
 use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 
 use super::asr::{repeat_ratio, AsrEngine, Segment, SegmentStatus, REPEAT_LIMIT};
-use super::decode::DecodeWindow;
+use super::decode::{decode_windows, DecodeWindow};
+use super::remote_asr::RemoteAsr;
+use super::runtime::ReasonCode;
 use super::vad::{segment_window, SpeechSegment};
 use crate::error::{AppError, AppErrorCode};
 
@@ -56,6 +59,12 @@ impl JobFlags {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActualBackend {
+    Local,
+    Remote,
+}
+
 #[derive(Debug)]
 pub struct PipelineOutcome {
     pub segments: Vec<Segment>,
@@ -65,6 +74,9 @@ pub struct PipelineOutcome {
     pub partial_decode: bool,
     pub partial_until_ms: Option<u64>,
     pub failed_segments: usize,
+    pub actual_backend: ActualBackend,
+    pub remote_fallback: bool,
+    pub remote_last_error: Option<ReasonCode>,
 }
 
 impl PipelineOutcome {
@@ -189,7 +201,118 @@ pub fn run_local(
         partial_decode,
         partial_until_ms,
         failed_segments: failed,
+        actual_backend: ActualBackend::Local,
+        remote_fallback: false,
+        remote_last_error: None,
     })
+}
+
+pub fn run_remote(
+    windows: DecodeWindow,
+    remote: &mut dyn RemoteAsr,
+    cancel: &CancellationToken,
+    deadline: Option<Instant>,
+) -> Result<PipelineOutcome, AppError> {
+    let mut segments = Vec::new();
+    let mut reason = StopReason::Completed;
+
+    for window in windows {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(AppErrorCode::Cancelled, "pipeline cancelled"));
+        }
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            reason = StopReason::Deadline;
+            break;
+        }
+        let window = match window {
+            Ok(window) => window,
+            Err(error) if error.code == AppErrorCode::Cancelled => return Err(error),
+            Err(_) => {
+                reason = StopReason::DecodeFailed;
+                break;
+            }
+        };
+        match remote.transcribe_window(window.start_ms, &window.samples, cancel, deadline) {
+            Ok(mut remote_segments) => segments.append(&mut remote_segments),
+            Err(error) if error.code == AppErrorCode::Cancelled => return Err(error),
+            Err(error) => return Err(error),
+        }
+    }
+
+    let available = segments
+        .iter()
+        .filter(|segment| segment.status == SegmentStatus::Ok && !segment.text.is_empty())
+        .count();
+    if reason == StopReason::Completed && available == 0 {
+        reason = StopReason::Silent;
+    }
+    let total = available;
+    let (exit, partial) = exit_for(reason, total, available);
+    let mut partial_decode = false;
+    let mut partial_until_ms = None;
+    if matches!(reason, StopReason::DecodeFailed | StopReason::Deadline) && available > 0 {
+        partial_decode = true;
+        partial_until_ms = segments
+            .iter()
+            .filter(|segment| segment.status == SegmentStatus::Ok)
+            .map(|segment| segment.end_ms)
+            .max();
+    }
+
+    Ok(PipelineOutcome {
+        segments,
+        stop_reason: reason,
+        exit,
+        partial,
+        partial_decode,
+        partial_until_ms,
+        failed_segments: 0,
+        actual_backend: ActualBackend::Remote,
+        remote_fallback: false,
+        remote_last_error: None,
+    })
+}
+
+/// Run remote once; on any non-cancel failure reopen the source and run local.
+pub fn run_remote_with_fallback(
+    path: &Path,
+    remote: &mut dyn RemoteAsr,
+    local_asr: &mut dyn AsrEngine,
+    vad_model: Option<&Path>,
+    cancel: &CancellationToken,
+    deadline: Option<Instant>,
+) -> Result<PipelineOutcome, AppError> {
+    if cancel.is_cancelled() {
+        return Err(AppError::new(AppErrorCode::Cancelled, "pipeline cancelled"));
+    }
+    let windows = decode_windows(path, cancel.clone())?;
+    match run_remote(windows, remote, cancel, deadline) {
+        Ok(outcome) => Ok(outcome),
+        Err(error) if error.code == AppErrorCode::Cancelled => Err(error),
+        Err(remote_error) => {
+            let reason = remote_error
+                .details
+                .as_ref()
+                .and_then(|details| details["reason"].as_str())
+                .and_then(parse_reason);
+            let windows = decode_windows(path, cancel.clone())?;
+            let mut outcome = run_local(windows, vad_model, local_asr, cancel, deadline)?;
+            outcome.actual_backend = ActualBackend::Local;
+            outcome.remote_fallback = true;
+            outcome.remote_last_error = reason;
+            Ok(outcome)
+        }
+    }
+}
+
+fn parse_reason(value: &str) -> Option<ReasonCode> {
+    match value {
+        "remote_auth" => Some(ReasonCode::RemoteAuth),
+        "remote_quota" => Some(ReasonCode::RemoteQuota),
+        "remote_response_too_large" => Some(ReasonCode::RemoteResponseTooLarge),
+        "fallback_unavailable" => Some(ReasonCode::FallbackUnavailable),
+        _ => None,
+    }
 }
 
 fn transcribe(
@@ -300,6 +423,9 @@ mod tests {
             partial_decode: false,
             partial_until_ms: None,
             failed_segments: 1,
+            actual_backend: ActualBackend::Local,
+            remote_fallback: false,
+            remote_last_error: None,
         };
         assert_eq!(outcome.available(), 1);
     }

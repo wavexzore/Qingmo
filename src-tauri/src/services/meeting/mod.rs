@@ -4,6 +4,7 @@
 //! WebView only receives progress events and the final Markdown.
 
 pub mod asr;
+pub mod asr_route;
 pub mod budget;
 pub mod cards;
 pub mod decode;
@@ -13,12 +14,15 @@ pub mod llm_local;
 pub mod models;
 pub mod pipeline;
 pub mod reduce;
+pub mod remote_asr;
 pub mod runtime;
+pub mod speaker;
 pub mod summarize;
 pub mod vad;
 pub mod validate;
 
 pub use asr::{AsrEngine, Segment, SegmentStatus, SherpaAsr, Token};
+pub use asr_route::{decide as decide_asr_route, AsrMode, RouteDecision, RouteKind};
 pub use cards::{Card, CardKind, CardWindow, GenerateError};
 pub use decode::{
     decode_windows, ensure_duration, probe_audio, AudioProbe, DecodeWindow, DecodedWindow,
@@ -27,9 +31,14 @@ pub use lang::{detect_language, Lang};
 pub use llm::{validate_base_url, LlmClient, LlmError, LlmErrorCode, RemoteLlm, RemoteLlmConfig};
 pub use llm_local::{LocalLlm, LocalLlmSpec};
 pub use models::{ManifestCatalog, ModelState};
-pub use pipeline::{run_local, JobFlags, PipelineOutcome, StopExit, StopReason};
+pub use pipeline::{
+    run_local, run_remote, run_remote_with_fallback, ActualBackend, JobFlags, PipelineOutcome,
+    StopExit, StopReason,
+};
 pub use reduce::reduce_cards;
+pub use remote_asr::{endpoint, HttpRemoteAsr, RemoteAsr, RemoteAsrConfig, RemoteProvider};
 pub use runtime::{Accel, HardwareProfile, RuntimePlan};
+pub use speaker::{SpeakerStitcher, Word};
 pub use summarize::{
     summarize, DefaultLlmFactory, LlmFactory, LlmMode, SummarizeOutcome, SummarizePlan,
 };

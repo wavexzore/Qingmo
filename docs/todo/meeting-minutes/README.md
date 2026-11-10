@@ -206,7 +206,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-002 | VAD 分段与质量门 | done | T-001, Q-001 | none | 7/7 |
 | T-003 | ASR 接入、绝对时间、运行时与逐窗骨架 | done（2026-11-10） | T-002, T-006, Q-002, Q-006, Q-009, Q-010, Q-011 | none | — |
 | T-004 | 结构卡片 map / reduce / 校验（含本地 LLM） | done（2026-11-10） | T-003, Q-003, Q-010 | 43/43 + 1 ignored 真 GGUF | — |
-| T-004b | 远程 ASR 与回退 | todo | T-003, T-006, Q-009 | none | — |
+| T-004b | 远程 ASR 与回退 | done（2026-11-10） | T-003, T-006, Q-009 | 20/20 | — |
 | T-004c | 离线说话人分离与降级 | todo | T-001, T-003, T-011, Q-002, Q-011 | none | — |
 | T-005 | Markdown 渲染与降级路径 | todo | T-004, T-004c | none | — |
 | T-006 | MeetingRegistry 状态机、取消、进度事件 | todo | T-001, Q-004, Q-005 | none | — |
