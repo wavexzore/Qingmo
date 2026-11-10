@@ -59,7 +59,7 @@ beforeEach(() => {
 
 describe("AppError normalization", () => {
   it("lists every generated error code exactly once", () => {
-    expect(APP_ERROR_CODES).toHaveLength(27);
+    expect(APP_ERROR_CODES).toHaveLength(31);
     expect(new Set(APP_ERROR_CODES).size).toBe(APP_ERROR_CODES.length);
     for (const code of APP_ERROR_CODES) {
       expect(isAppErrorCode(code)).toBe(true);

@@ -320,6 +320,10 @@ export const errors = {
   AUDIO_TOO_LARGE: "Audio is larger than 500 MiB; compress or trim it first.",
   AUDIO_TOO_LONG: "Audio exceeds the configured duration limit.",
   AUDIO_DECODE_FAILED: "Audio decoding failed; the file may be corrupt.",
+  MODEL_NOT_READY: "The model is not ready; download it in Settings first.",
+  ASR_UNAVAILABLE: "The speech model could not be loaded; switch or re-download it.",
+  ASR_FAILED: "Speech recognition failed; retry or change the model.",
+  INVALID_CONFIG: "The meeting settings are invalid; review them in Settings.",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {

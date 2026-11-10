@@ -220,6 +220,14 @@ pub fn ensure_duration(probe: &AudioProbe, max_minutes: u16) -> Result<(), AppEr
     Ok(())
 }
 
+/// One decoded ten-minute window in absolute stream time.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodedWindow {
+    pub index: u64,
+    pub start_ms: u64,
+    pub samples: Vec<f32>,
+}
+
 pub struct DecodeWindow {
     path: std::path::PathBuf,
     format: Box<dyn FormatReader>,
@@ -230,6 +238,7 @@ pub struct DecodeWindow {
     pending: Vec<f32>,
     out: Vec<f32>,
     emitted: usize,
+    next_index: u64,
     max_out: usize,
     cancel: CancellationToken,
     finished: bool,
@@ -292,6 +301,7 @@ impl DecodeWindow {
             pending: Vec::with_capacity(RESAMPLE_CHUNK * 2),
             out: Vec::with_capacity(WINDOW_SAMPLES),
             emitted: 0,
+            next_index: 0,
             max_out,
             cancel,
             finished: false,
@@ -360,7 +370,7 @@ impl DecodeWindow {
         Ok(())
     }
 
-    fn take_window(&mut self) -> Option<Vec<f32>> {
+    fn take_window(&mut self) -> Option<DecodedWindow> {
         if self.out.is_empty() {
             return None;
         }
@@ -369,12 +379,15 @@ impl DecodeWindow {
             return None;
         }
         let take = remaining.min(WINDOW_SAMPLES).min(self.out.len());
-        let mut window = self.out.drain(..take).collect::<Vec<f32>>();
+        let samples = self.out.drain(..take).collect::<Vec<f32>>();
         self.emitted += take;
-        if window.len() == take {
-            return Some(std::mem::take(&mut window));
-        }
-        Some(window)
+        let index = self.next_index;
+        self.next_index += 1;
+        Some(DecodedWindow {
+            index,
+            start_ms: index * super::DECODE_WINDOW_MS,
+            samples,
+        })
     }
 
     fn decode_next_packet(&mut self) -> Result<bool, AppError> {
@@ -435,7 +448,7 @@ impl DecodeWindow {
 }
 
 impl Iterator for DecodeWindow {
-    type Item = Result<Vec<f32>, AppError>;
+    type Item = Result<DecodedWindow, AppError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {

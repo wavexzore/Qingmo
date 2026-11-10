@@ -33,6 +33,10 @@ export const APP_ERROR_CODES = [
   "AUDIO_TOO_LARGE",
   "AUDIO_TOO_LONG",
   "AUDIO_DECODE_FAILED",
+  "MODEL_NOT_READY",
+  "ASR_UNAVAILABLE",
+  "ASR_FAILED",
+  "INVALID_CONFIG",
 ] as const satisfies readonly AppErrorCode[];
 
 const APP_ERROR_CODE_SET: ReadonlySet<string> = new Set(APP_ERROR_CODES);

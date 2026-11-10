@@ -3,10 +3,23 @@
 //! Everything that touches the audio file, models, and network lives here; the
 //! WebView only receives progress events and the final Markdown.
 
+pub mod asr;
+pub mod budget;
 pub mod decode;
+pub mod lang;
+pub mod models;
+pub mod pipeline;
+pub mod runtime;
 pub mod vad;
 
-pub use decode::{decode_windows, ensure_duration, probe_audio, AudioProbe, DecodeWindow};
+pub use asr::{AsrEngine, Segment, SegmentStatus, SherpaAsr, Token};
+pub use decode::{
+    decode_windows, ensure_duration, probe_audio, AudioProbe, DecodeWindow, DecodedWindow,
+};
+pub use lang::{detect_language, Lang};
+pub use models::{ManifestCatalog, ModelState};
+pub use pipeline::{run_local, JobFlags, PipelineOutcome, StopExit, StopReason};
+pub use runtime::{Accel, HardwareProfile, RuntimePlan};
 pub use vad::{segment_window, Segmentation, SpeechSegment};
 
 /// Hard ceiling for one source file (500 MiB).

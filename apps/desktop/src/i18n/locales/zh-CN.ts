@@ -312,6 +312,10 @@ export const errors = {
   AUDIO_TOO_LARGE: "音频超过 500 MiB，请先压缩或截断。",
   AUDIO_TOO_LONG: "音频超过配置的时长上限。",
   AUDIO_DECODE_FAILED: "音频解码失败，文件可能已损坏。",
+  MODEL_NOT_READY: "模型尚未就绪，请先在设置中下载。",
+  ASR_UNAVAILABLE: "语音模型加载失败，请更换或重新下载。",
+  ASR_FAILED: "语音识别失败，请重试或更换模型。",
+  INVALID_CONFIG: "会议设置无效，请在设置中检查。",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {

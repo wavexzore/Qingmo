@@ -35,6 +35,10 @@ pub enum AppErrorCode {
     AudioTooLarge,
     AudioTooLong,
     AudioDecodeFailed,
+    ModelNotReady,
+    AsrUnavailable,
+    AsrFailed,
+    InvalidConfig,
 }
 
 /// The only error shape returned by the four P1 commands.

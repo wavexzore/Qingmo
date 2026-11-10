@@ -22,14 +22,14 @@ schema_version: "1.0"
 feature_id: "meeting-minutes"
 feature_name: "会议纪要（本地音频转结构化纪要）"
 status: "in_progress"           # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-003"          # 当前应执行的任务；Q 全部已决
-last_completed_task: "T-002"
-next_action: "R42 PASS → T-003 Pre-Implementation Check"
-verification_status: "not_run" # not_run | pass | fail | partial | skipped
+current_task: "T-004"          # 当前应执行的任务；Q 全部已决
+last_completed_task: "T-003"
+next_action: "T-004 Pre-Implementation Check"
+verification_status: "pass" # not_run | pass | fail | partial | skipped
 research_status: "pass"        # 官方文档 / 论文 / 开源实现 / 引擎选型四路调研已完成，证据见 01 §2.4 / 05
 call_chain_status: "pass"      # GitNexus impact + context + PDG + 源码复核已完成，证据见 01 §3
 code_calibration_status: "pass"
-last_verification_command: "none"
+last_verification_command: "cargo test --all-targets"
 last_updated: "2026-11-10T13:00:00+08:00"
 resume_from:
   - "README.md#0-llm-state每轮实施前必须读取"
@@ -93,7 +93,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 ## 1. 一句话结论
 
-会议纪要处于 `in_progress`（T-001/T-002 done，R42 已 PASS，T-003 解冻）；方案已定型为「Rust 独占音频解码与推理、复用 untitled 文档窗口承载结果、复用 `SaveCoordinator` 保存、本地离线分离说话人、两级 map-reduce 出结构化纪要并在无 LLM 时降级为抽取式」。R10 把本地模型从档位改成编译期 manifest 清单选择，并把说话人分离提为第一版能力；R23 按用户裁决改为安装包零模型、全部模型在设置页下载。**十一项人工闸门已全部裁决（含本地 LLM 与配置集），T-001/T-002 已完成，T-003 已解冻，先做 Pre-Implementation Check。**
+会议纪要处于 `in_progress`（T-001/T-002 done，R42 已 PASS，T-003 解冻）；方案已定型为「Rust 独占音频解码与推理、复用 untitled 文档窗口承载结果、复用 `SaveCoordinator` 保存、本地离线分离说话人、两级 map-reduce 出结构化纪要并在无 LLM 时降级为抽取式」。R10 把本地模型从档位改成编译期 manifest 清单选择，并把说话人分离提为第一版能力；R23 按用户裁决改为安装包零模型、全部模型在设置页下载。**十一项人工闸门已全部裁决（含本地 LLM 与配置集），T-001~T-003 已完成，T-004 待预检。**
 
 ---
 
@@ -204,7 +204,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 |---|---|---|---|---|---|
 | T-001 | Rust 音频探测、解码与重采样 | done | Q-001, Q-007 | none | 10/10 |
 | T-002 | VAD 分段与质量门 | done | T-001, Q-001 | none | 7/7 |
-| T-003 | ASR 接入、绝对时间、运行时与逐窗骨架 | in_progress（R42 PASS，待预检） | T-002, T-006, Q-002, Q-006, Q-009, Q-010, Q-011 | none | — |
+| T-003 | ASR 接入、绝对时间、运行时与逐窗骨架 | done（2026-11-10） | T-002, T-006, Q-002, Q-006, Q-009, Q-010, Q-011 | none | — |
 | T-004 | 结构卡片 map / reduce / 校验（含本地 LLM） | todo | T-003, Q-003, Q-010 | none | — |
 | T-004b | 远程 ASR 与回退 | todo | T-003, T-006, Q-009 | none | — |
 | T-004c | 离线说话人分离与降级 | todo | T-001, T-003, T-011, Q-002, Q-011 | none | — |

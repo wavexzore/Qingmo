@@ -116,7 +116,9 @@ jobs:
             libxdo-dev \
             libssl-dev \
             patchelf \
-            build-essential
+            build-essential \
+            cmake \
+            libclang-dev
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

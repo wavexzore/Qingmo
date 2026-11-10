@@ -73,7 +73,7 @@ fn decodes_to_target_rate_and_mono() {
 
     let samples: Vec<f32> = decode_windows(&path, CancellationToken::new())
         .expect("open")
-        .flat_map(|window| window.expect("window"))
+        .flat_map(|window| window.expect("window").samples)
         .collect();
 
     let expected = (probe.duration_ms as usize * TARGET_SAMPLE_RATE as usize) / 1000;
@@ -91,14 +91,18 @@ fn decodes_to_target_rate_and_mono() {
 fn splits_exact_ten_minute_windows() {
     let dir = scope("window-10m.flac");
     let path = dir.path().join("window-10m.flac");
-    let windows: Vec<Vec<f32>> = decode_windows(&path, CancellationToken::new())
+    let windows: Vec<_> = decode_windows(&path, CancellationToken::new())
         .expect("open")
         .map(|window| window.expect("window"))
         .collect();
 
     assert_eq!(windows.len(), 2);
-    assert_eq!(windows[0].len(), WINDOW_SAMPLES);
-    assert_eq!(windows[1].len(), 30 * TARGET_SAMPLE_RATE as usize);
+    assert_eq!(windows[0].samples.len(), WINDOW_SAMPLES);
+    assert_eq!(windows[1].samples.len(), 30 * TARGET_SAMPLE_RATE as usize);
+    assert_eq!(windows[0].index, 0);
+    assert_eq!(windows[0].start_ms, 0);
+    assert_eq!(windows[1].index, 1);
+    assert_eq!(windows[1].start_ms, 600_000);
 }
 
 #[test]

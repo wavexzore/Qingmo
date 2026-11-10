@@ -26,17 +26,19 @@ const FEED_CHUNK: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpeechSegment {
-    pub start: usize,
-    pub end: usize,
+    /// Absolute milliseconds from the start of the source.
+    pub start_ms: u64,
+    /// Absolute milliseconds, clamped to the decode window.
+    pub end_ms: u64,
 }
 
 impl SpeechSegment {
-    pub fn len(&self) -> usize {
-        self.end.saturating_sub(self.start)
+    pub fn len_ms(&self) -> u64 {
+        self.end_ms.saturating_sub(self.start_ms)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len_ms() == 0
     }
 }
 
@@ -64,22 +66,22 @@ fn build_detector(model: &Path) -> Option<VoiceActivityDetector> {
     VoiceActivityDetector::create(&config, 60.0)
 }
 
-fn fixed_grid(total: usize) -> Vec<SpeechSegment> {
+fn fixed_grid(total: usize) -> Vec<(usize, usize)> {
     let mut segments = Vec::new();
     let mut start = 0;
     while start < total {
         let end = (start + MAX_SEGMENT_SAMPLES).min(total);
-        segments.push(SpeechSegment { start, end });
+        segments.push((start, end));
         start = end;
     }
     segments
 }
 
-fn normalize(samples_len: usize, mut segments: Vec<SpeechSegment>) -> Vec<SpeechSegment> {
+fn normalize(samples_len: usize, mut segments: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
     let mut out = Vec::with_capacity(segments.len());
     for segment in segments.drain(..) {
-        let start = segment.start.saturating_sub(PADDING_SAMPLES);
-        let end = (segment.end + PADDING_SAMPLES).min(samples_len);
+        let start = segment.0.saturating_sub(PADDING_SAMPLES);
+        let end = (segment.1 + PADDING_SAMPLES).min(samples_len);
         if end <= start {
             continue;
         }
@@ -87,10 +89,7 @@ fn normalize(samples_len: usize, mut segments: Vec<SpeechSegment>) -> Vec<Speech
         while cursor < end {
             let chunk_end = (cursor + MAX_SEGMENT_SAMPLES).min(end);
             if chunk_end.saturating_sub(cursor) >= MIN_SPEECH_SAMPLES {
-                out.push(SpeechSegment {
-                    start: cursor,
-                    end: chunk_end,
-                });
+                out.push((cursor, chunk_end));
             }
             cursor = chunk_end;
         }
@@ -102,14 +101,11 @@ fn normalize(samples_len: usize, mut segments: Vec<SpeechSegment>) -> Vec<Speech
     for segment in out {
         let start = deduped
             .last()
-            .map(|previous: &SpeechSegment| previous.end)
+            .map(|previous: &(usize, usize)| previous.1)
             .unwrap_or(0)
-            .max(segment.start);
-        if segment.end.saturating_sub(start) >= MIN_SPEECH_SAMPLES {
-            deduped.push(SpeechSegment {
-                start,
-                end: segment.end,
-            });
+            .max(segment.0);
+        if segment.1.saturating_sub(start) >= MIN_SPEECH_SAMPLES {
+            deduped.push((start, segment.1));
         }
     }
     deduped
@@ -122,6 +118,7 @@ fn normalize(samples_len: usize, mut segments: Vec<SpeechSegment>) -> Vec<Speech
 pub fn segment_window(
     samples: &[f32],
     model: Option<&Path>,
+    window_start_ms: u64,
     cancel: &CancellationToken,
 ) -> Segmentation {
     if samples.is_empty() {
@@ -132,10 +129,12 @@ pub fn segment_window(
         if model.is_some() {
             warn!("VAD model could not be loaded; using fixed 30 s segmentation");
         }
-        return Segmentation {
-            segments: fixed_grid(samples.len()),
-            degraded: true,
-        };
+        return to_absolute(
+            fixed_grid(samples.len()),
+            samples.len(),
+            window_start_ms,
+            true,
+        );
     };
 
     let mut raw = Vec::new();
@@ -146,10 +145,7 @@ pub fn segment_window(
         detector.accept_waveform(chunk);
         while let Some(segment) = detector.front() {
             let start = segment.start().max(0) as usize;
-            raw.push(SpeechSegment {
-                start,
-                end: start + segment.n().max(0) as usize,
-            });
+            raw.push((start, start + segment.n().max(0) as usize));
             detector.pop();
         }
     }
@@ -157,17 +153,37 @@ pub fn segment_window(
     detector.flush();
     while let Some(segment) = detector.front() {
         let start = segment.start().max(0) as usize;
-        raw.push(SpeechSegment {
-            start,
-            end: start + segment.n().max(0) as usize,
-        });
+        raw.push((start, start + segment.n().max(0) as usize));
         detector.pop();
     }
 
-    Segmentation {
-        segments: normalize(samples.len(), raw),
-        degraded: false,
-    }
+    to_absolute(
+        normalize(samples.len(), raw),
+        samples.len(),
+        window_start_ms,
+        false,
+    )
+}
+
+fn to_absolute(
+    segments: Vec<(usize, usize)>,
+    samples_len: usize,
+    window_start_ms: u64,
+    degraded: bool,
+) -> Segmentation {
+    let window_end_ms =
+        window_start_ms + (samples_len as u64).saturating_mul(1000) / u64::from(TARGET_SAMPLE_RATE);
+    let segments = segments
+        .into_iter()
+        .map(|(start, end)| SpeechSegment {
+            start_ms: window_start_ms
+                + (start as u64).saturating_mul(1000) / u64::from(TARGET_SAMPLE_RATE),
+            end_ms: (window_start_ms
+                + (end as u64).saturating_mul(1000) / u64::from(TARGET_SAMPLE_RATE))
+            .min(window_end_ms),
+        })
+        .collect();
+    Segmentation { segments, degraded }
 }
 
 #[cfg(test)]
@@ -178,63 +194,46 @@ mod tests {
     fn fixed_grid_covers_every_sample_without_empty_segments() {
         let segments = fixed_grid(TARGET_SAMPLE_RATE as usize * 65);
         assert_eq!(segments.len(), 3);
-        assert!(segments.iter().all(|segment| !segment.is_empty()));
+        assert!(segments.iter().all(|segment| segment.0 < segment.1));
         assert!(segments
             .iter()
-            .all(|segment| segment.len() <= MAX_SEGMENT_SAMPLES));
-        assert_eq!(segments.first().unwrap().start, 0);
-        assert_eq!(
-            segments.last().unwrap().end,
-            TARGET_SAMPLE_RATE as usize * 65
-        );
+            .all(|segment| (segment.1 - segment.0) <= MAX_SEGMENT_SAMPLES));
+        assert_eq!(segments.first().unwrap().0, 0);
+        assert_eq!(segments.last().unwrap().1, TARGET_SAMPLE_RATE as usize * 65);
     }
 
     #[test]
     fn normalize_pads_and_splits() {
-        let segments = normalize(
-            MAX_SEGMENT_SAMPLES * 2,
-            vec![SpeechSegment {
-                start: 0,
-                end: MAX_SEGMENT_SAMPLES * 2,
-            }],
-        );
+        let segments = normalize(MAX_SEGMENT_SAMPLES * 2, vec![(0, MAX_SEGMENT_SAMPLES * 2)]);
         assert_eq!(segments.len(), 2);
-        assert_eq!(segments[0].start, 0);
-        assert_eq!(segments[1].end, MAX_SEGMENT_SAMPLES * 2);
+        assert_eq!(segments[0].0, 0);
+        assert_eq!(segments[1].1, MAX_SEGMENT_SAMPLES * 2);
     }
 
     #[test]
     fn normalize_merges_overlapping_padding() {
-        let segments = normalize(
-            10_000,
-            vec![
-                SpeechSegment {
-                    start: 1_000,
-                    end: 4_000,
-                },
-                SpeechSegment {
-                    start: 4_100,
-                    end: 8_000,
-                },
-            ],
-        );
+        let segments = normalize(10_000, vec![(1_000, 4_000), (4_100, 8_000)]);
         assert_eq!(segments.len(), 1);
-        assert_eq!(segments[0].start, 0);
-        assert_eq!(segments[0].end, 7_200);
+        assert_eq!(segments[0].0, 0);
+        assert_eq!(segments[0].1, 7_200);
+    }
+
+    #[test]
+    fn fixed_grid_gets_the_window_origin() {
+        let samples = vec![0.0; TARGET_SAMPLE_RATE as usize];
+        let result = segment_window(&samples, None, 600_000, &CancellationToken::new());
+        assert!(result.degraded);
+        assert_eq!(result.segments[0].start_ms, 600_000);
+        assert_eq!(result.segments[0].end_ms, 601_000);
+        assert!(result
+            .segments
+            .iter()
+            .all(|segment| segment.start_ms < segment.end_ms));
     }
 
     #[test]
     fn normalize_clips_and_drops_short_tails() {
-        let segments = normalize(
-            10_000,
-            vec![
-                SpeechSegment { start: 0, end: 1 },
-                SpeechSegment {
-                    start: 9_900,
-                    end: 10_000,
-                },
-            ],
-        );
+        let segments = normalize(10_000, vec![(0, 1), (9_900, 10_000)]);
         assert!(segments.is_empty());
     }
 }
