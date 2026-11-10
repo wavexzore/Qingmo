@@ -18,6 +18,7 @@ pub mod models;
 pub mod pipeline;
 pub mod reduce;
 pub mod remote_asr;
+pub mod render;
 pub mod runtime;
 pub mod speaker;
 pub mod summarize;

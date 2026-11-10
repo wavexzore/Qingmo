@@ -31,8 +31,10 @@ use crate::services::meeting::decode::{decode_windows, ensure_duration, probe_au
 use crate::services::meeting::diarize::{self, SherpaDiarizer};
 use crate::services::meeting::download::{self, DiskProbe};
 use crate::services::meeting::keys::KeyService;
+use crate::services::meeting::lang::detect_language;
 use crate::services::meeting::models::{find, manifest, ModelCatalog, ModelPack, ModelState};
 use crate::services::meeting::pipeline::{exit_for, run_local_with_diarizer, StopExit};
+use crate::services::meeting::render::{self, RenderInput};
 use crate::services::meeting::runtime::{
     self, resolve_models, tier_defaults, HardwareProfile, Origin,
 };
@@ -383,7 +385,6 @@ fn transcribe<R: Runtime>(
     let available = outcome.available();
     let total = outcome.segments.len();
     let (exit, partial) = exit_for(outcome.stop_reason, total, available);
-    let label = registry.running_label(id).unwrap_or_default();
     let _ = registry.set_failed_segments(id, outcome.failed_segments as u32);
     let _ = registry.set_stop_reason(id, outcome.stop_reason);
     let _ = registry.set_exit(id, exit);
@@ -419,7 +420,47 @@ fn transcribe<R: Runtime>(
     }
 
     registry.advance_checked(id, MeetingStage::Rendering)?;
-    let markdown = render_markdown(&label, source, &outcome, partial);
+    let transcript_text = outcome
+        .segments
+        .iter()
+        .map(|segment| segment.text.as_str())
+        .collect::<String>();
+    let language = detect_language(&transcript_text);
+    let stem = source
+        .path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "会议纪要".to_owned());
+    let degraded = Degraded {
+        partial_decode: outcome.partial_decode,
+        partial_until_ms: outcome.partial_until_ms,
+        remote_fallback: outcome.remote_fallback,
+        remote_last_error: outcome.remote_last_error.map(reason_view),
+        speaker_degraded: outcome.speaker_degraded,
+        speaker_partial: outcome.speaker_partial,
+        high_memory_model: high_memory_model(&profile, asr_id),
+        ..Degraded::default()
+    };
+    let markdown = render::render(RenderInput {
+        title: &stem,
+        language,
+        actual_backend: match outcome.actual_backend {
+            crate::services::meeting::pipeline::ActualBackend::Local => AsrBackend::Local,
+            crate::services::meeting::pipeline::ActualBackend::Remote => {
+                AsrBackend::Remote(provider_view(config.asr.provider))
+            }
+        },
+        local_model: Some(asr_id),
+        speaker_count: outcome.speaker_count,
+        stats: MeetingStats {
+            failed_segments: outcome.failed_segments as u32,
+            ..MeetingStats::default()
+        },
+        segments: &outcome.segments,
+        cards: &[],
+        degraded,
+        keep_transcript: config.keep_transcript,
+    });
     Ok(MeetingResult {
         markdown,
         audio_url: String::new(),
@@ -433,66 +474,49 @@ fn transcribe<R: Runtime>(
     })
 }
 
-fn render_markdown(
-    _label: &str,
-    source: &MeetingSource,
-    outcome: &crate::services::meeting::pipeline::PipelineOutcome,
-    partial: bool,
-) -> String {
-    let mut markdown = String::new();
-    markdown.push_str("# 会议纪要\n\n");
-    markdown.push_str(&format!("> 由青墨自动转写 · {}", source.display_name()));
-    markdown.push_str("\n\n");
-    if partial {
-        if let Some(until) = outcome.partial_until_ms {
-            markdown.push_str(&format!("> 只转写了前 {}。\n\n", format_ms(until)));
-        } else {
-            markdown.push_str("> 转写不完整。\n\n");
-        }
-    }
-    if outcome.speaker_degraded {
-        markdown.push_str("> 未分离说话人。\n\n");
-    } else if outcome.speaker_partial {
-        markdown.push_str("> 部分片段未分离说话人。\n\n");
-    }
-    markdown.push_str("## 转录\n\n");
-    for segment in &outcome.segments {
-        if !matches!(
-            segment.status,
-            crate::services::meeting::asr::SegmentStatus::Ok
-        ) || segment.text.is_empty()
-        {
-            markdown.push_str(&format!("- [{}] [识别失败]\n", format_ms(segment.start_ms)));
-            continue;
-        }
-        let speaker = segment
-            .speaker
-            .map(|speaker| format!("说话人 {}：", u16::from(speaker) + 1))
-            .unwrap_or_default();
-        markdown.push_str(&format!(
-            "- [{}] {}{}\n",
-            format_ms(segment.start_ms),
-            speaker,
-            segment.text
-        ));
-    }
-    markdown
-}
-
-fn format_ms(ms: u64) -> String {
-    let total = ms / 1000;
-    let minutes = total / 60;
-    let seconds = total % 60;
-    if minutes >= 60 {
-        format!("{:02}:{:02}:{:02}", minutes / 60, minutes % 60, seconds)
-    } else {
-        format!("{minutes:02}:{seconds:02}")
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Configuration, keys and models (T-010/T-011)
 // ---------------------------------------------------------------------------
+
+fn provider_view(
+    provider: crate::services::meeting::remote_asr::RemoteProvider,
+) -> crate::ipc::dto::RemoteProvider {
+    match provider {
+        crate::services::meeting::remote_asr::RemoteProvider::OpenAi => {
+            crate::ipc::dto::RemoteProvider::OpenAi
+        }
+        crate::services::meeting::remote_asr::RemoteProvider::Groq => {
+            crate::ipc::dto::RemoteProvider::Groq
+        }
+        crate::services::meeting::remote_asr::RemoteProvider::Deepgram => {
+            crate::ipc::dto::RemoteProvider::Deepgram
+        }
+    }
+}
+
+fn reason_view(
+    reason: crate::services::meeting::runtime::ReasonCode,
+) -> crate::ipc::dto::ReasonCode {
+    use crate::services::meeting::runtime::ReasonCode;
+    match reason {
+        ReasonCode::RemoteAuth => crate::ipc::dto::ReasonCode::RemoteAuth,
+        ReasonCode::RemoteQuota => crate::ipc::dto::ReasonCode::RemoteQuota,
+        ReasonCode::RemoteKeyMissing => crate::ipc::dto::ReasonCode::RemoteKeyMissing,
+        ReasonCode::RemoteResponseTooLarge => crate::ipc::dto::ReasonCode::RemoteResponseTooLarge,
+        ReasonCode::FallbackUnavailable => crate::ipc::dto::ReasonCode::FallbackUnavailable,
+        ReasonCode::DiskFull => crate::ipc::dto::ReasonCode::DiskFull,
+        ReasonCode::ArchiveBomb => crate::ipc::dto::ReasonCode::ArchiveBomb,
+        ReasonCode::ArchiveEscape => crate::ipc::dto::ReasonCode::ArchiveEscape,
+        ReasonCode::MemoryBudget => crate::ipc::dto::ReasonCode::MemoryBudget,
+        ReasonCode::ModelUnsupported => crate::ipc::dto::ReasonCode::ModelUnsupported,
+        ReasonCode::ConfigRevision => crate::ipc::dto::ReasonCode::ConfigRevision,
+        ReasonCode::KeyringUnavailable => crate::ipc::dto::ReasonCode::KeyringUnavailable,
+    }
+}
+
+fn high_memory_model(profile: &HardwareProfile, id: &str) -> bool {
+    profile.total_memory_mb <= 8 * 1024 && find(id).is_some_and(|pack| pack.peak_memory_mb >= 1_400)
+}
 
 fn key_slot(config: &crate::state::meeting::MeetingConfig, slot: &str) -> Result<String, AppError> {
     match slot {

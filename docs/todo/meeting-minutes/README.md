@@ -208,7 +208,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-004 | 结构卡片 map / reduce / 校验（含本地 LLM） | done（2026-11-10） | T-003, Q-003, Q-010 | 43/43 + 1 ignored 真 GGUF | — |
 | T-004b | 远程 ASR 与回退 | done（2026-11-10） | T-003, T-006, Q-009 | 20/20 | — |
 | T-004c | 离线说话人分离与降级 | done（2026-11-10） | T-001, T-003, T-011, Q-002, Q-011 | 分离 5/5 + 2 ignored 真模型、speaker 3/3 | — |
-| T-005 | Markdown 渲染与降级路径 | todo | T-004, T-004c | none | — |
+| T-005 | Markdown 渲染与降级路径 | done（2026-11-10） | T-004, T-004c | render 15/15 | — |
 | T-006 | MeetingRegistry 状态机、取消、进度事件 | done（2026-11-10） | T-001, Q-004, Q-005 | 35/35 | — |
 | T-007 | 命令层、契约、capability、错误码 | done（2026-11-10） | T-006 | contract 62/36/13/15 | — |
 | T-008 | 结果窗口接入（query 参数 + 首屏进度 + StatusBar 分支 + 失败重试） | done（2026-11-10） | T-007 | 6/6 + 前端 13 | — |
