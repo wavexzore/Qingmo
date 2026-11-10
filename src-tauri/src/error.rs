@@ -39,6 +39,7 @@ pub enum AppErrorCode {
     AsrUnavailable,
     AsrFailed,
     InvalidConfig,
+    MeetingBusy,
 }
 
 /// The only error shape returned by the four P1 commands.

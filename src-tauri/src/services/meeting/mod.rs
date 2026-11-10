@@ -30,7 +30,7 @@ pub use decode::{
 pub use lang::{detect_language, Lang};
 pub use llm::{validate_base_url, LlmClient, LlmError, LlmErrorCode, RemoteLlm, RemoteLlmConfig};
 pub use llm_local::{LocalLlm, LocalLlmSpec};
-pub use models::{ManifestCatalog, ModelState};
+pub use models::{ManifestCatalog, ModelCatalog, ModelState};
 pub use pipeline::{
     run_local, run_remote, run_remote_with_fallback, ActualBackend, JobFlags, PipelineOutcome,
     StopExit, StopReason,

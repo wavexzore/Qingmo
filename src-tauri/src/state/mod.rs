@@ -2,6 +2,7 @@ pub mod close_guard;
 pub mod document_registry;
 pub mod document_watcher;
 pub mod focus_tracker;
+pub mod meeting;
 pub mod preview_modes;
 pub mod session_restore;
 pub mod shell_locale;
@@ -17,6 +18,9 @@ pub use close_guard::{CloseBegin, CloseExpiry, CloseGuard, CloseOutcome};
 pub use document_registry::{DocToken, DocumentRecord, DocumentRegistry};
 pub use document_watcher::DocumentWatcher;
 pub use focus_tracker::FocusTracker;
+pub use meeting::{
+    AssetScope, MeetingConfigStore, MeetingOutcome, MeetingRegistry, MeetingSource, MeetingStage,
+};
 pub use preview_modes::PreviewModes;
 pub use shell_locale::ShellLocale;
 pub use startup_open_queue::StartupOpenQueue;

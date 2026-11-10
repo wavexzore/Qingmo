@@ -37,6 +37,7 @@ export const APP_ERROR_CODES = [
   "ASR_UNAVAILABLE",
   "ASR_FAILED",
   "INVALID_CONFIG",
+  "MEETING_BUSY",
 ] as const satisfies readonly AppErrorCode[];
 
 const APP_ERROR_CODE_SET: ReadonlySet<string> = new Set(APP_ERROR_CODES);

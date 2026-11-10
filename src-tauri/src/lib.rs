@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::menu::{
@@ -1017,6 +1018,29 @@ pub fn run() {
             // but must never block startup or fall back to /tmp, which would
             // leak plaintext drafts outside the app sandbox.
             let local_data = app.path().app_local_data_dir().ok();
+            let meeting_root = local_data
+                .as_ref()
+                .map(|dir| dir.join("meeting-models"))
+                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-meeting-models"));
+            let meeting_catalog: Arc<dyn services::meeting::ModelCatalog> =
+                Arc::new(services::meeting::ManifestCatalog::new(meeting_root));
+            let meeting_config = match local_data.as_ref() {
+                Some(dir) => state::MeetingConfigStore::open(
+                    dir.join("meeting").join("config.json"),
+                    Arc::clone(&meeting_catalog),
+                )
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "meeting config storage is unavailable");
+                    state::MeetingConfigStore::disabled(Arc::clone(&meeting_catalog))
+                }),
+                None => {
+                    tracing::warn!("application data directory is unavailable; meeting config is disabled");
+                    state::MeetingConfigStore::disabled(Arc::clone(&meeting_catalog))
+                }
+            };
+            app.manage(meeting_config);
+            app.manage(state::MeetingRegistry::new(app.handle().clone()));
+            app.manage(state::AssetScope::new(app.handle().clone()));
             let session_store = match local_data.as_ref() {
                 Some(dir) => match services::SessionStore::open(dir.join("session")) {
                     Ok(store) => store,

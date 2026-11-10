@@ -321,6 +321,7 @@ export const errors = {
   AUDIO_TOO_LONG: "Audio exceeds the configured duration limit.",
   AUDIO_DECODE_FAILED: "Audio decoding failed; the file may be corrupt.",
   MODEL_NOT_READY: "The model is not ready; download it in Settings first.",
+  MEETING_BUSY: "Another meeting task is running; wait for it or cancel it first.",
   ASR_UNAVAILABLE: "The speech model could not be loaded; switch or re-download it.",
   ASR_FAILED: "Speech recognition failed; retry or change the model.",
   INVALID_CONFIG: "The meeting settings are invalid; review them in Settings.",
