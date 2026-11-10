@@ -26,6 +26,7 @@ export function buildNativeShellLabels(language: SupportedLanguage): NativeShell
     open: menu("open"),
     openFolder: menu("openFolder"),
     save: menu("save"),
+    meeting: menu("meeting"),
     closeWindow: menu("closeWindow"),
     edit: menu("edit"),
     undo: menu("undo"),

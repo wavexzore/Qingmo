@@ -562,13 +562,14 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(10);
+    expect(options).toHaveLength(11);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("新建文件"),
         expect.stringContaining("打开文件"),
         expect.stringContaining("打开文件夹"),
         expect.stringContaining("保存文件"),
+        expect.stringContaining("会议纪要"),
         expect.stringContaining("切换大纲"),
         expect.stringContaining("切换实时预览"),
         expect.stringContaining("切换主题"),

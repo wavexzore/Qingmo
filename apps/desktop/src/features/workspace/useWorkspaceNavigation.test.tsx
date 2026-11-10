@@ -18,12 +18,14 @@ function entry(
   kind: "directory" | "file";
   expandable: boolean;
   openable: boolean;
+  audio: boolean;
 } {
   return {
     name,
     kind,
     expandable: kind === "directory",
     openable: kind === "file",
+    audio: false,
   };
 }
 

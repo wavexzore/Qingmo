@@ -531,6 +531,14 @@ export function WorkspaceLayout() {
     startUntitled,
   ]);
 
+  const startMeeting = useCallback(async () => {
+    try {
+      await ipc.meetingStart();
+    } catch (error) {
+      handleCommandError(normalizeError(error));
+    }
+  }, [handleCommandError, ipc]);
+
   const runMenuCommand = useCallback(
     async (id: string) => {
       if (!commandRegistry.list().some((command) => command.id === id)) {
@@ -571,6 +579,9 @@ export function WorkspaceLayout() {
           break;
         case MENU_ACTIONS.fileSave:
           void runMenuCommand("file.save");
+          break;
+        case MENU_ACTIONS.fileMeeting:
+          void runMenuCommand("file.meeting");
           break;
         case MENU_ACTIONS.paletteOpen:
           openPalette();
@@ -642,6 +653,17 @@ export function WorkspaceLayout() {
     });
     return () => disposable.dispose();
   }, [createDocument]);
+
+  useEffect(() => {
+    const disposable = commandRegistry.register({
+      id: "file.meeting",
+      titleKey: "commands:file.meeting",
+      category: "commands:category.file",
+      keybinding: "Mod+Shift+M",
+      run: startMeeting,
+    });
+    return () => disposable.dispose();
+  }, [startMeeting]);
 
   useEffect(() => {
     const disposable = commandRegistry.register({

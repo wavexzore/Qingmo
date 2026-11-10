@@ -6,7 +6,7 @@ use crate::ipc::dto::{
 };
 use crate::services::file_identity::{observe_path, FileIdentity, FileObservation};
 use crate::services::file_service::MAX_DOCUMENT_BYTES;
-use crate::state::document_registry::ensure_supported_extension;
+use crate::state::document_registry::{ensure_supported_audio, ensure_supported_extension};
 
 /// Deepest directory chain accepted from the webview.
 pub const MAX_SEGMENTS: usize = 64;
@@ -481,13 +481,25 @@ fn symlink_openable(root: &Path, path: &Path) -> bool {
         && ensure_supported_extension(&target).is_ok()
 }
 
+fn symlink_audio(root: &Path, path: &Path) -> bool {
+    let Ok(target) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    if !target.starts_with(root) {
+        return false;
+    }
+    std::fs::metadata(&target).is_ok_and(|metadata| metadata.is_file())
+        && ensure_supported_audio(&target).is_ok()
+}
+
 /// Lists one directory level below a canonical workspace root.
 ///
-/// Only regular directories and supported Markdown files are returned. Hidden
-/// entries, `node_modules` directories, non-UTF-8 names, control/bidi names and
-/// names containing separators are skipped. Symlinks are never expandable and
-/// are only openable when their canonical target stays inside the root and is a
-/// supported file.
+/// Only regular directories, supported Markdown files and supported meeting
+/// audio containers are returned. Audio rows carry `audio: true` and are never
+/// openable. Hidden entries, `node_modules` directories, non-UTF-8 names,
+/// control/bidi names and names containing separators are skipped. Symlinks are
+/// never expandable; they are openable only for supported Markdown inside the
+/// root and marked audio for supported containers inside the root.
 pub fn list_directory_with_limit(
     root: &Path,
     segments: &[String],
@@ -536,11 +548,14 @@ pub fn list_directory_with_limit(
                 continue;
             }
             let openable = kind == WorkspaceEntryKind::SymlinkFile && symlink_openable(root, &path);
+            let audio =
+                !openable && kind == WorkspaceEntryKind::SymlinkFile && symlink_audio(root, &path);
             entries.push(WorkspaceEntry {
                 name,
                 kind,
                 expandable: false,
                 openable,
+                audio,
             });
         } else if file_type.is_dir() {
             if name == "node_modules" {
@@ -551,16 +566,21 @@ pub fn list_directory_with_limit(
                 kind: WorkspaceEntryKind::Directory,
                 expandable: true,
                 openable: false,
+                audio: false,
             });
         } else if file_type.is_file() {
-            if ensure_supported_extension(Path::new(&name)).is_err() {
+            let file_path = Path::new(&name);
+            let audio = ensure_supported_extension(file_path).is_err()
+                && ensure_supported_audio(file_path).is_ok();
+            if !audio && ensure_supported_extension(file_path).is_err() {
                 continue;
             }
             entries.push(WorkspaceEntry {
                 name,
                 kind: WorkspaceEntryKind::File,
                 expandable: false,
-                openable: true,
+                openable: !audio,
+                audio,
             });
         }
     }
@@ -595,6 +615,7 @@ mod tests {
                 kind,
                 WorkspaceEntryKind::File | WorkspaceEntryKind::SymlinkFile
             ),
+            audio: false,
         }
     }
 
@@ -703,6 +724,7 @@ mod tests {
         std::fs::write(root.join("note.md"), "body").expect("note");
         std::fs::write(root.join("component.MDX"), "body").expect("mdx");
         std::fs::write(root.join("notes.txt"), "body").expect("text");
+        std::fs::write(root.join("voice.m4a"), "body").expect("audio");
         std::fs::write(root.join(".hidden.md"), "body").expect("hidden");
 
         let listing =
@@ -712,9 +734,11 @@ mod tests {
             .iter()
             .map(|entry| entry.name.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(names, vec!["docs", "component.MDX", "note.md"]);
+        assert_eq!(names, vec!["docs", "component.MDX", "note.md", "voice.m4a"]);
         assert!(listing.entries[0].expandable);
         assert!(listing.entries[1].openable);
+        assert!(!listing.entries[3].openable);
+        assert!(listing.entries[3].audio);
         assert!(!listing.truncated);
         assert!(listing.segments.is_empty());
     }
@@ -767,11 +791,14 @@ mod tests {
         let outside_root = std::fs::canonicalize(outside_dir.path()).expect("outside canonical");
         std::fs::create_dir(root.join("docs")).expect("docs");
         std::fs::write(root.join("inside.md"), "body").expect("inside");
+        std::fs::write(root.join("voice.m4a"), "body").expect("audio");
         std::fs::write(outside_root.join("outside.md"), "body").expect("outside");
 
         std::os::unix::fs::symlink(root.join("docs"), root.join("link-dir")).expect("link dir");
         std::os::unix::fs::symlink(root.join("inside.md"), root.join("link-file.md"))
             .expect("link file");
+        std::os::unix::fs::symlink(root.join("voice.m4a"), root.join("link-audio.m4a"))
+            .expect("link audio");
         std::os::unix::fs::symlink(
             outside_root.join("outside.md"),
             root.join("outside-link.md"),
@@ -802,6 +829,8 @@ mod tests {
             WorkspaceEntryKind::SymlinkFile
         );
         assert!(by_name("link-file.md").openable);
+        assert!(by_name("link-audio.m4a").audio);
+        assert!(!by_name("link-audio.m4a").openable);
         assert!(!by_name("outside-link.md").openable);
         assert_eq!(by_name("broken.md").kind, WorkspaceEntryKind::SymlinkFile);
         assert!(!by_name("broken.md").openable);

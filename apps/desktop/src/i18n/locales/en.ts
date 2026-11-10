@@ -550,6 +550,7 @@ export const commandLabels = {
     new: "New file",
     open: "Open file",
     save: "Save file",
+    meeting: "Meeting Minutes…",
   },
   document: {
     history: "Version history",
@@ -663,6 +664,7 @@ export const workspace = {
     retry: "Retry this directory",
     truncatedRow: "Only the first 10,000 items are shown here; open a subfolder",
     rowError: "This directory could not be read",
+    audioHint: "Audio file; opening is not supported yet",
     kindDirectory: "folder",
     kindFile: "file",
     kindSymlinkDirectory: "linked folder",

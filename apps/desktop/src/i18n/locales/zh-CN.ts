@@ -539,6 +539,7 @@ export const commandLabels = {
     new: "新建文件",
     open: "打开文件",
     save: "保存文件",
+    meeting: "会议纪要…",
   },
   document: {
     history: "版本历史",
@@ -649,6 +650,7 @@ export const workspace = {
     retry: "重试读取此目录",
     truncatedRow: "此目录只显示前 10,000 项，请进子目录查看",
     rowError: "无法读取此目录",
+    audioHint: "音频文件，暂不支持直接打开",
     kindDirectory: "文件夹",
     kindFile: "文件",
     kindSymlinkDirectory: "链接文件夹",

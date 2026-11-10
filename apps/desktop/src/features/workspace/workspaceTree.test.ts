@@ -16,6 +16,7 @@ function entry(name: string, kind: WorkspaceEntry["kind"] = "file"): WorkspaceEn
     kind,
     expandable: kind === "directory",
     openable: kind === "file" || kind === "symlinkFile",
+    audio: false,
   };
 }
 
@@ -211,5 +212,20 @@ describe("workspace tree reducer", () => {
     const manual = selectRefreshTargets(state, true);
     expect(manual.targets).toHaveLength(41);
     expect(manual.uncovered).toEqual([]);
+  });
+
+  it("maps the audio flag and keeps audio rows unopenable", () => {
+    const state = loaded([
+      {
+        name: "voice.m4a",
+        kind: "file",
+        expandable: false,
+        openable: false,
+        audio: true,
+      },
+    ]);
+
+    const rows = flattenWorkspaceRows(state);
+    expect(rows[0]).toMatchObject({ audio: true, openable: false });
   });
 });

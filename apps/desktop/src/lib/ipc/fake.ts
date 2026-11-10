@@ -940,12 +940,14 @@ export class FakeIpc implements IpcPort {
       }
       if (relative.length > dirSegments.length + 1) {
         directories.add(name);
-      } else if (isSupportedMarkdown(name)) {
+      } else if (isSupportedMarkdown(name) || isSupportedAudio(name)) {
+        const audio = isSupportedAudio(name);
         files.push({
           name,
           kind: "file",
           expandable: false,
-          openable: true,
+          openable: !audio,
+          audio,
         });
       }
     }
@@ -957,6 +959,7 @@ export class FakeIpc implements IpcPort {
         kind: "directory",
         expandable: true,
         openable: false,
+        audio: false,
       }));
     files.sort((left, right) => compareWorkspaceNames(left.name, right.name));
     return [...directoryEntries, ...files];
@@ -1391,6 +1394,10 @@ function isValidWorkspaceSegment(segment: string): boolean {
 
 function isSupportedMarkdown(path: string): boolean {
   return /\.(md|markdown|mdx)$/i.test(path);
+}
+
+function isSupportedAudio(path: string): boolean {
+  return /\.(m4a|mp4|wav|mp3|flac)$/i.test(path);
 }
 
 function compareWorkspaceNames(left: string, right: string): number {

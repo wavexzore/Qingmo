@@ -109,6 +109,8 @@ pub struct WorkspaceEntry {
     pub kind: WorkspaceEntryKind,
     pub expandable: bool,
     pub openable: bool,
+    /// Supported meeting audio; shown in the tree but never opened (NEXT-013).
+    pub audio: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -369,6 +371,7 @@ pub struct NativeShellLabels {
     pub open: String,
     pub open_folder: String,
     pub save: String,
+    pub meeting: String,
     pub close_window: String,
     pub edit: String,
     pub undo: String,
@@ -455,7 +458,7 @@ fn validate_untitled_file_name(name: &str) -> Result<(), AppError> {
 
 impl NativeShellLabels {
     /// Menu/title labels only; `untitledFileName` is validated separately.
-    pub fn fields(&self) -> [(&'static str, &str); 41] {
+    pub fn fields(&self) -> [(&'static str, &str); 42] {
         [
             ("appName", &self.app_name),
             ("about", &self.about),
@@ -470,6 +473,7 @@ impl NativeShellLabels {
             ("open", &self.open),
             ("openFolder", &self.open_folder),
             ("save", &self.save),
+            ("meeting", &self.meeting),
             ("closeWindow", &self.close_window),
             ("edit", &self.edit),
             ("undo", &self.undo),
@@ -549,6 +553,7 @@ pub fn test_native_labels(app_name: &str) -> NativeShellLabels {
         open: "Open…".to_string(),
         open_folder: "Open Folder…".to_string(),
         save: "Save".to_string(),
+        meeting: "Meeting Minutes…".to_string(),
         close_window: "Close Window".to_string(),
         edit: "Edit".to_string(),
         undo: "Undo".to_string(),

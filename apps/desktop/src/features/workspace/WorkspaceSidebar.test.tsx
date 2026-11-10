@@ -18,6 +18,7 @@ function row(
     depth: segments.length - 1,
     expandable: kind === "directory",
     openable: kind === "file",
+    audio: false,
     expanded: false,
     posInSet: 1,
     setSize: 1,

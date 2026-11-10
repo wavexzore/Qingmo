@@ -116,7 +116,7 @@ pub const MENU_FILE_NEW: &str = "file.new";
 pub const MENU_FILE_OPEN: &str = "file.open";
 pub const MENU_FILE_OPEN_FOLDER: &str = "file.openFolder";
 pub const MENU_FILE_SAVE: &str = "file.save";
-pub const MENU_FILE_MEETING: &str = "file.meeting";
+pub const MENU_MEETING: &str = "file.meeting";
 pub const MENU_PALETTE_OPEN: &str = "palette.open";
 pub const MENU_VIEW_TOGGLE_OUTLINE: &str = "view.toggleOutline";
 pub const MENU_VIEW_TOGGLE_LIVE_PREVIEW: &str = "view.toggleLivePreview";
@@ -133,7 +133,7 @@ pub const MENU_ACTIONS: &[&str] = &[
     MENU_FILE_OPEN,
     MENU_FILE_OPEN_FOLDER,
     MENU_FILE_SAVE,
-    MENU_FILE_MEETING,
+    MENU_MEETING,
     MENU_PALETTE_OPEN,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW,
     MENU_VIEW_TOGGLE_OUTLINE,

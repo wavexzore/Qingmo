@@ -14,6 +14,7 @@ function row(segments: string[], kind: FlatRow["kind"], extra: Partial<FlatRow> 
     depth: segments.length - 1,
     expandable: kind === "directory" || kind === "symlinkDirectory",
     openable: kind === "file" || kind === "symlinkFile",
+    audio: false,
     expanded: false,
     posInSet: 1,
     setSize: 1,
@@ -316,5 +317,20 @@ describe("VirtualWorkspaceTree virtualization and accessibility", () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(rowElement("beta.md"));
     });
+  });
+
+  it("shows an audio row as disabled with a hint and no open", () => {
+    const onOpenFile = vi.fn();
+    const audio = row(["voice.m4a"], "file", {
+      openable: false,
+      audio: true,
+    });
+    render(<Harness rows={[audio]} onOpenFile={onOpenFile} />);
+
+    const element = rowElement("voice.m4a");
+    expect(element).toHaveAttribute("aria-disabled", "true");
+    expect(element).toHaveAttribute("title", "音频文件，暂不支持直接打开");
+    fireEvent.click(element);
+    expect(onOpenFile).not.toHaveBeenCalled();
   });
 });

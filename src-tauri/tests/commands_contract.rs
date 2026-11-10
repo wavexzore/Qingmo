@@ -758,6 +758,7 @@ fn valid_labels() -> NativeShellLabels {
         open: "Open…".to_string(),
         open_folder: "Open Folder…".to_string(),
         save: "Save".to_string(),
+        meeting: "Meeting Minutes…".to_string(),
         close_window: "Close Window".to_string(),
         edit: "Edit".to_string(),
         undo: "Undo".to_string(),

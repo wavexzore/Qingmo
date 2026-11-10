@@ -24,8 +24,8 @@ pub mod state;
 use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
-    EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_MEETING, MENU_FILE_NEW,
-    MENU_FILE_OPEN, MENU_FILE_OPEN_FOLDER, MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN,
+    EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN,
+    MENU_FILE_OPEN_FOLDER, MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN, MENU_MEETING,
     MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE, MENU_VIEW_TOGGLE_THEME,
 };
@@ -183,11 +183,7 @@ fn menu_layout<'a>(
         action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
         action(MENU_FILE_OPEN_FOLDER, &labels.open_folder, None),
         action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
-        action(
-            MENU_FILE_MEETING,
-            "Meeting Minutes…",
-            Some("CmdOrCtrl+Shift+M"),
-        ),
+        action(MENU_MEETING, &labels.meeting, Some("CmdOrCtrl+Shift+M")),
     ];
     if !macos {
         file_items.push(MenuEntry::Separator);
@@ -335,6 +331,7 @@ fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
     let mut file_items = vec![
         action(MENU_FILE_NEW, "New", Some("CmdOrCtrl+N")),
         action(MENU_FILE_OPEN_FOLDER, "Open Folder…", None),
+        action(MENU_MEETING, "Meeting Minutes…", Some("CmdOrCtrl+Shift+M")),
         action(MENU_CLOSE_WINDOW, "Close Window", Some("CmdOrCtrl+W")),
     ];
     if !macos {
@@ -1399,6 +1396,7 @@ mod menu_tests {
             open: format!("{prefix}-open"),
             open_folder: format!("{prefix}-open-folder"),
             save: format!("{prefix}-save"),
+            meeting: format!("{prefix}-meeting"),
             close_window: format!("{prefix}-close"),
             edit: format!("{prefix}-edit"),
             undo: format!("{prefix}-undo"),
@@ -1547,6 +1545,11 @@ mod menu_tests {
             !file_ids.contains(&MENU_SETTINGS),
             "macOS keeps settings in the application menu"
         );
+        assert_eq!(action_label(action(file_menu, MENU_MEETING)), "zh-meeting");
+        assert_eq!(
+            action_accelerator(action(file_menu, MENU_MEETING)),
+            Some("CmdOrCtrl+Shift+M")
+        );
         assert_eq!(action_label(action(file_menu, MENU_FILE_NEW)), "zh-new");
         assert_eq!(
             action_accelerator(action(file_menu, MENU_FILE_NEW)),
@@ -1560,7 +1563,7 @@ mod menu_tests {
                 MENU_FILE_OPEN,
                 MENU_FILE_OPEN_FOLDER,
                 MENU_FILE_SAVE,
-                MENU_FILE_MEETING,
+                MENU_MEETING,
                 MENU_CLOSE_WINDOW
             ]
         );
@@ -1634,6 +1637,7 @@ mod menu_tests {
         let file_menu = menu(&layout, "en-file");
         let file_ids = action_ids(file_menu);
         assert!(file_ids.contains(&MENU_FILE_NEW));
+        assert!(file_ids.contains(&MENU_MEETING));
         assert!(file_ids.contains(&MENU_QUIT));
         assert!(file_ids.contains(&MENU_SETTINGS));
         assert_eq!(
@@ -1643,6 +1647,11 @@ mod menu_tests {
         assert_eq!(
             action_accelerator(action(file_menu, MENU_SETTINGS)),
             Some("CmdOrCtrl+,")
+        );
+        assert_eq!(action_label(action(file_menu, MENU_MEETING)), "en-meeting");
+        assert_eq!(
+            action_accelerator(action(file_menu, MENU_MEETING)),
+            Some("CmdOrCtrl+Shift+M")
         );
         assert_eq!(action_label(action(file_menu, MENU_QUIT)), "en-quit");
         assert_eq!(
@@ -1721,6 +1730,7 @@ mod menu_tests {
             );
             assert!(ids.contains(&MENU_CLOSE_WINDOW));
             assert!(ids.contains(&MENU_FILE_NEW));
+            assert!(ids.contains(&MENU_MEETING));
             assert!(!ids.contains(&MENU_ABOUT));
             assert!(!ids.contains(&MENU_SETTINGS));
             assert_every_action_has_a_handler(&layout);

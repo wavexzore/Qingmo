@@ -423,9 +423,16 @@ export function VirtualWorkspaceTree({
               aria-posinset={row.posInSet}
               aria-setsize={row.setSize}
               aria-busy={row.loadState === "loading" || undefined}
+              aria-disabled={row.audio || undefined}
               aria-label={`${row.name}, ${t(`workspace:${kindKey(row)}`)}`}
               tabIndex={row.key === activeKey ? 0 : -1}
-              title={row.errorCode ? t("workspace:tree.rowError") : row.name}
+              title={
+                row.errorCode
+                  ? t("workspace:tree.rowError")
+                  : row.audio
+                    ? t("workspace:tree.audioHint")
+                    : row.name
+              }
               style={{
                 position: "absolute",
                 top: index * WORKSPACE_ROW_HEIGHT,
@@ -464,7 +471,7 @@ export function VirtualWorkspaceTree({
                   : row.key === selectedKey
                     ? "bg-surface-raised text-ink"
                     : "text-ink-muted hover:bg-surface-raised hover:text-ink"
-              } ${row.stale ? "italic" : ""}`}
+              } ${row.stale ? "italic" : ""} ${row.audio ? "opacity-60" : ""}`}
             >
               <span aria-hidden="true" className="w-3 shrink-0 text-center text-[10px]">
                 {kindIcon(row)}
