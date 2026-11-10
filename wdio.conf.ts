@@ -17,17 +17,11 @@ type TestrunnerConfig = Options.Testrunner & {
 
 export const config: TestrunnerConfig = {
   runner: "local",
-  // One worker: the embedded provider owns a single app process, and all
-  // specs share its one pinned document fixture.
-  specs: [
-    [
-      "./e2e-tauri/specs/open-save-conflict.spec.ts",
-      "./e2e-tauri/specs/image.spec.ts",
-      "./e2e-tauri/specs/search.spec.ts",
-      "./e2e-tauri/specs/window.spec.ts",
-    ],
-  ],
-  exclude: [],
+  // One worker: the embedded provider owns a single app process, and most
+  // specs share its one pinned document fixture. New specs (meeting, …) are
+  // picked up automatically; long-running soak stays out of the default run.
+  specs: [["./e2e-tauri/specs/*.spec.ts"]],
+  exclude: ["./e2e-tauri/specs/soak.spec.ts"],
   maxInstances: 1,
   capabilities: [
     {

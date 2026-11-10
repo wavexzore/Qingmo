@@ -31,6 +31,10 @@ pub enum AppErrorCode {
     SearchTimeout,
     IndexDisabled,
     IdentityDegraded,
+    AudioUnsupported,
+    AudioTooLarge,
+    AudioTooLong,
+    AudioDecodeFailed,
 }
 
 /// The only error shape returned by the four P1 commands.

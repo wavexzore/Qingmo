@@ -10,6 +10,7 @@ pub mod image_assets;
 #[cfg(target_os = "macos")]
 pub mod launch_services;
 pub mod logging;
+pub mod meeting;
 pub mod search_index;
 pub mod search_query;
 pub mod session_store;

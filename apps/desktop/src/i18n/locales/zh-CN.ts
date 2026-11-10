@@ -308,6 +308,10 @@ export const errors = {
   SEARCH_TIMEOUT: "搜索耗时过长，请缩小查询范围。",
   INDEX_DISABLED: "搜索索引不可用，请重新打开文件夹以重建索引。",
   IDENTITY_DEGRADED: "文档身份存储不可写，已使用兼容路径保存。",
+  AUDIO_UNSUPPORTED: "不支持的音频格式，请选择 m4a、mp4、wav、mp3 或 flac。",
+  AUDIO_TOO_LARGE: "音频超过 500 MiB，请先压缩或截断。",
+  AUDIO_TOO_LONG: "音频超过配置的时长上限。",
+  AUDIO_DECODE_FAILED: "音频解码失败，文件可能已损坏。",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {

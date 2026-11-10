@@ -121,6 +121,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Cache meeting test fixtures
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target/meeting-fixtures
+          key: meeting-fixtures-v1
+
+      - name: Fetch meeting test fixtures
+        run: bash scripts/dev/fetch-meeting-fixtures.sh
+
       - name: Rust clippy (Linux)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
@@ -140,9 +149,11 @@ jobs:
         run: bash scripts/ci/negative-capability.sh
 
   macos:
-    name: macOS / fmt + clippy + test + debug build
+    name: macOS / fmt + clippy + test + debug build + native E2E
     runs-on: macos-14
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      LIBCLANG_PATH: /opt/homebrew/opt/llvm/lib
     steps:
       - uses: actions/checkout@v7
 
@@ -168,8 +179,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install llama build tools
+        run: brew install cmake llvm ffmpeg
+
       - name: Rust format
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Cache meeting test fixtures
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target/meeting-fixtures
+          key: meeting-fixtures-v1
+
+      - name: Fetch meeting test fixtures
+        run: bash scripts/dev/fetch-meeting-fixtures.sh
+
+      - name: Vendor patch guard
+        run: |
+          cargo fetch --manifest-path src-tauri/Cargo.toml
+          if [ -d src-tauri/vendor/sherpa-onnx ]; then
+            bash scripts/ci/check-vendor.sh --require
+          else
+            bash scripts/ci/check-vendor.sh
+          fi
 
       - name: Rust clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
@@ -188,6 +220,38 @@ jobs:
         # missing. The release workflow owns bundling/signing; CI only compiles.
         run: pnpm tauri build --debug --no-bundle
 
+      - name: Meeting E2E fixtures
+        run: |
+          if [ -f scripts/dev/gen-meeting-fixtures.sh ]; then
+            bash scripts/dev/gen-meeting-fixtures.sh
+          else
+            echo "meeting fixture generator not present yet"
+          fi
+
+      - name: Cache meeting E2E models
+        if: ${{ hashFiles('scripts/meeting-models/ci-fetch.sh') != '' }}
+        uses: actions/cache@v4
+        env:
+          MEETING_E2E_MODELS: ${{ runner.temp }}/meeting-models
+        with:
+          path: ${{ env.MEETING_E2E_MODELS }}
+          key: meeting-e2e-models-v1-${{ hashFiles('src-tauri/src/services/meeting/models.rs') }}
+
+      - name: Fetch meeting E2E models
+        env:
+          MEETING_E2E_MODELS: ${{ runner.temp }}/meeting-models
+        run: |
+          if [ -f scripts/meeting-models/ci-fetch.sh ]; then
+            bash scripts/meeting-models/ci-fetch.sh "$MEETING_E2E_MODELS"
+          else
+            echo "meeting model fetcher not present yet"
+          fi
+
+      - name: Native E2E (includes meeting specs)
+        env:
+          MEETING_E2E_MODELS: ${{ runner.temp }}/meeting-models
+        run: pnpm ci:tauri
+
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
@@ -204,6 +268,8 @@ jobs:
     name: Windows / cargo test (targeted)
     runs-on: windows-2025
     timeout-minutes: 45
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
     steps:
       - uses: actions/checkout@v7
 
@@ -227,6 +293,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install llama build tools
+        run: choco install cmake llvm -y --no-progress
 
       - name: Cargo check (all targets)
         run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets

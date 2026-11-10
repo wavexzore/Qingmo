@@ -25,7 +25,7 @@
     "build:e2e": "pnpm --filter @qingmo/desktop build:e2e",
     "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit",
     "ci:web": "pnpm typecheck:e2e && pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm depcruise && pnpm format:check",
-    "ci:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
+    "ci:rust": "bash scripts/ci/check-vendor.sh && bash scripts/dev/fetch-meeting-fixtures.sh && cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
     "ci:generated": "bash scripts/ci/check-generated.sh",
     "release:check-versions": "node scripts/release/check-versions.mjs",
     "release:check-notes": "node scripts/release/check-release-notes.mjs",
@@ -43,7 +43,8 @@
     "bench:fixtures": "node bench/generate-fixtures.mjs",
     "typecheck:bench": "tsc -p bench/tsconfig.json --noEmit",
     "depcruise": "depcruise --config dependency-cruiser.config.cjs apps packages",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:tauri:soak": "wdio run wdio.soak.conf.ts"
   },
   "devDependencies": {
     "@codemirror/language": "6.13.1",

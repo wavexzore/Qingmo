@@ -316,6 +316,10 @@ export const errors = {
   SEARCH_TIMEOUT: "The search took too long. Try a narrower query.",
   INDEX_DISABLED: "The search index is unavailable; reopen the folder to rebuild it.",
   IDENTITY_DEGRADED: "The document identity store is read-only; compatibility paths are in use.",
+  AUDIO_UNSUPPORTED: "Unsupported audio format; choose m4a, mp4, wav, mp3, or flac.",
+  AUDIO_TOO_LARGE: "Audio is larger than 500 MiB; compress or trim it first.",
+  AUDIO_TOO_LONG: "Audio exceeds the configured duration limit.",
+  AUDIO_DECODE_FAILED: "Audio decoding failed; the file may be corrupt.",
 } as const satisfies Record<AppErrorCode, string>;
 
 export const update = {

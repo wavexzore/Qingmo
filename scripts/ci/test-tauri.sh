@@ -11,6 +11,19 @@ if [[ "$(uname -s)" != "Darwin" && "$(uname -s)" != "Linux" ]]; then
   exit 1
 fi
 
+spec_args=()
+if [[ "${1:-}" == "--" ]]; then
+  shift
+fi
+runner=test:tauri
+if [[ "${1:-}" == "soak" ]]; then
+  # The soak owns its own config; selecting it via --spec would intersect
+  # with the default config's exclude list and yield zero specs.
+  runner=test:tauri:soak
+elif [[ $# -gt 0 && -n "${1:-}" ]]; then
+  spec_args=(--spec "./e2e-tauri/specs/${1}*.spec.ts")
+fi
+
 pnpm typecheck:e2e:tauri
 pnpm build:tauri:e2e
 
@@ -20,4 +33,8 @@ if find apps/desktop/dist -type f \( -name '*.js' -o -name '*.html' -o -name '*.
   exit 1
 fi
 
-pnpm test:tauri
+if (( ${#spec_args[@]} )); then
+  pnpm "$runner" "${spec_args[@]}"
+else
+  pnpm "$runner"
+fi

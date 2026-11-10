@@ -5,4 +5,5 @@ import { config as base } from "./wdio.conf";
 export const config = {
   ...base,
   specs: [["./e2e-tauri/specs/soak.spec.ts"]],
+  exclude: [],
 };

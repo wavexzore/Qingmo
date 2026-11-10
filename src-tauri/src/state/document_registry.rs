@@ -1134,6 +1134,26 @@ pub fn ensure_supported_extension(path: &Path) -> Result<(), AppError> {
     }
 }
 
+/// Audio containers accepted by the meeting pipeline.
+///
+/// This is deliberately separate from [`ensure_supported_extension`]: audio
+/// files must still be rejected by `document_open`, while `meeting_start`
+/// accepts them without touching the document registry.
+pub fn ensure_supported_audio(path: &Path) -> Result<(), AppError> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+
+    match extension.as_deref() {
+        Some("m4a" | "mp4" | "wav" | "mp3" | "flac") => Ok(()),
+        _ => Err(AppError::new(
+            AppErrorCode::AudioUnsupported,
+            format!("unsupported audio extension: {}", path.display()),
+        )),
+    }
+}
+
 fn path_to_display(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }

@@ -29,6 +29,10 @@ export const APP_ERROR_CODES = [
   "SEARCH_TIMEOUT",
   "INDEX_DISABLED",
   "IDENTITY_DEGRADED",
+  "AUDIO_UNSUPPORTED",
+  "AUDIO_TOO_LARGE",
+  "AUDIO_TOO_LONG",
+  "AUDIO_DECODE_FAILED",
 ] as const satisfies readonly AppErrorCode[];
 
 const APP_ERROR_CODE_SET: ReadonlySet<string> = new Set(APP_ERROR_CODES);

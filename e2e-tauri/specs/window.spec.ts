@@ -23,6 +23,12 @@ describe("real Tauri window lifecycle", () => {
     const created = handles.find((handle) => handle !== first);
     expect(created).toBeDefined();
     await tauri().switchWindow(created!);
+    // A freshly created webview can be listed before its document is ready;
+    // closing in that window race leaves the native window alive.
+    await browser.waitUntil(
+      async () => (await browser.execute(() => document.readyState)) === "complete",
+      { timeout: 30_000, timeoutMsg: "the second window never became ready" },
+    );
 
     // The new window is clean, so the real CloseGuard confirms immediately
     // and destroys only that window. Use the window API because Cmd+W is a
@@ -30,7 +36,7 @@ describe("real Tauri window lifecycle", () => {
     await closeCurrentWindow();
     await browser.waitUntil(
       async () => (await browser.getWindowHandles()).length === initial.length,
-      { timeout: 30_000, timeoutMsg: "closing the second window left it alive" },
+      { timeout: 60_000, timeoutMsg: "closing the second window left it alive" },
     );
 
     await tauri().switchWindow(first);

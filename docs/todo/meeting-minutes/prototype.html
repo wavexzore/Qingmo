@@ -1,0 +1,1630 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>青墨 · 会议纪要原型（真实组件基线）</title>
+    <style>
+      /*
+       * 取自 packages/ui/src/tokens.css 与 apps/desktop/src/settings/settings.css。
+       * 真实类逐字复用：.settings-window/.settings-chrome/.settings-rail/
+       * .settings-nav/.settings-section/.settings-row/.settings-select。
+       * 其余组件（StatusBar/CommandPalette/WorkspaceSidebar）在源码用 Tailwind utility，
+       * 原型用同名 utility（.flex/.bg-surface/.rounded-card/.shadow-card 等）复刻。
+       *
+       * 原型新增、源码尚无的类（实施时先落到 settings.css 或对应组件）：
+       *   .proto-*        外壳与屏幕切换
+       *   .native-*       主窗口原生标题栏示意（不在 WebView 内）
+       *   .dock/.tree-row 侧栏复刻（真实为 Tailwind utility）
+       *   .cm-surface/.cm-gutter CodeMirror 外观复刻
+       *   .palette-item   命令面板行复刻
+       *   .status-file/.status-item/.player 状态栏 meeting 段
+       *   .meeting-* / .speaker / .chip / .ts 会议专属
+       *   .settings-model/.settings-switch/.settings-seg/.settings-input 设置控件
+       */
+      :root {
+        color-scheme: light dark;
+        --qm-font-sans:
+          "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+          "Microsoft YaHei", sans-serif;
+        --qm-font-serif:
+          "Iowan Old Style", "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC",
+          Georgia, serif;
+        --qm-font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+
+        --qm-paper: light-dark(#f4efe5, #151714);
+        --qm-surface: light-dark(#fbf8f1, #1c1f1b);
+        --qm-surface-raised: light-dark(#fffdf8, #23271f);
+        --qm-surface-muted: light-dark(#ece5d8, #20241e);
+        --qm-ink: light-dark(#1d1c19, #ece7dc);
+        --qm-ink-muted: light-dark(#6f675b, #b4ada0);
+        --qm-ink-faint: light-dark(#938a7c, #857e72);
+        --qm-line: light-dark(rgba(48, 42, 32, 0.14), rgba(236, 231, 220, 0.14));
+        --qm-line-strong: light-dark(rgba(48, 42, 32, 0.24), rgba(236, 231, 220, 0.24));
+        --qm-accent: light-dark(#2c6a5a, #7fb5a2);
+        --qm-accent-strong: light-dark(#1f5145, #a5d0c1);
+        --qm-accent-soft: light-dark(rgba(44, 106, 90, 0.12), rgba(127, 181, 162, 0.16));
+        --qm-danger: light-dark(#a33a2b, #e08b7c);
+        --qm-warning: light-dark(#8a641c, #d4ac63);
+        --qm-highlight: light-dark(rgba(214, 178, 94, 0.32), rgba(212, 172, 99, 0.24));
+        --qm-success: light-dark(#2f6b4f, #8fc7a8);
+
+        --qm-diagram-accent-1: light-dark(#2c6a5a, #7fb5a2);
+        --qm-diagram-accent-2: light-dark(#b08a45, #d4ac63);
+        --qm-diagram-accent-3: light-dark(#5f7480, #8fa8b3);
+        --qm-diagram-accent-4: light-dark(#a65f45, #d18e75);
+        --qm-diagram-accent-5: light-dark(#7a5a66, #b58a9a);
+        --qm-diagram-accent-6: light-dark(#6f7a4e, #a8b77f);
+        --qm-diagram-accent-7: light-dark(#8a7345, #c3a86b);
+        --qm-diagram-accent-8: light-dark(#4f7a6a, #8fc7a8);
+
+        --qm-radius-sm: 6px;
+        --qm-radius-md: 10px;
+        --qm-radius-lg: 16px;
+        --qm-radius-card: 24px;
+        --qm-shadow-card: 0 24px 70px rgba(53, 43, 27, 0.12), 0 2px 8px rgba(53, 43, 27, 0.05);
+        --qm-shadow-float: 0 18px 40px rgba(20, 18, 14, 0.18);
+        --qm-duration-fast: 120ms;
+        --qm-duration-base: 160ms;
+        --qm-duration-slow: 240ms;
+        --qm-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+        --qm-status-height: 30px;
+        --qm-content-max: 72ch;
+
+        --settings-traffic-close: #ff5f57;
+        --settings-traffic-inactive: #d6d2cb;
+        --stage: light-dark(#e6dfd1, #0e100e);
+      }
+      :root[data-theme="light"] { color-scheme: light; }
+      :root[data-theme="dark"] { color-scheme: dark; --settings-traffic-inactive: #4b4b46; }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--stage);
+        color: var(--qm-ink);
+        font-family: var(--qm-font-sans);
+        font-size: 13px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      button { font: inherit; color: inherit; }
+      ::selection { background: var(--qm-accent-soft); color: var(--qm-ink); }
+      :focus-visible { outline: 2px solid var(--qm-accent); outline-offset: 2px; }
+      kbd {
+        display: inline-flex;
+        align-items: center;
+        height: 18px;
+        padding: 0 5px;
+        border: 1px solid var(--qm-line-strong);
+        border-radius: 4px;
+        background: var(--qm-surface-raised);
+        box-shadow: 0 1px 0 var(--qm-line);
+        color: var(--qm-ink-muted);
+        font-family: var(--qm-font-mono);
+        font-size: 8.5px;
+        line-height: 1;
+      }
+
+      /* ------------------------------------------------------------ 工具类（与 Tailwind 语义类同名） */
+      .flex { display: flex; }
+      .inline-flex { display: inline-flex; }
+      .grid { display: grid; }
+      .flex-col { flex-direction: column; }
+      .items-center { align-items: center; }
+      .items-start { align-items: flex-start; }
+      .items-baseline { align-items: baseline; }
+      .justify-center { justify-content: center; }
+      .justify-between { justify-content: space-between; }
+      .justify-end { justify-content: flex-end; }
+      .min-w-0 { min-width: 0; }
+      .min-h-0 { min-height: 0; }
+      .flex-1 { flex: 1 1 0%; }
+      .shrink-0 { flex-shrink: 0; }
+      .relative { position: relative; }
+      .absolute { position: absolute; }
+      .fixed { position: fixed; }
+      .inset-0 { inset: 0; }
+      .overflow-hidden { overflow: hidden; }
+      .overflow-y-auto { overflow-y: auto; }
+      .h-full { height: 100%; }
+      .h-dvh { height: 100dvh; }
+      .w-full { width: 100%; }
+      .w-60 { width: 240px; }
+      .h-10 { height: 40px; }
+      .gap-1\.5 { gap: 6px; }
+      .gap-2 { gap: 8px; }
+      .gap-3 { gap: 12px; }
+      .gap-4 { gap: 16px; }
+      .p-1\.5 { padding: 6px; }
+      .p-2 { padding: 8px; }
+      .px-1 { padding-inline: 4px; }
+      .px-1\.5 { padding-inline: 6px; }
+      .px-2 { padding-inline: 8px; }
+      .px-3 { padding-inline: 12px; }
+      .px-4 { padding-inline: 16px; }
+      .px-5 { padding-inline: 20px; }
+      .py-0\.5 { padding-block: 2px; }
+      .py-1 { padding-block: 4px; }
+      .py-1\.5 { padding-block: 6px; }
+      .py-2 { padding-block: 8px; }
+      .py-2\.5 { padding-block: 10px; }
+      .py-3 { padding-block: 12px; }
+      .py-6 { padding-block: 24px; }
+      .pl-5 { padding-left: 20px; }
+      .pr-2 { padding-right: 8px; }
+      .ml-auto { margin-left: auto; }
+      .mt-0\.5 { margin-top: 2px; }
+      .rounded { border-radius: 4px; }
+      .rounded-md { border-radius: var(--qm-radius-md); }
+      .rounded-full { border-radius: 999px; }
+      .rounded-card { border-radius: var(--qm-radius-card); }
+      .border { border: 1px solid var(--qm-line); }
+      .border-t { border-top: 1px solid var(--qm-line); }
+      .border-b { border-bottom: 1px solid var(--qm-line); }
+      .border-line { border-color: var(--qm-line); }
+      .border-line-strong { border-color: var(--qm-line-strong); }
+      .border-danger\/40 { border-color: color-mix(in srgb, var(--qm-danger) 40%, transparent); }
+      .bg-paper { background: var(--qm-paper); }
+      .bg-surface { background: var(--qm-surface); }
+      .bg-surface\/60 { background: color-mix(in srgb, var(--qm-surface) 60%, transparent); }
+      .bg-surface\/80 { background: color-mix(in srgb, var(--qm-surface) 80%, transparent); }
+      .bg-surface-raised { background: var(--qm-surface-raised); }
+      .bg-surface-muted { background: var(--qm-surface-muted); }
+      .bg-accent-soft { background: var(--qm-accent-soft); }
+      .bg-danger\/\[0\.08\] { background: color-mix(in srgb, var(--qm-danger) 8%, transparent); }
+      .bg-line { background: var(--qm-line); }
+      .bg-accent { background: var(--qm-accent); }
+      .bg-danger { background: var(--qm-danger); }
+      .text-ink { color: var(--qm-ink); }
+      .text-ink-muted { color: var(--qm-ink-muted); }
+      .text-ink-faint { color: var(--qm-ink-faint); }
+      .text-accent { color: var(--qm-accent); }
+      .text-accent-strong { color: var(--qm-accent-strong); }
+      .text-danger { color: var(--qm-danger); }
+      .text-warning { color: var(--qm-warning); }
+      .text-white { color: #fff; }
+      .text-\[10px\] { font-size: 10px; }
+      .text-\[11px\] { font-size: 11px; }
+      .text-xs { font-size: 12px; }
+      .text-sm { font-size: 13px; }
+      .text-base { font-size: 15px; }
+      .font-medium { font-weight: 500; }
+      .font-semibold { font-weight: 600; }
+      .font-mono { font-family: var(--qm-font-mono); }
+      .font-serif { font-family: var(--qm-font-serif); }
+      .uppercase { text-transform: uppercase; }
+      .tracking-\[0\.12em\] { letter-spacing: 0.12em; }
+      .tracking-\[0\.14em\] { letter-spacing: 0.14em; }
+      .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .tabular-nums { font-variant-numeric: tabular-nums; }
+      .shadow-card { box-shadow: var(--qm-shadow-card); }
+      .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+      .shadow-sm { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1); }
+      .backdrop-blur-\[2px\] { backdrop-filter: blur(2px); }
+      .z-50 { z-index: 50; }
+      .max-w-\[560px\] { max-width: 560px; }
+      .max-h-\[min\(420px\,50vh\)\] { max-height: min(420px, 50vh); }
+      .pt-\[12vh\] { padding-top: 12vh; }
+      .bg-ink\/30 { background: color-mix(in srgb, var(--qm-ink) 30%, transparent); }
+      .size-1\.5 { width: 6px; height: 6px; }
+      .size-2 { width: 8px; height: 8px; }
+      .outline-none { outline: none; }
+      .hidden, [hidden] { display: none !important; }
+      .transition-colors { transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease; }
+      .hover\:bg-surface-raised:hover { background: var(--qm-surface-raised); }
+      .hover\:text-ink:hover { color: var(--qm-ink); }
+      .hover\:border-line-strong:hover { border-color: var(--qm-line-strong); }
+
+      /* ------------------------------------------------------------ 原型界面框 */
+      .proto-bar {
+        position: sticky;
+        top: 0;
+        z-index: 80;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--qm-line);
+        background: var(--qm-surface);
+      }
+      .proto-brand {
+        font-family: var(--qm-font-serif);
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        white-space: nowrap;
+      }
+      .proto-brand span {
+        margin-left: 8px;
+        color: var(--qm-ink-faint);
+        font-family: var(--qm-font-mono);
+        font-size: 8.5px;
+        font-weight: 400;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .proto-tabs { display: flex; gap: 2px; margin-left: 8px; }
+      .proto-tab {
+        padding: 5px 10px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--qm-ink-muted);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .proto-tab[aria-selected="true"] { background: var(--qm-accent-soft); color: var(--qm-ink); }
+      .proto-tab:hover { color: var(--qm-ink); }
+      .proto-meta {
+        margin-left: auto;
+        color: var(--qm-ink-faint);
+        font-family: var(--qm-font-mono);
+        font-size: 8.5px;
+        letter-spacing: 0.06em;
+      }
+      .proto-theme {
+        padding: 5px 10px;
+        border: 1px solid var(--qm-line);
+        border-radius: 7px;
+        background: var(--qm-surface-raised);
+        color: var(--qm-ink-muted);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .stage {
+        display: flex;
+        min-height: calc(100dvh - 46px);
+        justify-content: center;
+        padding: 26px 20px 40px;
+      }
+      .app-window {
+        position: relative;
+        display: flex;
+        width: 100%;
+        max-width: 1200px;
+        height: calc(100dvh - 92px);
+        min-height: 680px;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--qm-line);
+        border-radius: 12px;
+        background: var(--qm-paper);
+        box-shadow: var(--qm-shadow-card);
+      }
+      .native-titlebar {
+        position: relative;
+        display: flex;
+        flex: 0 0 28px;
+        align-items: center;
+        justify-content: center;
+        border-bottom: 1px solid var(--qm-line);
+        background: var(--qm-surface);
+        color: var(--qm-ink-faint);
+        font-size: 11px;
+      }
+      .native-dots { position: absolute; left: 12px; display: flex; gap: 8px; }
+      .native-dots i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+      .native-dots i:nth-child(2) { background: #febc2e; }
+      .native-dots i:nth-child(3) { background: #28c840; }
+      .native-titlebar b { color: var(--qm-ink-muted); font-weight: 500; }
+      .app-body { display: flex; min-height: 0; flex: 1; }
+
+      /* ------------------------------------------------------------ SidebarDock / VirtualWorkspaceTree */
+      .dock {
+        position: relative;
+        display: flex;
+        width: 240px;
+        flex: 0 0 240px;
+        flex-direction: column;
+        overflow: hidden;
+        border-right: 1px solid var(--qm-line);
+        background: color-mix(in srgb, var(--qm-surface) 60%, transparent);
+      }
+      .dock-tabs { display: flex; height: 40px; flex: 0 0 40px; align-items: center; border-bottom: 1px solid var(--qm-line); }
+      .dock-tab {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        align-items: center;
+        gap: 4px;
+        border-radius: 4px;
+        padding: 4px 8px;
+        color: var(--qm-ink-muted);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .dock-tab[aria-current="page"] { background: var(--qm-accent-soft); color: var(--qm-ink); }
+      .dock-head { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--qm-line); padding: 8px 12px; }
+      .dock-head h2 { margin: 0; overflow: hidden; color: var(--qm-ink); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+      .dock-head p { margin: 0; overflow: hidden; color: var(--qm-ink-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+      .icon-btn { border: 0; border-radius: 4px; padding: 4px; background: transparent; color: var(--qm-ink-muted); }
+      .icon-btn:hover { background: var(--qm-surface-raised); color: var(--qm-ink); }
+      .tree { min-height: 0; flex: 1; overflow-y: auto; padding-block: 4px; }
+      .tree-row {
+        display: flex;
+        cursor: default;
+        align-items: center;
+        gap: 6px;
+        padding-right: 8px;
+        color: var(--qm-ink-muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      .tree-row:hover { background: var(--qm-surface-raised); color: var(--qm-ink); }
+      .tree-row.current { background: var(--qm-accent-soft); color: var(--qm-ink); }
+      .tree-row .tw { width: 12px; flex: none; text-align: center; font-size: 10px; }
+      .tree-row.audio { color: var(--qm-ink-faint); }
+      .tree-row.audio .name::after { content: "（预览）"; font-size: 9.5px; color: var(--qm-ink-faint); }
+      .dock-foot { border-top: 1px solid var(--qm-line); padding: 6px 12px; color: var(--qm-ink-faint); font-size: 11px; }
+      .reopen {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        z-index: 10;
+        display: flex;
+        width: 20px;
+        height: 52px;
+        transform: translateY(-50%);
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--qm-line);
+        border-left: 0;
+        border-radius: 0 4px 4px 0;
+        background: var(--qm-surface);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        color: var(--qm-ink-muted);
+        font-size: 12px;
+      }
+
+      /* ------------------------------------------------------------ EditorPage / CodeMirror */
+      .editor-pane { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; background: var(--qm-paper); }
+      .editor-host { min-height: 0; flex: 1; overflow: hidden; }
+      .cm-surface {
+        display: flex;
+        height: 100%;
+        overflow-y: auto;
+        font-family: var(--qm-font-mono);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+      .cm-gutter {
+        width: 40px;
+        flex: none;
+        padding-top: 28px;
+        padding-right: 4px;
+        color: var(--qm-ink-faint);
+        font-size: 11px;
+        text-align: right;
+        user-select: none;
+      }
+      .cm-content { width: 100%; min-width: 0; padding: 28px 40px 80px; }
+      .cm-content > * { margin: 0 0 0.35em; }
+      .cm-content h1 { margin-top: 0.2em; font-size: 1.6em; font-weight: 650; line-height: 1.45; }
+      .cm-content h2 { margin-top: 1.35em; font-size: 1.4em; font-weight: 650; line-height: 1.45; }
+      .cm-content h3 { margin-top: 1.2em; font-size: 1.24em; font-weight: 650; }
+      .cm-content p { max-width: var(--qm-content-max); }
+      .cm-content .placeholder { color: var(--qm-ink-faint); font-family: var(--qm-font-sans); }
+      .cm-content hr { margin: 26px 0; border: 0; border-top: 1px solid var(--qm-line); }
+      .cm-content ul { padding-left: 22px; }
+      .cm-content li { max-width: var(--qm-content-max); margin-bottom: 8px; }
+      .cm-content blockquote {
+        max-width: var(--qm-content-max);
+        margin: 6px 0 10px;
+        padding-left: 12px;
+        border-left: 2px solid var(--qm-line-strong);
+        color: var(--qm-ink-muted);
+      }
+      .doc-meta { color: var(--qm-ink-faint); font-size: 11px; }
+
+      .ts { color: var(--qm-accent-strong); font-size: 0.85em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 7px;
+        border: 1px solid var(--qm-line);
+        border-radius: 999px;
+        font-family: var(--qm-font-sans);
+        font-size: 9.5px;
+        line-height: 1.6;
+        white-space: nowrap;
+        vertical-align: 1px;
+      }
+      .chip.ok { border-color: transparent; background: var(--qm-accent-soft); color: var(--qm-accent-strong); }
+      .chip.warn { border-color: color-mix(in srgb, var(--qm-warning) 40%, transparent); background: var(--qm-highlight); color: var(--qm-warning); }
+      .chip.mute { background: var(--qm-surface-muted); color: var(--qm-ink-muted); }
+
+      .speaker {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-right: 8px;
+        padding: 0 7px 0 5px;
+        border: 1px solid var(--qm-line);
+        border-radius: 999px;
+        background: var(--qm-surface-raised);
+        color: var(--qm-ink-muted);
+        font-family: var(--qm-font-sans);
+        font-size: 10px;
+        line-height: 1.8;
+        white-space: nowrap;
+      }
+      .speaker::before { content: var(--dot, "🟢"); font-size: 8px; }
+      .speaker.s1 { --dot: "🟢"; }
+      .speaker.s2 { --dot: "🔵"; }
+      .speaker.s3 { --dot: "🟠"; }
+      .speaker.s4 { --dot: "🟣"; }
+      .speaker.s5 { --dot: "🔴"; }
+      .speaker.s6 { --dot: "🟡"; }
+      .speaker.s7 { --dot: "🟤"; }
+      .speaker.s8 { --dot: "⚪"; }
+      .speaker.s9 { --dot: "⚫"; }
+
+      /* ------------------------------------------------------------ 会议进度 / 错误 */
+      .meeting-stage { display: flex; height: 100%; justify-content: center; overflow-y: auto; padding: 52px 56px 60px; }
+      .meeting-panel { width: 100%; max-width: 620px; }
+      .meeting-panel h1 { margin: 0; font-size: 1.6em; font-weight: 650; line-height: 1.45; }
+      .meeting-panel .lead { margin: 8px 0 0; color: var(--qm-ink-muted); font-size: 12px; font-family: var(--qm-font-sans); }
+      .progress-track { height: 3px; margin: 26px 0 8px; overflow: hidden; background: var(--qm-line); }
+      .progress-track i { display: block; width: 48.4%; height: 100%; background: var(--qm-accent); }
+      .progress-meta { display: flex; justify-content: space-between; color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 9.5px; }
+      .steps { margin: 26px 0 0; padding: 0; list-style: none; font-family: var(--qm-font-sans); }
+      .steps li {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: baseline;
+        padding: 10px 0;
+        border-top: 1px solid var(--qm-line);
+        color: var(--qm-ink-faint);
+        font-size: 12px;
+      }
+      .steps li.done { color: var(--qm-ink-muted); }
+      .steps li.now { color: var(--qm-ink); }
+      .steps .dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--qm-line-strong); }
+      .steps li.done .dot { background: var(--qm-accent); }
+      .steps li.now .dot { background: var(--qm-accent); box-shadow: 0 0 0 3px var(--qm-accent-soft); }
+      .steps .t { color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 9.5px; }
+      .meeting-actions { display: flex; align-items: center; gap: 10px; margin-top: 26px; }
+      .btn {
+        padding: 5px 12px;
+        border: 1px solid var(--qm-line-strong);
+        border-radius: 7px;
+        background: var(--qm-surface-raised);
+        color: var(--qm-ink);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn:hover { background: var(--qm-surface); }
+      .btn.primary { border-color: transparent; background: var(--qm-accent); color: var(--qm-surface-raised); }
+      .btn.danger { border-color: color-mix(in srgb, var(--qm-danger) 40%, transparent); background: color-mix(in srgb, var(--qm-danger) 8%, transparent); color: var(--qm-danger); }
+      .btn.ghost { border-color: var(--qm-line); background: transparent; color: var(--qm-ink-muted); }
+      .linkish { border: 0; background: transparent; color: var(--qm-accent-strong); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+      .linkish:disabled { color: var(--qm-ink-faint); text-decoration: none; cursor: default; }
+      .settings-model .acts { display: flex; flex: none; gap: 6px; }
+
+      .banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 22px;
+        padding: 12px 14px;
+        border: 1px solid var(--qm-line);
+        border-radius: 10px;
+        background: var(--qm-surface-raised);
+        font-family: var(--qm-font-sans);
+        font-size: 12px;
+        line-height: 1.75;
+      }
+      .banner.danger { border-color: color-mix(in srgb, var(--qm-danger) 35%, transparent); background: color-mix(in srgb, var(--qm-danger) 6%, var(--qm-surface)); }
+      .banner.warn { border-color: color-mix(in srgb, var(--qm-warning) 38%, transparent); background: color-mix(in srgb, var(--qm-highlight) 55%, var(--qm-surface)); }
+      .banner .grow { min-width: 0; flex: 1; }
+      .banner b { display: block; margin-bottom: 2px; font-size: 12.5px; }
+      .banner .acts { display: flex; flex: none; gap: 8px; }
+      .error-block { padding: 20px 0; border-top: 1px solid var(--qm-line); }
+      .error-block h2 { margin: 0; font-size: 1.12em; font-weight: 650; }
+
+      /* ------------------------------------------------------------ StatusBar */
+      .status-bar {
+        display: flex;
+        height: var(--qm-status-height);
+        flex: none;
+        align-items: center;
+        gap: 16px;
+        overflow: hidden;
+        border-top: 1px solid var(--qm-line);
+        background: var(--qm-surface);
+        padding-inline: 16px;
+        font-size: 11px;
+      }
+      .status-file { display: flex; min-width: 0; align-items: center; gap: 8px; }
+      .status-file .dot { width: 6px; height: 6px; flex: none; border-radius: 50%; }
+      .status-sep { height: 12px; width: 1px; flex: none; background: var(--qm-line); }
+      .status-items { display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 16px; overflow: hidden; }
+      .status-item { display: inline-flex; min-width: 0; align-items: baseline; gap: 6px; }
+      .status-item .label { flex: none; color: var(--qm-ink-faint); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+      .status-item .value { overflow: hidden; color: var(--qm-ink-muted); text-overflow: ellipsis; white-space: nowrap; }
+      .status-tail { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; }
+      .status-mode { color: var(--qm-ink-faint); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
+
+      .player { display: inline-flex; align-items: center; gap: 7px; color: var(--qm-ink-muted); font-variant-numeric: tabular-nums; }
+      .player button { border: 0; background: transparent; color: var(--qm-accent-strong); font-size: 11px; padding: 0 2px; }
+      .player .track { width: 96px; height: 2px; background: var(--qm-line); }
+      .player .track i { display: block; width: 13%; height: 2px; background: var(--qm-accent); }
+      .player .time { font-family: var(--qm-font-mono); font-size: 9.5px; color: var(--qm-ink-faint); }
+
+      /* ------------------------------------------------------------ CommandPalette */
+      .palette-item { display: flex; cursor: pointer; align-items: center; gap: 12px; border-radius: var(--qm-radius-md); padding: 8px 12px; }
+      .palette-item[aria-selected="true"] { background: var(--qm-accent-soft); color: var(--qm-ink); }
+      .palette-item:not([aria-selected="true"]) { color: var(--qm-ink-muted); }
+      .palette-item .copy { min-width: 0; flex: 1; }
+      .palette-item .cat { margin-top: 2px; color: var(--qm-ink-faint); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+      .palette-input { width: 100%; border: 0; background: transparent; color: var(--qm-ink); font: inherit; font-size: 15px; }
+      .palette-input::placeholder { color: var(--qm-ink-faint); }
+
+      /* ------------------------------------------------------------ SettingsWindow（settings.css 原样） */
+      .settings-frame { width: 100%; max-width: 1120px; height: min(720px, calc(100dvh - 92px)); min-height: 640px; }
+      .settings-window {
+        position: relative;
+        display: flex;
+        width: 100%;
+        height: 100%;
+        flex-direction: column;
+        overflow: hidden;
+        isolation: isolate;
+        border: 1px solid var(--qm-line);
+        border-radius: 24px;
+        background: var(--qm-surface);
+        box-shadow: var(--qm-shadow-card);
+      }
+      .settings-window::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+      }
+      :root[data-theme="dark"] .settings-window::after { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+      .settings-chrome {
+        position: relative;
+        z-index: 4;
+        display: grid;
+        flex: 0 0 46px;
+        grid-template-columns: 1fr auto 1fr;
+        align-content: center;
+        align-items: center;
+        gap: 16px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--qm-line);
+        border-radius: 24px 24px 0 0;
+        background: var(--qm-surface);
+      }
+      .settings-traffic { display: flex; align-items: center; gap: 8px; justify-self: start; }
+      .settings-dot { display: grid; place-items: center; width: 14px; height: 14px; padding: 0; border: 0; border-radius: 50%; }
+      .settings-dot.close { background: var(--settings-traffic-close); color: rgba(0, 0, 0, 0.5); }
+      .settings-dot.close svg { width: 8px; height: 8px; opacity: 0; }
+      .settings-traffic:hover .settings-dot.close svg { opacity: 1; }
+      .settings-dot.idle { background: var(--settings-traffic-inactive); }
+      .settings-chrome-title {
+        justify-self: center;
+        color: var(--qm-ink-faint);
+        font-family: var(--qm-font-mono);
+        font-size: 8.5px;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+      }
+      .settings-chrome-meta {
+        justify-self: end;
+        color: var(--qm-ink-faint);
+        font-family: var(--qm-font-mono);
+        font-size: 8.5px;
+        letter-spacing: 0.08em;
+        font-variant-numeric: tabular-nums;
+      }
+      .settings-body { position: relative; display: grid; min-height: 0; flex: 1; grid-template-columns: 326px minmax(0, 1fr); }
+      .settings-rail {
+        position: relative;
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        padding: 40px 30px 22px;
+        border-right: 1px solid var(--qm-line);
+        background:
+          radial-gradient(120% 72% at 0% 0%, color-mix(in srgb, var(--qm-accent-soft) 76%, transparent), transparent 56%),
+          var(--qm-paper);
+      }
+      .settings-kicker { margin: 0; color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; }
+      .settings-rail-title { margin: 17px 0 0; font-family: var(--qm-font-serif); font-size: 56px; font-weight: 600; letter-spacing: -0.052em; line-height: 0.96; }
+      .settings-rail-lede { max-width: 218px; margin: 15px 0 0; color: var(--qm-ink-muted); font-size: 11.5px; line-height: 1.8; }
+      .settings-nav { margin-top: 46px; }
+      .settings-nav-caption { margin: 0 0 10px; color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 8.5px; letter-spacing: 0.2em; text-transform: uppercase; }
+      .settings-nav-item {
+        display: grid;
+        width: 100%;
+        grid-template-columns: 24px minmax(0, 1fr) 8px;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 2px;
+        border: 0;
+        border-top: 1px solid var(--qm-line);
+        border-bottom: 1px solid var(--qm-line);
+        background: transparent;
+        color: var(--qm-ink);
+        text-align: left;
+        cursor: default;
+        transition: padding 180ms var(--qm-ease-out), color 160ms ease;
+      }
+      .settings-nav-item:hover { padding-left: 7px; color: var(--qm-accent-strong); }
+      .settings-nav-index { color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 8.5px; font-variant-numeric: tabular-nums; }
+      .settings-nav-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .settings-nav-label { font-family: var(--qm-font-serif); font-size: 16px; font-weight: 600; line-height: 1.35; }
+      .settings-nav-note { color: var(--qm-ink-faint); font-size: 9.5px; line-height: 1.5; }
+      .settings-nav-mark { justify-self: end; width: 6px; height: 6px; border-radius: 50%; background: var(--qm-accent); box-shadow: 0 0 0 3px var(--qm-accent-soft); }
+      .settings-rail-note { display: flex; gap: 10px; margin: auto 0 0; padding: 16px 0 18px; border-top: 1px solid var(--qm-line); color: var(--qm-ink-faint); font-size: 9.5px; line-height: 1.7; }
+      .settings-rail-note::before { content: ""; flex: none; width: 4px; height: 4px; margin-top: 6px; border-radius: 50%; background: var(--qm-accent); }
+      .settings-rail-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 8px; letter-spacing: 0.08em; }
+      .settings-rail-sig { letter-spacing: 0.18em; }
+      .settings-main { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--qm-surface); }
+      .settings-main::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(78% 56% at 100% 0%, var(--qm-accent-soft), transparent 58%);
+        opacity: 0.42;
+      }
+      .settings-scroll {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+        overflow-y: auto;
+        padding: 42px 56px 0;
+      }
+      .settings-breadcrumb { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; }
+      .settings-slash { color: var(--qm-line-strong); }
+      .settings-head h1 { margin: 18px 0 0; font-family: var(--qm-font-serif); font-size: 41px; font-weight: 600; letter-spacing: -0.04em; line-height: 1.04; }
+      .settings-head p { max-width: 440px; margin: 12px 0 0; color: var(--qm-ink-muted); font-size: 11.5px; line-height: 1.8; }
+      .settings-section { margin-top: 44px; }
+      .settings-section-head { display: flex; align-items: center; gap: 10px; }
+      .settings-section-num { color: var(--qm-accent); font-family: var(--qm-font-mono); font-size: 8.5px; }
+      .settings-section-head h2 { margin: 0; color: var(--qm-ink-muted); font-size: 9.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; white-space: nowrap; }
+      .settings-section-rule { height: 1px; flex: 1; background: var(--qm-line); }
+      .settings-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 30px; padding: 20px 0 22px; border-bottom: 1px solid var(--qm-line); }
+      .settings-copy h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+      .settings-copy p { max-width: 350px; margin: 6px 0 0; color: var(--qm-ink-muted); font-size: 10.5px; line-height: 1.75; }
+      .settings-hint { display: flex; align-items: center; gap: 8px; margin: 13px 0 0; color: var(--qm-ink-faint); font-size: 9.5px; line-height: 1.6; }
+      .settings-hint::before { content: ""; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--qm-accent); box-shadow: 0 0 0 3px var(--qm-accent-soft); }
+      .settings-note { position: relative; flex: none; margin-top: auto; overflow: hidden; padding: 28px 0 24px; border-top: 1px solid var(--qm-line); }
+      .settings-note-quote { position: relative; z-index: 1; max-width: 430px; margin: 0; font-family: var(--qm-font-serif); font-size: 21px; font-weight: 500; letter-spacing: -0.025em; line-height: 1.5; }
+      .settings-note-body { position: relative; z-index: 1; max-width: 390px; margin: 9px 0 0; color: var(--qm-ink-muted); font-size: 10px; line-height: 1.75; }
+      .settings-ghost { position: absolute; right: 8px; bottom: -70px; color: var(--qm-ink); font-family: var(--qm-font-serif); font-size: 176px; font-weight: 600; line-height: 1; opacity: 0.045; user-select: none; }
+      .settings-footer {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        min-height: 50px;
+        flex: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 0 56px;
+        border-top: 1px solid var(--qm-line);
+        background: color-mix(in srgb, var(--qm-surface) 78%, var(--qm-paper));
+        color: var(--qm-ink-faint);
+        font-size: 9.5px;
+      }
+      .settings-esc { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+      .settings-footer-meta { font-family: var(--qm-font-mono); font-size: 8.5px; letter-spacing: 0.06em; white-space: nowrap; }
+
+      .settings-select { position: relative; width: 300px; flex: none; }
+      .settings-select-trigger {
+        display: flex;
+        width: 100%;
+        min-height: 54px;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 12px 7px 14px;
+        border: 1px solid var(--qm-line);
+        border-radius: 11px;
+        background: var(--qm-surface-raised);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38);
+        color: var(--qm-ink);
+        text-align: left;
+        cursor: pointer;
+      }
+      .settings-select-trigger:hover { border-color: var(--qm-line-strong); }
+      .settings-select-trigger[aria-expanded="true"] { border-color: var(--qm-accent); box-shadow: 0 0 0 3px var(--qm-accent-soft); }
+      .settings-select-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
+      .settings-select-native { color: var(--qm-ink); font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+      .settings-select-code { color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 8.5px; line-height: 1.35; }
+      .settings-select-chevron { flex: none; width: 12px; height: 12px; color: var(--qm-ink-faint); }
+      .settings-select-menu {
+        position: absolute;
+        top: calc(100% + 7px);
+        right: 0;
+        left: 0;
+        z-index: 30;
+        padding: 5px;
+        border: 1px solid var(--qm-line);
+        border-radius: 13px;
+        background: var(--qm-surface-raised);
+        box-shadow: var(--qm-shadow-float);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-5px) scale(0.985);
+        transform-origin: top center;
+        transition: opacity 140ms ease, transform 160ms var(--qm-ease-out), visibility 0s linear 160ms;
+      }
+      .settings-select[data-open="true"] .settings-select-menu { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+      .settings-select[data-open="true"] .settings-select-chevron { transform: rotate(180deg); }
+      .settings-select-option { display: flex; width: 100%; min-height: 48px; align-items: center; gap: 10px; padding: 7px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--qm-ink); text-align: left; cursor: pointer; }
+      .settings-select-option:hover { background: color-mix(in srgb, var(--qm-accent-soft) 58%, transparent); }
+      .settings-select-option[aria-selected="true"] { background: var(--qm-accent-soft); }
+      .settings-select-option-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
+      .settings-select-option-native { font-size: 12.5px; font-weight: 500; line-height: 1.3; }
+      .settings-select-option[aria-selected="true"] .settings-select-option-native { color: var(--qm-accent-strong); }
+      .settings-select-option-detail { color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 8.5px; line-height: 1.35; }
+      .settings-select-check { width: 13px; height: 13px; flex: none; color: var(--qm-accent); opacity: 0; }
+      .settings-select-option[aria-selected="true"] .settings-select-check { opacity: 1; }
+
+      /* 模型清单：沿用 settings-font-option 的边框/选中语义，横向排列。 */
+      .settings-model-list { display: flex; width: 520px; flex-direction: column; gap: 6px; }
+      .settings-model {
+        display: grid;
+        grid-template-columns: 14px 52px minmax(0, 1fr) auto auto;
+        align-items: center;
+        column-gap: 10px;
+        padding: 9px 11px;
+        border: 1px solid var(--qm-line);
+        border-radius: 9px;
+        background: var(--qm-surface-raised);
+        cursor: pointer;
+        transition: border-color 140ms ease, box-shadow 160ms ease;
+      }
+      .settings-model > span { min-width: 0; }
+      .settings-model[data-checked="true"] { border-color: var(--qm-accent); box-shadow: 0 0 0 3px var(--qm-accent-soft); }
+      .settings-model:focus-within { outline: 2px solid var(--qm-accent); outline-offset: 2px; }
+      .settings-model input { grid-row: 1 / span 2; margin: 2px 0 0; accent-color: var(--qm-accent); }
+      .settings-model .badge {
+        grid-row: 1 / span 2;
+        display: grid;
+        width: 52px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--qm-line);
+        border-radius: 7px;
+        background: var(--qm-surface);
+        color: var(--qm-ink-muted);
+        font-family: var(--qm-font-mono);
+        font-size: 8.5px;
+        letter-spacing: 0.02em;
+        text-align: center;
+      }
+      .settings-model .name { display: block; font-size: 11.5px; font-weight: 600; line-height: 1.4; }
+      .settings-model .meta { display: block; color: var(--qm-ink-muted); font-size: 9.5px; line-height: 1.5; }
+      .settings-model .state { justify-self: end; }
+      .settings-model[data-checked="true"] .badge { border-color: var(--qm-accent); color: var(--qm-accent-strong); }
+      .speaker-pack {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border: 1px dashed var(--qm-line-strong);
+        border-radius: 9px;
+        background: color-mix(in srgb, var(--qm-surface-raised) 60%, transparent);
+        font-size: 10px;
+        color: var(--qm-ink-muted);
+      }
+      .speaker-pack b { display: block; margin-bottom: 2px; color: var(--qm-ink); font-size: 11px; font-weight: 600; }
+      .speaker-pack .mono { font-family: var(--qm-font-mono); font-size: 8.5px; color: var(--qm-ink-faint); }
+
+      .settings-switch { position: relative; display: inline-flex; flex: none; }
+      .settings-switch input { position: absolute; opacity: 0; }
+      .settings-switch .track {
+        position: relative;
+        width: 38px;
+        height: 22px;
+        border: 1px solid var(--qm-line-strong);
+        border-radius: 999px;
+        background: var(--qm-surface-muted);
+        transition: background 160ms ease, border-color 160ms ease;
+      }
+      .settings-switch .track::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--qm-surface-raised);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        transition: transform 160ms var(--qm-ease-out);
+      }
+      .settings-switch input:checked + .track { border-color: var(--qm-accent); background: var(--qm-accent); }
+      .settings-switch input:checked + .track::after { transform: translateX(16px); }
+      .settings-switch input:focus-visible + .track { outline: 2px solid var(--qm-accent); outline-offset: 2px; }
+
+      .settings-seg { display: inline-flex; flex: none; padding: 2px; border: 1px solid var(--qm-line); border-radius: 8px; background: var(--qm-surface-muted); }
+      .settings-seg button { border: 0; border-radius: 6px; padding: 4px 10px; background: transparent; color: var(--qm-ink-muted); font-size: 11px; }
+      .settings-seg button[aria-pressed="true"] { background: var(--qm-surface-raised); box-shadow: 0 1px 2px rgba(20, 18, 14, 0.1); color: var(--qm-ink); }
+
+      .settings-mode { display: inline-flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--qm-line); border-radius: 999px; background: var(--qm-surface-muted); }
+      .settings-mode button { border: 0; border-radius: 999px; padding: 5px 14px; background: transparent; color: var(--qm-ink-muted); font-family: var(--qm-font-mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; }
+      .settings-mode button[aria-pressed="true"] { background: var(--qm-ink); color: var(--qm-surface); }
+      .settings-mode-panel { margin-top: 18px; }
+      .settings-mode-panel[hidden] { display: none; }
+      .settings-mode-note { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--qm-ink-muted); font-size: 10px; line-height: 1.6; }
+      .settings-mode-note::before { content: ""; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--qm-accent); }
+      .settings-endpoint { display: block; margin-top: 6px; color: var(--qm-ink-faint); font-family: var(--qm-font-mono); font-size: 9px; letter-spacing: 0.02em; }
+
+      .settings-input {
+        display: block;
+        width: 300px;
+        padding: 8px 10px;
+        border: 1px solid var(--qm-line);
+        border-radius: 8px;
+        background: var(--qm-surface-raised);
+        color: var(--qm-ink);
+        font-family: var(--qm-font-mono);
+        font-size: 11.5px;
+      }
+      .settings-input + .settings-input { margin-top: 8px; }
+      .settings-key { display: flex; align-items: center; gap: 8px; }
+      .settings-key .settings-input { width: 230px; }
+
+      .settings-toast {
+        position: absolute;
+        top: 58px;
+        right: 56px;
+        z-index: 40;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--qm-ink);
+        box-shadow: var(--qm-shadow-float);
+        color: var(--qm-paper);
+        font-size: 11px;
+        opacity: 0;
+        transform: translateY(-6px);
+        transition: opacity 180ms ease, transform 180ms var(--qm-ease-out);
+      }
+      .settings-toast.show { opacity: 1; transform: none; }
+
+      @media (max-width: 1080px) {
+        .proto-meta { display: none; }
+        .settings-body { grid-template-columns: 280px minmax(0, 1fr); }
+        .settings-scroll { padding-inline: 36px; }
+        .settings-footer { padding-inline: 36px; }
+        .settings-model-list, .settings-select, .settings-input { width: 100%; }
+        .settings-row { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+        .dock { width: 208px; flex-basis: 208px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="proto-bar">
+      <span class="proto-brand">青墨<span>meeting minutes · prototype</span></span>
+      <div class="proto-tabs" role="tablist" aria-label="原型屏幕">
+        <button class="proto-tab" role="tab" aria-selected="true" data-view="entry">1 · 命令入口</button>
+        <button class="proto-tab" role="tab" aria-selected="false" data-view="progress">2 · 转写进度</button>
+        <button class="proto-tab" role="tab" aria-selected="false" data-view="result">3 · 纪要结果</button>
+        <button class="proto-tab" role="tab" aria-selected="false" data-view="settings">4 · 设置</button>
+        <button class="proto-tab" role="tab" aria-selected="false" data-view="errors">5 · 错误与降级</button>
+      </div>
+      <span class="proto-meta">真实组件类与尺寸 · 主窗 1200 × 800 · 设置 1120 × 720</span>
+      <button class="proto-theme" id="theme">深浅色</button>
+    </header>
+
+    <main class="stage">
+      <!-- ============================================================ 1 命令入口 -->
+      <section class="app-window" data-panel="entry" aria-label="青墨窗口：命令入口">
+        <div class="native-titlebar">
+          <span class="native-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>开始写作 · <b>青墨</b></span>
+        </div>
+        <div class="app-body">
+          <aside class="dock" aria-label="侧栏">
+            <div class="dock-tabs">
+              <span class="dock-tab" aria-current="page">工作区</span>
+              <span class="dock-tab">大纲</span>
+              <span class="dock-tab">搜索</span>
+            </div>
+            <header class="dock-head">
+              <div class="min-w-0 flex-1">
+                <h2>产品文档</h2>
+                <p title="~/Code/产品文档">~/Code/产品文档</p>
+              </div>
+              <button class="icon-btn" aria-label="刷新">↻</button>
+              <button class="icon-btn" aria-label="新建">＋</button>
+            </header>
+            <div class="tree">
+              <div class="tree-row current" style="padding-left: 8px"><span class="tw">▾</span><span class="truncate">meetings</span></div>
+              <div class="tree-row" style="padding-left: 32px"><span class="tw">·</span><span class="truncate">周会记录.md</span></div>
+              <div class="tree-row" style="padding-left: 32px"><span class="tw">·</span><span class="truncate">发布清单.md</span></div>
+              <div class="tree-row" style="padding-left: 8px"><span class="tw">▸</span><span class="truncate">notes</span></div>
+              <div class="tree-row" style="padding-left: 8px"><span class="tw">▸</span><span class="truncate">archive</span></div>
+            </div>
+            <p class="dock-foot">3 个文件夹 · 2 个文件</p>
+          </aside>
+          <div class="editor-pane">
+            <div class="editor-host">
+              <div class="cm-surface">
+                <div class="cm-gutter">1</div>
+                <div class="cm-content"><p class="placeholder">开始写作…</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="absolute inset-0 z-50 flex items-start justify-center bg-ink/30 px-4 pt-[12vh] backdrop-blur-[2px]">
+          <section class="w-full max-w-[560px] overflow-hidden rounded-card border border-line bg-surface shadow-card" role="dialog" aria-modal="true" aria-label="命令面板">
+            <div class="border-b border-line px-4 py-3">
+              <input class="palette-input" value="meeting" readonly aria-label="命令面板搜索" />
+            </div>
+            <ul class="max-h-[min(420px,50vh)] overflow-y-auto p-2" role="listbox" style="margin: 0; list-style: none">
+              <li class="palette-item" role="option" aria-selected="true">
+                <div class="copy"><p style="margin: 0" class="truncate text-sm">会议纪要…</p><p class="cat">文件</p></div>
+                <kbd>⌘⇧M</kbd>
+              </li>
+              <li class="palette-item" role="option" aria-selected="false">
+                <div class="copy"><p style="margin: 0" class="truncate text-sm">新建文件</p><p class="cat">文件</p></div>
+                <kbd>⌘N</kbd>
+              </li>
+              <li class="palette-item" role="option" aria-selected="false">
+                <div class="copy"><p style="margin: 0" class="truncate text-sm">打开文件…</p><p class="cat">文件</p></div>
+                <kbd>⌘O</kbd>
+              </li>
+              <li class="palette-item" role="option" aria-selected="false">
+                <div class="copy"><p style="margin: 0" class="truncate text-sm">打开文件夹…</p><p class="cat">文件</p></div>
+              </li>
+            </ul>
+            <div class="flex items-center justify-between border-t border-line px-4 py-2 text-[10px] text-ink-faint">
+              <span>↑↓ 选择 · ↵ 执行 · Esc 关闭</span><kbd>⌘K</kbd>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============================================================ 2 转写进度 -->
+      <section class="app-window" data-panel="progress" aria-label="青墨窗口：转写进度" hidden>
+        <div class="native-titlebar">
+          <span class="native-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>产品评审-1108 · <b>青墨</b></span>
+        </div>
+        <div class="app-body">
+          <aside class="dock" aria-label="侧栏">
+            <div class="dock-tabs">
+              <span class="dock-tab" aria-current="page">工作区</span>
+              <span class="dock-tab">大纲</span>
+              <span class="dock-tab">搜索</span>
+            </div>
+            <header class="dock-head">
+              <div class="min-w-0 flex-1">
+                <h2>产品文档</h2>
+                <p title="~/Code/产品文档">~/Code/产品文档</p>
+              </div>
+              <button class="icon-btn" aria-label="刷新">↻</button>
+              <button class="icon-btn" aria-label="新建">＋</button>
+            </header>
+            <div class="tree">
+              <div class="tree-row current" style="padding-left: 8px"><span class="tw">▾</span><span class="truncate">meetings</span></div>
+              <div class="tree-row audio" style="padding-left: 32px" title="音频文件：v1 需从命令面板选择；树内直接打开记 NEXT-013"><span class="tw">·</span><span class="truncate name">产品评审-1108.m4a</span></div>
+              <div class="tree-row" style="padding-left: 32px"><span class="tw">·</span><span class="truncate">周会记录.md</span></div>
+            </div>
+            <p class="dock-foot">1 个文件夹 · 2 个文件</p>
+          </aside>
+          <div class="editor-pane">
+            <div class="editor-host">
+              <div class="meeting-stage">
+                <div class="meeting-panel">
+                  <h1>正在处理「产品评审-1108.m4a」</h1>
+                  <p class="lead">52 分钟 · 6 个窗口 · 本地转写 · Paraformer 中英 int8 · 说话人分离</p>
+                  <div class="progress-track" role="progressbar" aria-valuenow="58" aria-valuemin="0" aria-valuemax="100"><i style="width:58%"></i></div>
+                  <div class="progress-meta"><span>第 4 / 6 个窗口 · 本窗识别 12 / 18 段</span><span>已用 03:42 · 预计 04:10</span></div>
+                  <ul class="steps">
+                    <li class="done"><span class="dot"></span><span>校验容器与时长</span><span class="t">00:04</span></li>
+                    <li class="done"><span class="dot"></span><span>准备模型与内存预算</span><span class="t">00:06</span></li>
+                    <li class="done"><span class="dot"></span><span>窗口 1–3 · 解码 / 分离 / 识别</span><span class="t">02:58</span></li>
+                    <li class="now"><span class="dot"></span><span>窗口 4 · 分离 60 s 子窗（绝对时间 30:00 起）</span><span class="t">03:42</span></li>
+                    <li><span class="dot"></span><span>窗口 4 · VAD + 逐段识别</span><span class="t">进行中</span></li>
+                    <li><span class="dot"></span><span>窗口 5–6 · 解码 / 分离 / 识别</span><span class="t">—</span></li>
+                    <li><span class="dot"></span><span>释放识别与分离内存 · 复核摘要预算</span><span class="t">—</span></li>
+                    <li><span class="dot"></span><span>抽取决议、待办与风险</span><span class="t">预计 +40s</span></li>
+                    <li><span class="dot"></span><span>校验引句与数字</span><span class="t">—</span></li>
+                    <li><span class="dot"></span><span>写入文档</span><span class="t">—</span></li>
+                  </ul>
+                  <div class="meeting-actions">
+                    <button class="btn danger">取消</button>
+                    <span class="doc-meta">当前段或 60 s 分离子窗结束后停机，已完成的窗口不再重算</span>
+                  </div>
+                  <p class="settings-hint" style="margin-top: 24px">音频不出机器。关闭窗口等同取消。</p>
+                </div>
+              </div>
+            </div>
+            <footer class="status-bar" role="status">
+              <span class="status-file"><span class="dot bg-accent"></span><span class="truncate font-medium text-ink">产品评审-1108</span></span>
+              <span class="status-sep"></span>
+              <div class="status-items">
+                <span class="status-item"><span class="label">任务</span><span class="value">转写中 · 窗口 4/6</span></span>
+                <span class="status-item"><span class="label">后端</span><span class="value">本地 · Paraformer</span></span>
+                <span class="status-item"><span class="label">说话人</span><span class="value">已分离 · 4 人</span></span>
+              </div>
+              <span class="status-tail"><span class="status-mode">实时预览</span></span>
+            </footer>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ 3 纪要结果 -->
+      <section class="app-window" data-panel="result" aria-label="青墨窗口：纪要结果" hidden>
+        <div class="native-titlebar">
+          <span class="native-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>产品评审-1108 · <b>青墨</b></span>
+        </div>
+        <div class="app-body">
+          <aside class="dock" aria-label="侧栏">
+            <div class="dock-tabs">
+              <span class="dock-tab" aria-current="page">工作区</span>
+              <span class="dock-tab">大纲</span>
+              <span class="dock-tab">搜索</span>
+            </div>
+            <header class="dock-head">
+              <div class="min-w-0 flex-1">
+                <h2>产品文档</h2>
+                <p title="~/Code/产品文档">~/Code/产品文档</p>
+              </div>
+              <button class="icon-btn" aria-label="刷新">↻</button>
+              <button class="icon-btn" aria-label="新建">＋</button>
+            </header>
+            <div class="tree">
+              <div class="tree-row current" style="padding-left: 8px"><span class="tw">▾</span><span class="truncate">meetings</span></div>
+              <div class="tree-row current" style="padding-left: 32px"><span class="tw">·</span><span class="truncate">产品评审-1108</span></div>
+              <div class="tree-row" style="padding-left: 32px"><span class="tw">·</span><span class="truncate">周会记录.md</span></div>
+              <div class="tree-row" style="padding-left: 8px"><span class="tw">▸</span><span class="truncate">notes</span></div>
+            </div>
+            <p class="dock-foot">2 个文件夹 · 2 个文件</p>
+          </aside>
+          <div class="editor-pane">
+            <div class="editor-host">
+              <div class="cm-surface">
+                <div class="cm-gutter">1<br />2<br />3<br />4<br />5<br />6<br />7<br />8<br />9<br />10<br />11<br />12<br />13<br />14<br />15<br />16<br />17<br />18<br />19<br />20<br />21<br />22<br />23<br />24<br />25<br />26<br />27<br />28<br />29<br />30</div>
+                <div class="cm-content">
+                  <h1>产品评审-1108</h1>
+                  <p class="doc-meta">52:14 · 本地转写 · Paraformer 中英 int8 · 说话人已分离（4 人）· 5 条结论（节选）<span class="chip warn">1 条待核</span></p>
+
+                  <h2>摘要</h2>
+                  <p>会议确认 0.9 版本按期发布，功能冻结提前到 11 月 12 日；移动端延后到下个季度。讨论集中在冷启动性能与崩溃率，决定先做数据回填和降级开关，不在本期改架构。测试资源由说话人 2 协调，周四给出排期。</p>
+
+                  <h2>决议</h2>
+                  <ul>
+                    <li>
+                      0.9 发布时间不变，功能冻结提前到 11 月 12 日。
+                      <span class="ts">[00:06:41]</span> <span class="chip ok">已核</span>
+                      <blockquote><span class="speaker s1">说话人 1</span>“冻结提前到十二号，剩下的都按这个倒排。”</blockquote>
+                    </li>
+                    <li>
+                      冷启动优化只做数据回填，架构改造进下季度。
+                      <span class="ts">[00:21:08]</span> <span class="chip ok">已核</span>
+                      <blockquote><span class="speaker s2">说话人 2</span>“这期先回填，架构动不了，别赌。”</blockquote>
+                    </li>
+                  </ul>
+
+                  <h2>待办</h2>
+                  <ul>
+                    <li>
+                      补齐冷启动埋点并出对比报告 · 负责人待确认
+                      <span class="ts">[00:23:10]</span> <span class="chip ok">已核</span>
+                      <blockquote><span class="speaker s2">说话人 2</span>“埋点先补，报告周五前给。”</blockquote>
+                    </li>
+                    <li>
+                      灰度开关默认关闭，周四前合并
+                      <span class="ts">[00:31:55]</span> <span class="chip ok">已核</span>
+                      <blockquote><span class="speaker s3">说话人 3</span>“开关我默认关，周四前合。”</blockquote>
+                    </li>
+                  </ul>
+
+                  <h2>风险</h2>
+                  <ul>
+                    <li>
+                      崩溃率仍在 0.7%，高于 0.5% 的发布线。
+                      <span class="ts">[00:44:02]</span> <span class="chip warn">数字待核</span>
+                      <blockquote><span class="speaker s4">说话人 4</span>“昨天是零点七，还是高过线。”</blockquote>
+                    </li>
+                  </ul>
+
+                  <hr />
+                  <details open>
+                    <summary><strong>转录</strong>（128 段，节选 4 段 · 时间戳对齐状态栏播放器，v1 不内联跳转）</summary>
+                    <p><span class="ts">[00:06:38]</span> <span class="speaker s1">说话人 1</span>那我们先把节奏定下来，这周必须出冻结版本。</p>
+                    <p><span class="ts">[00:06:41]</span> <span class="speaker s1">说话人 1</span>冻结提前到十二号，剩下的都按这个倒排。</p>
+                    <p><span class="ts">[00:06:52]</span> <span class="speaker s2">说话人 2</span>好，测试资源我这边协调。</p>
+                    <p><span class="ts">[00:07:03]</span> <span class="speaker s3">说话人 3</span>灰度开关我先默认关，周四前合。</p>
+                  </details>
+                </div>
+              </div>
+            </div>
+            <footer class="status-bar" role="status">
+              <span class="status-file"><span class="dot bg-warning"></span><span class="truncate font-medium text-ink">产品评审-1108</span><span class="chip mute">未保存</span></span>
+              <span class="status-sep"></span>
+              <div class="status-items">
+                <span class="status-item"><span class="label">光标</span><span class="value">第 30 行，第 12 列</span></span>
+                <span class="status-item"><span class="label">结论</span><span class="value">5 条 · 1 条待核</span></span>
+              </div>
+              <span class="status-tail">
+                <span class="player"><button aria-label="播放">▶</button><span class="track"><i></i></span><span class="time">00:06:41 / 52:14</span></span>
+                <span class="status-mode">实时预览</span>
+              </span>
+            </footer>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ 4 设置 -->
+      <section class="settings-frame" data-panel="settings" aria-label="设置窗口" hidden>
+        <main class="settings-window">
+          <header class="settings-chrome">
+            <div class="settings-traffic">
+              <button class="settings-dot close" aria-label="关闭"><svg viewBox="0 0 8 8" fill="none" aria-hidden="true"><path d="M1.1 1.1 6.9 6.9M6.9 1.1 1.1 6.9" stroke="currentColor" stroke-width="1.75" /></svg></button>
+              <span class="settings-dot idle"></span>
+              <span class="settings-dot idle"></span>
+            </div>
+            <span class="settings-chrome-title">Qingmo</span>
+            <span class="settings-chrome-meta">v0.1.0</span>
+          </header>
+
+          <div class="settings-body">
+            <aside class="settings-rail" aria-label="设置分类">
+              <p class="settings-kicker">Colophon</p>
+              <p class="settings-rail-title">设置</p>
+              <p class="settings-rail-lede">语言、模型与密钥。每项改动即时写入，密钥只进系统钥匙串。</p>
+
+              <nav class="settings-nav" aria-label="设置分区">
+                <p class="settings-nav-caption">分区</p>
+                <button class="settings-nav-item" type="button">
+                  <span class="settings-nav-index">01</span>
+                  <span class="settings-nav-copy"><span class="settings-nav-label">通用</span><span class="settings-nav-note">语言与排版</span></span>
+                </button>
+                <button class="settings-nav-item" type="button" aria-current="page">
+                  <span class="settings-nav-index">02</span>
+                  <span class="settings-nav-copy"><span class="settings-nav-label">AI</span><span class="settings-nav-note">会议纪要与模型</span></span>
+                  <span class="settings-nav-mark" aria-hidden="true"></span>
+                </button>
+              </nav>
+
+              <p class="settings-rail-note">AI 配置存于应用数据目录的 meeting/config.json；密钥只存钥匙串，界面永不回显明文。</p>
+              <footer class="settings-rail-foot"><span class="settings-rail-sig">本地优先</span><span>v0.1.0</span></footer>
+            </aside>
+
+            <div class="settings-main">
+              <div class="settings-scroll">
+                <p class="settings-breadcrumb"><span>设置</span><span class="settings-slash">/</span><span>AI</span></p>
+                <header class="settings-head">
+                  <h1>AI</h1>
+                  <p>转写与摘要各自可选本地或远程。本地模型按需下载；远程使用你自己的密钥。只有转写走远程时才上传音频，摘要只发送文字。</p>
+                </header>
+
+                <section class="settings-section" data-mode="local">
+                  <header class="settings-section-head"><span class="settings-section-num">01</span><h2>转写模型</h2><span class="settings-section-rule"></span></header>
+                  <div class="settings-row">
+                    <div class="settings-copy">
+                      <h3>运行方式</h3>
+                      <p>本地不上传音频；远程按 5 分钟分块上传，失败只回退本地一次并在正文标注。</p>
+                    </div>
+                    <div class="settings-mode" role="group" aria-label="转写运行方式">
+                      <button type="button" data-mode-set="local" aria-pressed="true">本地</button><button type="button" data-mode-set="remote" aria-pressed="false">远程</button>
+                    </div>
+                  </div>
+
+                  <div class="settings-mode-panel" data-mode-panel="local">
+                    <div class="banner warn" style="margin: 0 0 18px">
+                      <div class="grow"><b>首次使用 · 本地转写已下载 2/4</b>识别模型与分割模型已就绪；安装包不含模型。转写组合还需声纹 28.3 MB 与 VAD 0.6 MB，共 28.9 MB，按 2×下载与「下载+解包×1.05+64MB」取大，磁盘需至少 124 MB。全量（含高精度方言与 3 个摘要模型）约 10.2 GB，全部下载需预留 ≥ 20.5 GB。</div>
+                      <span class="acts"><button class="btn primary" type="button">继续下载剩余 2 项</button><button class="btn ghost" type="button" disabled>识别模型已就绪</button></span>
+                    </div>
+
+                    <div class="settings-row" style="align-items: start">
+                      <div class="settings-copy">
+                        <h3>本地识别模型</h3>
+                        <p>安装包不带模型。转写组合先下识别模型，再下 VAD 与分离包；全部按需下载、可单项移除。</p>
+                      </div>
+                      <div class="settings-model-list" role="radiogroup" aria-label="本地识别模型">
+                        <label class="settings-model" data-checked="true">
+                          <input type="radio" name="asr-local-model" checked />
+                          <span class="badge">自动</span>
+                          <span><span class="name">自动（当前推荐：Paraformer 中英 · int8）</span><span class="meta">按内存与平台分层；手动选择会钉死</span></span>
+                          <span class="state chip ok">生效中</span>
+                          <span class="acts"></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="asr-local-model" />
+                          <span class="badge">默认</span>
+                          <span><span class="name">Paraformer 中英 · int8</span><span class="meta">223.4 MB · Apache-2.0 · 中英混说 · 峰值约 1.2 GB · 无 token 概率</span></span>
+                          <span class="state chip ok">已就绪</span>
+                          <span class="acts"><button class="linkish" type="button">移除</button></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="asr-local-model" />
+                          <span class="badge">最快</span>
+                          <span><span class="name">Paraformer 中文 small · int8</span><span class="meta">81.8 MB · Apache-2.0 · 中文为主 · 准确率略低 · 峰值约 0.7 GB</span></span>
+                          <span class="state chip mute">未下载</span>
+                          <span class="acts"><button class="linkish" type="button">下载</button></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="asr-local-model" />
+                          <span class="badge">多语</span>
+                          <span><span class="name">SenseVoice Small · int8</span><span class="meta">239.2 MB · FunASR 模型许可 · 中英日韩粤 · 需署名 · 峰值约 1 GB</span></span>
+                          <span class="state chip mute">未下载</span>
+                          <span class="acts"><button class="linkish" type="button">下载</button></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="asr-local-model" />
+                          <span class="badge">备用</span>
+                          <span><span class="name">Zipformer 中英 · int8</span><span class="meta">312.4 MB（包）· Apache-2.0 · 中英 · 高内存 · 峰值约 1.4 GB</span></span>
+                          <span class="state chip mute">未下载</span>
+                          <span class="acts"><button class="linkish" type="button">下载</button></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="asr-local-model" />
+                          <span class="badge">方言</span>
+                          <span><span class="name">FireRedASR2-CTC · int8</span><span class="meta">约 740 MB · Apache-2.0 · 中文 + 20 余种方言 · 高精度 · 不含说话人 · 峰值 1.5–2 GB</span></span>
+                          <span class="state chip mute">未下载</span>
+                          <span class="acts"><button class="linkish" type="button">下载</button></span>
+                        </label>
+                      </div>
+                    </div>
+                    <p class="settings-hint">当前机器 32 GiB · 自动选择 Paraformer 中英 int8；手动选择会钉死，不再随内存变化。8 GiB 内存建议避开 Zipformer / FireRed，改用 small。只有 Zipformer 提供 token 概率，Paraformer/SenseVoice/FireRed 不显示低置信徽标。</p>
+                    <div class="settings-row" style="align-items: center; border-top: 1px solid var(--qm-line); padding-top: 14px">
+                      <div class="settings-copy">
+                        <h3>已钉死状态</h3>
+                        <p>手动选过模型时显示钉死值与恢复动作；自动档不显示。</p>
+                      </div>
+                      <div class="settings-mode" role="group" aria-label="钉死状态">
+                        <button type="button" aria-pressed="true">已钉死 · Zipformer 中英</button><button type="button" aria-pressed="false">恢复自动</button>
+                      </div>
+                    </div>
+
+                    <div class="settings-row" style="align-items: start">
+                      <div class="settings-copy">
+                        <h3>静音检测（VAD）</h3>
+                        <p>0.6 MB，默认组合包含。缺失时退回 30 s 定长切分，转写仍可完成，只是会带静音。</p>
+                      </div>
+                      <div class="speaker-pack" style="width: 420px">
+                        <div>
+                          <b>Silero VAD</b>
+                          <span class="mono">0.6 MB / MIT</span>
+                        </div>
+                        <span style="display: flex; align-items: center; gap: 8px"><span class="chip mute">未下载</span><button class="linkish" type="button">下载</button></span>
+                      </div>
+                    </div>
+                    <div class="settings-row" style="align-items: start">
+                      <div class="settings-copy">
+                        <h3>分离模型包 · 固定开启</h3>
+                        <p>与识别模型独立，约 30 MB，默认组合包含。本地离线分离出「说话人 1…N」，同一人同色，最多 8 人，第 9 人起并入「说话人 9+」。缺失、损坏或超时时自动降级：全部失败写「未分离说话人」，中途失败写「部分片段未分离」，都不阻断转写。</p>
+                      </div>
+                      <div class="speaker-pack" style="width: 470px">
+                        <div>
+                          <b>pyannote segmentation 3.0 · int8 + CAM++ zh_en</b>
+                          <span class="mono">1.5 MB / MIT · 28.3 MB / Apache-2.0</span>
+                        </div>
+                        <span style="display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: 8px"><span class="chip warn">部分就绪 1/2</span><button class="linkish" type="button">下载声纹</button><button class="linkish" type="button">移除</button></span>
+                      </div>
+                    </div>
+                    <p class="settings-hint">分离只在本机运行；没有模型或内存不足时，正文会标注「未分离说话人」。远程转写时只有 Deepgram 返回说话人标签。</p>
+                  </div>
+
+                  <div class="settings-mode-panel" data-mode-panel="remote" hidden>
+                    <div class="settings-row" style="align-items: start">
+                      <div class="settings-copy">
+                        <h3>远程提供方</h3>
+                        <p>OpenAI / Groq 无说话人标签，Deepgram 支持。切换提供方会清空远程模型名，回落到该家默认。使用前请阅读各家的服务条款。</p>
+                      </div>
+                      <div class="settings-select" data-open="false">
+                        <button class="settings-select-trigger" aria-expanded="false" aria-haspopup="listbox" style="width: 300px">
+                          <span class="settings-select-copy"><span class="settings-select-native">OpenAI</span><span class="settings-select-code">whisper-1 · 无说话人标签</span></span>
+                          <svg class="settings-select-chevron" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m2.5 4.5 3.5 3.5 3.5-3.5" stroke="currentColor" stroke-width="1.4" /></svg>
+                        </button>
+                        <div class="settings-select-menu" role="listbox">
+                          <button class="settings-select-option" role="option" aria-selected="true">
+                            <span class="settings-select-option-copy"><span class="settings-select-option-native">OpenAI</span><span class="settings-select-option-detail">whisper-1 · 无说话人标签</span></span>
+                            <svg class="settings-select-check" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="m2 7 3 3 6-7" stroke="currentColor" stroke-width="1.6" /></svg>
+                          </button>
+                          <button class="settings-select-option" role="option" aria-selected="false">
+                            <span class="settings-select-option-copy"><span class="settings-select-option-native">Groq</span><span class="settings-select-option-detail">whisper-large-v3-turbo · 无说话人标签</span></span>
+                          </button>
+                          <button class="settings-select-option" role="option" aria-selected="false">
+                            <span class="settings-select-option-copy"><span class="settings-select-option-native">Deepgram</span><span class="settings-select-option-detail">nova-3 · 支持说话人标签</span></span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="settings-row" style="align-items: start">
+                      <div class="settings-copy">
+                        <h3>远程模型与密钥</h3>
+                        <p>模型名留空用提供方默认。密钥只写钥匙串，配置文件只留账户名。</p>
+                        <span class="settings-endpoint">api.openai.com/v1/audio/transcriptions</span>
+                      </div>
+                      <div>
+                        <input class="settings-input" id="remote-model" value="whisper-1" aria-label="远程模型" />
+                        <div class="settings-key" style="margin-top: 8px">
+                          <input class="settings-input" type="password" value="" placeholder="已保存（不回显）· 如需更换请输入新密钥" aria-label="转写密钥" />
+                          <span class="chip ok">已保存 · 末 4 位 9c1d</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="settings-row">
+                      <div class="settings-copy">
+                        <h3>失败回退本地</h3>
+                        <p>超时、限流或鉴权失败时，自动用本地模型从头重跑一次，并在正文标注；本地模型未下载则提示先下载。</p>
+                      </div>
+                      <span class="chip ok">固定开启</span>
+                    </div>
+                    <p class="settings-hint">远端地址固定为各家官方端点，不走自定义 URL；5 分钟/块 · 约 9.6 MB · 超 23 MiB 自动降为 2 分钟；仅对 429/5xx 重试 2 次。</p>
+                  </div>
+                </section>
+
+                <section class="settings-section" data-mode="local">
+                  <header class="settings-section-head"><span class="settings-section-num">02</span><h2>摘要模型</h2><span class="settings-section-rule"></span></header>
+                  <div class="settings-row">
+                    <div class="settings-copy">
+                      <h3>运行方式</h3>
+                      <p>摘要只发送文字。本地用 llama.cpp 加载，远程走 OpenAI 兼容端点；不可用时自动降级为抽取式要点。</p>
+                    </div>
+                    <div class="settings-mode" role="group" aria-label="摘要运行方式">
+                      <button type="button" data-mode-set="local" aria-pressed="true">本地</button><button type="button" data-mode-set="remote" aria-pressed="false">远程</button>
+                    </div>
+                  </div>
+
+                  <div class="settings-mode-panel" data-mode-panel="local">
+                    <div class="settings-row" style="align-items: start">
+                      <div class="settings-copy">
+                        <h3>本地摘要模型</h3>
+                        <p>GGUF 量化模型，仅本机加载；8 GiB 及以下默认 1.7B，16 GiB 起默认 4B，8B 仅 32 GiB 以上可选。首次加载约 3–8 s。</p>
+                      </div>
+                      <div class="settings-model-list" role="radiogroup" aria-label="本地摘要模型">
+                        <label class="settings-model" data-checked="true">
+                          <input type="radio" name="llm-local-model" checked />
+                          <span class="badge">自动</span>
+                          <span><span class="name">自动（当前推荐：Qwen3 4B）</span><span class="meta">按内存与平台分层；手动选择会钉死</span></span>
+                          <span class="state chip ok">生效中</span>
+                          <span class="acts"></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="llm-local-model" />
+                          <span class="badge">最省</span>
+                          <span><span class="name">Qwen3 1.7B Instruct · Q4_K_M</span><span class="meta">约 1.1 GB · Apache-2.0 · 峰值约 2.1 GB · 质量够用</span></span>
+                          <span class="state chip mute">未下载</span>
+                          <span class="acts"><button class="linkish" type="button">下载</button></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="llm-local-model" />
+                          <span class="badge">默认</span>
+                          <span><span class="name">Qwen3 4B Instruct · Q4_K_M</span><span class="meta">约 2.5 GB · Apache-2.0 · 峰值约 3.6 GB · 结构化更稳</span></span>
+                          <span class="state chip ok">已就绪</span>
+                          <span class="acts"><button class="linkish" type="button">移除</button></span>
+                        </label>
+                        <label class="settings-model" data-checked="false">
+                          <input type="radio" name="llm-local-model" />
+                          <span class="badge">高质量</span>
+                          <span><span class="name">Qwen3 8B Instruct · Q4_K_M</span><span class="meta">约 4.9 GB · Apache-2.0 · 峰值约 6.2 GB · 长会议更稳</span></span>
+                          <span class="state chip mute">未下载</span>
+                          <span class="acts"><button class="linkish" type="button">下载</button></span>
+                        </label>
+                      </div>
+                    </div>
+                    <p class="settings-hint">当前机器 32 GiB · 自动选择 Qwen3 4B；8B 仅 ≥32 GiB 可选。本地摘要不走网络，模型只存应用数据目录，可单项移除；无模型或加载失败时仍出抽取式要点。</p>
+                  </div>
+
+                  <div class="settings-mode-panel" data-mode-panel="remote" hidden>
+                    <div class="settings-row" style="align-items: start">
+                      <div class="settings-copy">
+                        <h3>远程端点与密钥</h3>
+                        <p>https 任意 OpenAI 兼容端点；http 仅回环/私网/`.local`（Ollama/LM Studio）。默认留空，首次使用必须填写；明文端点显示「明文」徽标。密钥只写钥匙串。</p>
+                      </div>
+                      <div>
+                        <input class="settings-input" placeholder="https://api.example.com/v1" aria-label="摘要端点" />
+                        <input class="settings-input" placeholder="模型名，留空则只出抽取式" aria-label="摘要模型名" />
+                        <div class="settings-key" style="margin-top: 8px">
+                          <input class="settings-input" type="password" value="" placeholder="已保存（不回显）· 如需更换请输入新密钥" aria-label="摘要密钥" />
+                          <span class="chip ok">已保存 · 末 4 位 3f2a</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p class="settings-hint">端点必须为 http(s)；连接失败、401 或超时只降级，不阻断纪要。模型名留空同样走抽取式。</p>
+                  </div>
+                </section>
+
+                <section class="settings-section">
+                  <header class="settings-section-head"><span class="settings-section-num">03</span><h2>范围与产物</h2><span class="settings-section-rule"></span></header>
+                  <div class="settings-row">
+                    <div class="settings-copy">
+                      <h3>单次上限</h3>
+                      <p>超过即拒绝，不进入解码。上限同时受 500 MiB 文件体积约束。</p>
+                    </div>
+                    <div class="settings-seg" role="group" aria-label="单次上限"><button aria-pressed="false">60 分钟</button><button aria-pressed="true">180 分钟</button><button aria-pressed="false">300 分钟</button></div>
+                  </div>
+                  <div class="settings-row">
+                    <div class="settings-copy">
+                      <h3>保留转录正文</h3>
+                      <p>关闭后只保留摘要、决议与引句；时间戳仍可回听。</p>
+                    </div>
+                    <label class="settings-switch"><input type="checkbox" checked aria-label="保留转录正文" /><span class="track"></span></label>
+                  </div>
+                  <div class="settings-row">
+                    <div class="settings-copy">
+                      <h3>运行时</h3>
+                      <p>自动按内存与平台分层：ASR 纯 CPU，macOS 的本地摘要可用 Metal，Windows 纯 CPU。仅 CPU 用于排障。</p>
+                    </div>
+                    <div class="settings-seg" role="group" aria-label="运行时"><button aria-pressed="true">自动</button><button aria-pressed="false">仅 CPU</button></div>
+                  </div>
+                </section>
+
+                <aside class="settings-note">
+                  <p class="settings-note-quote">“先把谁说的留下，再谈总结。”</p>
+                  <p class="settings-note-body">说话人标签由声纹聚类产生，不是身份识别。同名同姓仍可能出现编号漂移，重要结论以引句为准。</p>
+                  <span class="settings-ghost" aria-hidden="true">议</span>
+                </aside>
+              </div>
+              <footer class="settings-footer">
+                <span class="settings-esc"><kbd>Esc</kbd><span>关闭</span></span>
+                <span class="settings-footer-meta">配置 13 项 · 密钥 2 个账户</span>
+              </footer>
+            </div>
+          </div>
+          <div class="settings-toast show" role="status">已选中 Paraformer 中英 int8（已就绪）</div>
+        </main>
+      </section>
+
+      <!-- ============================================================ 5 错误与降级 -->
+      <section class="app-window" data-panel="errors" aria-label="青墨窗口：错误与降级" hidden>
+        <div class="native-titlebar">
+          <span class="native-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>产品评审-1108 · <b>青墨</b></span>
+        </div>
+        <div class="app-body">
+          <aside class="dock" aria-label="侧栏">
+            <div class="dock-tabs">
+              <span class="dock-tab" aria-current="page">工作区</span>
+              <span class="dock-tab">大纲</span>
+              <span class="dock-tab">搜索</span>
+            </div>
+            <header class="dock-head">
+              <div class="min-w-0 flex-1"><h2>产品文档</h2><p title="~/Code/产品文档">~/Code/产品文档</p></div>
+              <button class="icon-btn" aria-label="刷新">↻</button>
+              <button class="icon-btn" aria-label="新建">＋</button>
+            </header>
+            <div class="tree">
+              <div class="tree-row current" style="padding-left: 8px"><span class="tw">▾</span><span class="truncate">meetings</span></div>
+              <div class="tree-row audio" style="padding-left: 32px" title="音频文件：v1 需从命令面板选择；树内直接打开记 NEXT-013"><span class="tw">·</span><span class="truncate name">产品评审-1108.m4a</span></div>
+              <div class="tree-row audio" style="padding-left: 32px" title="音频文件：v1 需从命令面板选择；树内直接打开记 NEXT-013"><span class="tw">·</span><span class="truncate name">待处理.m4a</span></div>
+            </div>
+            <p class="dock-foot">1 个文件夹 · 2 个文件</p>
+          </aside>
+          <div class="editor-pane">
+            <div class="editor-host">
+              <div class="meeting-stage">
+                <div class="meeting-panel">
+                  <p class="doc-meta" style="margin-bottom: 18px">错误与降级 · 不同任务的恢复动作示例（拼合展示，非同一时刻）</p>
+                  <div class="banner danger">
+                    <div class="grow"><b>识别模型尚未就绪</b>安装包不含模型，默认组合需 254 MB。本次已自动打开设置页；可一键下载默认组合，或只下识别模型。已下载分片保留，可续传。</div>
+                    <span class="acts"><button class="btn ghost">换模型</button><button class="btn primary">打开设置下载</button><button class="btn ghost">重试</button></span>
+                  </div>
+
+                  <div class="banner danger">
+                    <div class="grow"><b>已选远程转写，但没有密钥，且本地识别模型未就绪</b>补一个密钥即可直接开始（不要求本地模型）；也可以先下载本地模型改走本地。不会空跑。</div>
+                    <span class="acts"><button class="btn primary">去填密钥</button><button class="btn ghost">下载本地模型</button></span>
+                  </div>
+
+                  <div class="error-block" style="border-top: 0; padding-top: 0">
+                    <h2>模型下载失败</h2>
+                    <p class="lead">网络中断于 38% · 08:14。校验通过前不会加载。</p>
+                    <div class="meeting-actions"><button class="btn">续传</button><button class="linkish">改用 Paraformer 中文 small（81.8 MB）</button></div>
+                  </div>
+
+                  <div class="error-block">
+                    <h2>远程失败，已回退本地</h2>
+                    <p class="lead">OpenAI 在第 4 块连续 429，已整体回退一次。正文首行会保留这条标记。</p>
+                    <div class="banner warn" style="margin-top: 12px">
+                      <div class="grow"><b>为什么整段重跑</b>远程块只有词级时间，拼接后置信度不可比；只回退一次，避免密钥或额度问题拖长任务。</div>
+                    </div>
+                  </div>
+
+                  <div class="error-block">
+                    <h2>音频在第 12 分钟损坏</h2>
+                    <p class="lead">容器可读，解码在 12:04 处失败。前 12 分钟已保留并自动继续，无需再点；正文标注「只转写了前 12 分钟」，终态为「部分完成」。</p>
+                    <div class="meeting-actions"><button class="linkish">换一个文件</button></div>
+                  </div>
+
+                  <div class="error-block">
+                    <h2>摘要模型未配置</h2>
+                    <p class="lead">转写与说话人分离仍会完成，并生成抽取式要点。配置后重跑任务；仅重生成摘要记 NEXT-014。</p>
+                    <div class="meeting-actions"><button class="btn">打开设置</button><button class="btn ghost">继续抽取式</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <footer class="status-bar" role="status">
+              <span class="status-file"><span class="dot bg-danger"></span><span class="truncate font-medium text-ink">产品评审-1108</span><span class="chip mute">待处理</span></span>
+              <span class="status-sep"></span>
+              <div class="status-items">
+                <span class="status-item"><span class="label">错误</span><span class="value">MODEL_NOT_READY</span></span>
+                <span class="status-item"><span class="label">后端</span><span class="value">本地 · 未开始</span></span>
+              </div>
+              <span class="status-tail"><span class="status-mode">实时预览</span></span>
+            </footer>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const tabs = [...document.querySelectorAll(".proto-tab")];
+      const panels = [...document.querySelectorAll("[data-panel]")];
+      for (const tab of tabs) {
+        tab.addEventListener("click", () => {
+          for (const other of tabs) other.setAttribute("aria-selected", String(other === tab));
+          for (const panel of panels) panel.hidden = panel.dataset.panel !== tab.dataset.view;
+        });
+      }
+      document.getElementById("theme").addEventListener("click", () => {
+        const root = document.documentElement;
+        root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+      });
+      for (const option of document.querySelectorAll(".settings-select-option")) {
+        option.addEventListener("click", () => {
+          for (const other of option.parentElement.children) other.setAttribute("aria-selected", "false");
+          option.setAttribute("aria-selected", "true");
+          const trigger = option.closest(".settings-select").querySelector(".settings-select-trigger");
+          trigger.querySelector(".settings-select-native").textContent =
+            option.querySelector(".settings-select-option-native").textContent;
+          trigger.querySelector(".settings-select-code").textContent =
+            option.querySelector(".settings-select-option-detail").textContent;
+          const model = document.getElementById("remote-model");
+          if (model) model.value = "";
+        });
+      }
+      for (const select of document.querySelectorAll(".settings-select")) {
+        select.querySelector(".settings-select-trigger").addEventListener("click", () => {
+          select.dataset.open = select.dataset.open === "true" ? "false" : "true";
+          select.querySelector(".settings-select-trigger").setAttribute(
+            "aria-expanded",
+            select.dataset.open,
+          );
+        });
+      }
+      for (const model of document.querySelectorAll(".settings-model")) {
+        model.querySelector("input").addEventListener("change", () => {
+          const list = model.closest(".settings-model-list");
+          for (const other of list.querySelectorAll(".settings-model")) {
+            other.dataset.checked = String(other === model);
+          }
+        });
+      }
+      for (const section of document.querySelectorAll("[data-mode]")) {
+        for (const button of section.querySelectorAll("[data-mode-set]")) {
+          button.addEventListener("click", () => {
+            section.dataset.mode = button.dataset.modeSet;
+            for (const other of section.querySelectorAll("[data-mode-set]")) {
+              other.setAttribute("aria-pressed", String(other === button));
+            }
+            for (const panel of section.querySelectorAll("[data-mode-panel]")) {
+              panel.hidden = panel.dataset.modePanel !== button.dataset.modeSet;
+            }
+          });
+        }
+      }
+      for (const action of document.querySelectorAll(".settings-model .acts button, .speaker-pack button")) {
+        action.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      }
+    </script>
+  </body>
+</html>
