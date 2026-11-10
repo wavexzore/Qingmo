@@ -53,7 +53,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 47);
+    assert_eq!(COMMANDS.len(), 62);
     assert_eq!(
         EVENTS,
         &[
@@ -67,7 +67,9 @@ fn frontend_command_mirror_contains_every_contract_name() {
             "app://document-relocated",
             "app://document-new-failed",
             "app://workspace-changed",
-            "app://workspace-index-status"
+            "app://workspace-index-status",
+            "app://meeting-progress",
+            "app://meeting-model-progress"
         ]
     );
 
@@ -78,8 +80,9 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 14);
+    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 15);
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"file.new"));
+    assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"file.meeting"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.zh-CN"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.en"));
 }
@@ -276,7 +279,20 @@ fn error_wire_shape_is_stable() {
     assert_eq!(value["message"], "file changed");
     assert_eq!(value["details"]["currentHash"], "abc");
 
-    for (code, wire) in [
+    let codes = [
+        (AppErrorCode::InvalidPath, "INVALID_PATH"),
+        (AppErrorCode::OutsideScope, "OUTSIDE_SCOPE"),
+        (AppErrorCode::NotFound, "NOT_FOUND"),
+        (AppErrorCode::NotAFile, "NOT_A_FILE"),
+        (AppErrorCode::UnsupportedExtension, "UNSUPPORTED_EXTENSION"),
+        (AppErrorCode::FileTooLarge, "FILE_TOO_LARGE"),
+        (AppErrorCode::UnsupportedEncoding, "UNSUPPORTED_ENCODING"),
+        (AppErrorCode::Conflict, "CONFLICT"),
+        (AppErrorCode::PermissionDenied, "PERMISSION_DENIED"),
+        (AppErrorCode::ReadOnly, "READ_ONLY"),
+        (AppErrorCode::Busy, "BUSY"),
+        (AppErrorCode::Io, "IO"),
+        (AppErrorCode::Cancelled, "CANCELLED"),
         (AppErrorCode::UpdateCheckFailed, "UPDATE_CHECK_FAILED"),
         (AppErrorCode::UpdateDownloadFailed, "UPDATE_DOWNLOAD_FAILED"),
         (
@@ -287,11 +303,85 @@ fn error_wire_shape_is_stable() {
         (AppErrorCode::UpdateUnsupported, "UPDATE_UNSUPPORTED"),
         (AppErrorCode::UpdateNotReady, "UPDATE_NOT_READY"),
         (AppErrorCode::InvalidLocale, "INVALID_LOCALE"),
-    ] {
+        (AppErrorCode::SearchTimeout, "SEARCH_TIMEOUT"),
+        (AppErrorCode::IndexDisabled, "INDEX_DISABLED"),
+        (AppErrorCode::IdentityDegraded, "IDENTITY_DEGRADED"),
+        (AppErrorCode::AudioUnsupported, "AUDIO_UNSUPPORTED"),
+        (AppErrorCode::AudioTooLarge, "AUDIO_TOO_LARGE"),
+        (AppErrorCode::AudioTooLong, "AUDIO_TOO_LONG"),
+        (AppErrorCode::AudioDecodeFailed, "AUDIO_DECODE_FAILED"),
+        (AppErrorCode::ModelNotReady, "MODEL_NOT_READY"),
+        (AppErrorCode::AsrUnavailable, "ASR_UNAVAILABLE"),
+        (AppErrorCode::AsrFailed, "ASR_FAILED"),
+        (AppErrorCode::InvalidConfig, "INVALID_CONFIG"),
+        (AppErrorCode::MeetingBusy, "MEETING_BUSY"),
+        (AppErrorCode::ModelDownloadFailed, "MODEL_DOWNLOAD_FAILED"),
+        (AppErrorCode::ModelBusy, "MODEL_BUSY"),
+        (AppErrorCode::LlmNotConfigured, "LLM_NOT_CONFIGURED"),
+        (AppErrorCode::LlmFailed, "LLM_FAILED"),
+    ];
+    assert_eq!(codes.len(), 36);
+    for (code, wire) in codes {
         let value = serde_json::to_value(AppError::new(code, "update error"))
             .expect("AppError must serialize");
         assert_eq!(value["code"], wire);
     }
+}
+
+#[test]
+fn reason_codes_are_complete_and_snake_case() {
+    use qingmo_lib::ipc::dto::ReasonCode;
+
+    assert_eq!(ReasonCode::ALL.len(), 12);
+    for reason in ReasonCode::ALL {
+        let wire = serde_json::to_value(reason).expect("ReasonCode must serialize");
+        let wire = wire
+            .as_str()
+            .expect("ReasonCode wire value must be a string");
+        assert!(
+            wire.chars()
+                .all(|character| character.is_ascii_lowercase() || character == '_'),
+            "unexpected ReasonCode wire value: {wire}"
+        );
+    }
+    assert_eq!(
+        serde_json::to_value(ReasonCode::RemoteAuth).unwrap(),
+        "remote_auth"
+    );
+}
+
+#[test]
+fn meeting_dtos_use_camel_case_wire_names() {
+    use qingmo_lib::ipc::dto::{MeetingConfigPatch, MeetingStage, ModelProgress};
+
+    let patch = MeetingConfigPatch {
+        runtime_mode: Some(qingmo_lib::ipc::dto::RuntimeMode::Cpu),
+        asr_local_model: Some("paraformer-zh-en-int8".into()),
+        ..MeetingConfigPatch::default()
+    };
+    let value = serde_json::to_value(&patch).expect("MeetingConfigPatch must serialize");
+    assert_eq!(value["runtimeMode"], "cpu");
+    assert_eq!(value["asrLocalModel"], "paraformer-zh-en-int8");
+    assert!(value["llmMode"].is_null());
+
+    let progress = ModelProgress {
+        download_id: "download".into(),
+        model_id: "paraformer-zh-en-int8".into(),
+        done_bytes: 1,
+        total_bytes: 2,
+        state: qingmo_lib::ipc::dto::DownloadState::Verifying,
+        error: None,
+    };
+    let value = serde_json::to_value(&progress).expect("ModelProgress must serialize");
+    assert_eq!(value["downloadId"], "download");
+    assert_eq!(value["modelId"], "paraformer-zh-en-int8");
+    assert_eq!(value["doneBytes"], 1);
+    assert_eq!(value["state"], "verifying");
+
+    assert_eq!(
+        serde_json::to_value(MeetingStage::PartialDone).unwrap(),
+        "partial_done"
+    );
 }
 
 /// The ACL treats the platform's real frontend origin as `local`; the mock
@@ -465,6 +555,48 @@ fn invoke_handler_registers_every_contract_command() {
     let version = invoke(&settings, "app_settings_info", json!({}))
         .expect("the settings window must read the app version");
     assert_eq!(version, env!("CARGO_PKG_VERSION"));
+
+    // Meeting surface: task commands stay on document windows, config writes
+    // and keys stay on settings, and read-only meeting commands work on both.
+    for (command, body) in [
+        (
+            "meeting_config_set",
+            json!({"patch": {}, "expectedRevision": 0}),
+        ),
+        ("meeting_key_status", json!({"slot": "llm"})),
+        ("meeting_key_set", json!({"slot": "llm", "value": "sk"})),
+        ("meeting_key_clear", json!({"slot": "llm"})),
+    ] {
+        let error = invoke(&webview, command, body.clone())
+            .expect_err("settings-only meeting commands must reject document windows");
+        let denied = error.get("code").and_then(Value::as_str) == Some("PERMISSION_DENIED")
+            || error
+                .as_str()
+                .is_some_and(|message| message.contains("not allowed"));
+        assert!(denied, "{command} must be settings-only: {error}");
+
+        let error =
+            invoke(&settings, command, body).expect_err("meeting command bodies are still stubs");
+        assert_eq!(error["code"], "IO", "{command} stub: {error}");
+    }
+
+    let error = invoke(&settings, "meeting_start", json!({}))
+        .expect_err("task commands must reject the settings window");
+    let denied = error.get("code").and_then(Value::as_str) == Some("PERMISSION_DENIED")
+        || error
+            .as_str()
+            .is_some_and(|message| message.contains("not allowed"));
+    assert!(denied, "meeting_start must be document-only: {error}");
+
+    let error = invoke(&settings, "meeting_config_get", json!({}))
+        .expect_err("read-only meeting command bodies are stubs");
+    assert_eq!(error["code"], "IO");
+    let error = invoke(&webview, "meeting_config_get", json!({}))
+        .expect_err("document windows may read meeting config");
+    assert_eq!(error["code"], "IO");
+    let error = invoke(&webview, "meeting_model_remove", json!({"id": "x"}))
+        .expect_err("model removal is a stub");
+    assert_eq!(error["code"], "IO");
 
     let stats = invoke(&webview, "app_logs_stats", json!({}))
         .expect("log stats must work without the plugin");

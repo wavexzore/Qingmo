@@ -24,8 +24,8 @@ pub mod state;
 use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
-    EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN,
-    MENU_FILE_OPEN_FOLDER, MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN,
+    EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_MEETING, MENU_FILE_NEW,
+    MENU_FILE_OPEN, MENU_FILE_OPEN_FOLDER, MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN,
     MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE, MENU_VIEW_TOGGLE_THEME,
 };
@@ -183,6 +183,11 @@ fn menu_layout<'a>(
         action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
         action(MENU_FILE_OPEN_FOLDER, &labels.open_folder, None),
         action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
+        action(
+            MENU_FILE_MEETING,
+            "Meeting Minutes…",
+            Some("CmdOrCtrl+Shift+M"),
+        ),
     ];
     if !macos {
         file_items.push(MenuEntry::Separator);
@@ -1530,6 +1535,7 @@ mod menu_tests {
                 MENU_FILE_OPEN,
                 MENU_FILE_OPEN_FOLDER,
                 MENU_FILE_SAVE,
+                MENU_FILE_MEETING,
                 MENU_CLOSE_WINDOW
             ]
         );

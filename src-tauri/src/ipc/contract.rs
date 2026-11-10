@@ -51,6 +51,21 @@ pub const COMMANDS: &[&str] = &[
     "session_draft_list",
     "session_draft_read",
     "session_draft_discard",
+    "meeting_start",
+    "meeting_retry",
+    "meeting_cancel",
+    "meeting_status",
+    "meeting_take_result",
+    "meeting_config_get",
+    "meeting_config_set",
+    "meeting_key_status",
+    "meeting_key_set",
+    "meeting_key_clear",
+    "meeting_models_list",
+    "meeting_model_download",
+    "meeting_model_download_cancel",
+    "meeting_model_remove",
+    "app_settings_open",
 ];
 
 pub const EVENT_CLOSE_REQUESTED: &str = "app://close-requested";
@@ -70,6 +85,10 @@ pub const EVENT_DOCUMENT_RELOCATED: &str = "app://document-relocated";
 pub const EVENT_DOCUMENT_NEW_FAILED: &str = "app://document-new-failed";
 /// A watched workspace root changed; the payload is empty.
 pub const EVENT_WORKSPACE_CHANGED: &str = "app://workspace-changed";
+/// Targeted meeting progress. Receivers still filter on requestId/attempt.
+pub const EVENT_MEETING_PROGRESS: &str = "app://meeting-progress";
+/// Model download progress; broadcast to settings and the requesting window.
+pub const EVENT_MEETING_MODEL_PROGRESS: &str = "app://meeting-model-progress";
 
 pub const EVENTS: &[&str] = &[
     EVENT_CLOSE_REQUESTED,
@@ -83,6 +102,8 @@ pub const EVENTS: &[&str] = &[
     EVENT_DOCUMENT_NEW_FAILED,
     EVENT_WORKSPACE_CHANGED,
     EVENT_WORKSPACE_INDEX_STATUS,
+    EVENT_MEETING_PROGRESS,
+    EVENT_MEETING_MODEL_PROGRESS,
 ];
 
 /// Menu item ids forwarded to the webview, except `file.new`.
@@ -95,6 +116,7 @@ pub const MENU_FILE_NEW: &str = "file.new";
 pub const MENU_FILE_OPEN: &str = "file.open";
 pub const MENU_FILE_OPEN_FOLDER: &str = "file.openFolder";
 pub const MENU_FILE_SAVE: &str = "file.save";
+pub const MENU_FILE_MEETING: &str = "file.meeting";
 pub const MENU_PALETTE_OPEN: &str = "palette.open";
 pub const MENU_VIEW_TOGGLE_OUTLINE: &str = "view.toggleOutline";
 pub const MENU_VIEW_TOGGLE_LIVE_PREVIEW: &str = "view.toggleLivePreview";
@@ -111,6 +133,7 @@ pub const MENU_ACTIONS: &[&str] = &[
     MENU_FILE_OPEN,
     MENU_FILE_OPEN_FOLDER,
     MENU_FILE_SAVE,
+    MENU_FILE_MEETING,
     MENU_PALETTE_OPEN,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW,
     MENU_VIEW_TOGGLE_OUTLINE,

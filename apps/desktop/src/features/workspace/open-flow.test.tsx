@@ -208,6 +208,23 @@ describe("openFile", () => {
       sessionDraftList: vi.fn(),
       sessionDraftRead: vi.fn(),
       sessionDraftDiscard: vi.fn(),
+      meetingStart: vi.fn(),
+      meetingRetry: vi.fn(),
+      meetingCancel: vi.fn(),
+      meetingStatus: vi.fn(),
+      meetingTakeResult: vi.fn(),
+      meetingConfigGet: vi.fn(),
+      meetingConfigSet: vi.fn(),
+      meetingKeyStatus: vi.fn(),
+      meetingKeySet: vi.fn(),
+      meetingKeyClear: vi.fn(),
+      meetingModelsList: vi.fn(),
+      meetingModelDownload: vi.fn(),
+      meetingModelDownloadCancel: vi.fn(),
+      meetingModelRemove: vi.fn(),
+      appSettingsOpen: vi.fn(),
+      onMeetingProgress: vi.fn(() => () => undefined),
+      onMeetingModelProgress: vi.fn(() => () => undefined),
     };
     const brokenResult = await openFile(broken);
     expect(brokenResult.ok).toBe(false);

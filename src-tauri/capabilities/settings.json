@@ -1,10 +1,23 @@
 {
   "identifier": "settings",
-  "description": "Least-privilege surface for the settings window: window dragging plus the settings lifecycle commands.",
+  "description": "Least-privilege surface for the settings window: window dragging, meeting configuration/keys/models, settings lifecycle, model progress events and licence links.",
   "windows": ["settings"],
   "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-start-dragging",
     "allow-app-settings-info",
-    "allow-app-settings-close"
+    "allow-app-settings-close",
+    "allow-app-open-external",
+    "allow-app-settings-open",
+    "allow-meeting-config-get",
+    "allow-meeting-config-set",
+    "allow-meeting-key-status",
+    "allow-meeting-key-set",
+    "allow-meeting-key-clear",
+    "allow-meeting-models-list",
+    "allow-meeting-model-download",
+    "allow-meeting-model-download-cancel",
+    "allow-meeting-model-remove"
   ]
 }

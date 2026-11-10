@@ -9,7 +9,9 @@ const SETTINGS_WINDOW_WIDTH: f64 = 1120.0;
 const SETTINGS_WINDOW_HEIGHT: f64 = 720.0;
 
 /// The settings window has no document state, so every command is scoped to it.
-fn ensure_settings_window<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), AppError> {
+pub(crate) fn ensure_settings_window<R: Runtime>(
+    window: &WebviewWindow<R>,
+) -> Result<(), AppError> {
     if window.label() == SETTINGS_WINDOW_LABEL {
         Ok(())
     } else {

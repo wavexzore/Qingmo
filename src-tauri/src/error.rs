@@ -40,6 +40,10 @@ pub enum AppErrorCode {
     AsrFailed,
     InvalidConfig,
     MeetingBusy,
+    ModelDownloadFailed,
+    ModelBusy,
+    LlmNotConfigured,
+    LlmFailed,
 }
 
 /// The only error shape returned by the four P1 commands.

@@ -322,6 +322,11 @@ export const errors = {
   AUDIO_DECODE_FAILED: "Audio decoding failed; the file may be corrupt.",
   MODEL_NOT_READY: "The model is not ready; download it in Settings first.",
   MEETING_BUSY: "Another meeting task is running; wait for it or cancel it first.",
+  MODEL_DOWNLOAD_FAILED: "The model download failed; check the network or disk space and retry.",
+  MODEL_BUSY: "Another model download is running; wait for it or cancel it first.",
+  LLM_NOT_CONFIGURED:
+    "The summary model is not configured; fill in the endpoint and model in Settings.",
+  LLM_FAILED: "Summary generation failed; the extractive minutes were kept.",
   ASR_UNAVAILABLE: "The speech model could not be loaded; switch or re-download it.",
   ASR_FAILED: "Speech recognition failed; retry or change the model.",
   INVALID_CONFIG: "The meeting settings are invalid; review them in Settings.",

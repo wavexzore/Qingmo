@@ -4,6 +4,7 @@ pub mod document;
 pub mod external;
 pub mod locale;
 pub mod logs;
+pub mod meeting;
 pub mod search;
 pub mod session;
 pub mod settings;
@@ -63,5 +64,20 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         session::session_draft_list,
         session::session_draft_read,
         session::session_draft_discard,
+        meeting::meeting_start,
+        meeting::meeting_retry,
+        meeting::meeting_cancel,
+        meeting::meeting_status,
+        meeting::meeting_take_result,
+        meeting::meeting_config_get,
+        meeting::meeting_config_set,
+        meeting::meeting_key_status,
+        meeting::meeting_key_set,
+        meeting::meeting_key_clear,
+        meeting::meeting_models_list,
+        meeting::meeting_model_download,
+        meeting::meeting_model_download_cancel,
+        meeting::meeting_model_remove,
+        meeting::app_settings_open,
     ]
 }

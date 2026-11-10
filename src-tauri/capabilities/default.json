@@ -46,6 +46,17 @@
     "allow-session-draft-write",
     "allow-session-draft-discard",
     "allow-session-draft-list",
-    "allow-session-draft-read"
+    "allow-session-draft-read",
+    "allow-meeting-start",
+    "allow-meeting-retry",
+    "allow-meeting-cancel",
+    "allow-meeting-status",
+    "allow-meeting-take-result",
+    "allow-meeting-config-get",
+    "allow-meeting-models-list",
+    "allow-meeting-model-download",
+    "allow-meeting-model-download-cancel",
+    "allow-meeting-model-remove",
+    "allow-app-settings-open"
   ]
 }

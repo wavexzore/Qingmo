@@ -210,7 +210,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-004c | 离线说话人分离与降级 | todo | T-001, T-003, T-011, Q-002, Q-011 | none | — |
 | T-005 | Markdown 渲染与降级路径 | todo | T-004, T-004c | none | — |
 | T-006 | MeetingRegistry 状态机、取消、进度事件 | done（2026-11-10） | T-001, Q-004, Q-005 | 35/35 | — |
-| T-007 | 命令层、契约、capability、错误码 | todo | T-006 | none | — |
+| T-007 | 命令层、契约、capability、错误码 | done（2026-11-10） | T-006 | contract 62/36/13/15 | — |
 | T-008 | 结果窗口接入（query 参数 + 首屏进度 + StatusBar 分支 + 失败重试） | todo | T-007 | none | — |
 | T-009 | 菜单、命令面板、i18n、树内音频行 | todo | T-008, Q-008 | none | — |
 | T-010 | 设置页：转写/摘要双模型、本地/远程与密钥 | todo | T-007, T-011, Q-003, Q-004, Q-009, Q-010, Q-011 | none | — |

@@ -12,7 +12,7 @@ import {
 } from "./commands";
 
 describe("IPC contract mirror", () => {
-  it("keeps the forty-seven command names stable", () => {
+  it("keeps the sixty-two command names stable", () => {
     expect(COMMAND_NAMES).toEqual([
       "document_open",
       "document_new",
@@ -61,8 +61,23 @@ describe("IPC contract mirror", () => {
       "session_draft_list",
       "session_draft_read",
       "session_draft_discard",
+      "meeting_start",
+      "meeting_retry",
+      "meeting_cancel",
+      "meeting_status",
+      "meeting_take_result",
+      "meeting_config_get",
+      "meeting_config_set",
+      "meeting_key_status",
+      "meeting_key_set",
+      "meeting_key_clear",
+      "meeting_models_list",
+      "meeting_model_download",
+      "meeting_model_download_cancel",
+      "meeting_model_remove",
+      "app_settings_open",
     ]);
-    expect(new Set(COMMAND_NAMES).size).toBe(47);
+    expect(new Set(COMMAND_NAMES).size).toBe(62);
   });
 
   it("maps every command to its Tauri ACL permission", () => {
@@ -87,9 +102,14 @@ describe("IPC contract mirror", () => {
     expect(COMMAND_PERMISSIONS[COMMANDS.appAboutOpenLink]).toBe("allow-app-about-open-link");
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionViewStateGet]).toBe("allow-session-view-state-get");
     expect(COMMAND_PERMISSIONS[COMMANDS.sessionDraftDiscard]).toBe("allow-session-draft-discard");
+    expect(COMMAND_PERMISSIONS[COMMANDS.meetingTakeResult]).toBe("allow-meeting-take-result");
+    expect(COMMAND_PERMISSIONS[COMMANDS.meetingModelDownloadCancel]).toBe(
+      "allow-meeting-model-download-cancel",
+    );
+    expect(COMMAND_PERMISSIONS[COMMANDS.appSettingsOpen]).toBe("allow-app-settings-open");
   });
 
-  it("keeps the eleven events stable", () => {
+  it("keeps the thirteen events stable", () => {
     expect(EVENT_NAMES).toEqual([
       "app://close-requested",
       "app://close-cancelled",
@@ -102,6 +122,8 @@ describe("IPC contract mirror", () => {
       "app://document-new-failed",
       "app://workspace-changed",
       "app://workspace-index-status",
+      "app://meeting-progress",
+      "app://meeting-model-progress",
     ]);
     expect(EVENTS.closeRequested).toBe("app://close-requested");
     expect(EVENTS.updateState).toBe("app://update-state");
@@ -114,6 +136,8 @@ describe("IPC contract mirror", () => {
     expect(EVENTS.workspaceChanged).toBe("app://workspace-changed");
     expect(EVENTS.closeCancelled).toBe("app://close-cancelled");
     expect(EVENTS.workspaceIndexStatus).toBe("app://workspace-index-status");
+    expect(EVENTS.meetingProgress).toBe("app://meeting-progress");
+    expect(EVENTS.meetingModelProgress).toBe("app://meeting-model-progress");
   });
 
   it("exposes every native menu action once", () => {
@@ -122,6 +146,7 @@ describe("IPC contract mirror", () => {
       "file.open",
       "file.openFolder",
       "file.save",
+      "file.meeting",
       "palette.open",
       "view.toggleLivePreview",
       "view.toggleOutline",

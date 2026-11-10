@@ -84,6 +84,17 @@ fn capability_contains_only_expected_permissions() {
             "allow-session-draft-discard",
             "allow-session-draft-list",
             "allow-session-draft-read",
+            "allow-meeting-start",
+            "allow-meeting-retry",
+            "allow-meeting-cancel",
+            "allow-meeting-status",
+            "allow-meeting-take-result",
+            "allow-meeting-config-get",
+            "allow-meeting-models-list",
+            "allow-meeting-model-download",
+            "allow-meeting-model-download-cancel",
+            "allow-meeting-model-remove",
+            "allow-app-settings-open",
         ]
     );
 
@@ -161,9 +172,22 @@ fn settings_capability_is_least_privilege() {
     assert_eq!(
         permissions,
         vec![
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
             "core:window:allow-start-dragging",
             "allow-app-settings-info",
             "allow-app-settings-close",
+            "allow-app-open-external",
+            "allow-app-settings-open",
+            "allow-meeting-config-get",
+            "allow-meeting-config-set",
+            "allow-meeting-key-status",
+            "allow-meeting-key-set",
+            "allow-meeting-key-clear",
+            "allow-meeting-models-list",
+            "allow-meeting-model-download",
+            "allow-meeting-model-download-cancel",
+            "allow-meeting-model-remove",
         ]
     );
 

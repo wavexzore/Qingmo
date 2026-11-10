@@ -13,9 +13,19 @@ import type {
   HistoryEntry,
   HistoryRecord,
   ImageSaveResult,
+  KeyStatus,
   LogEntry,
   LogLevel,
   LogStats,
+  MeetingConfigGetResponse,
+  MeetingConfigPatch,
+  MeetingConfigSetResponse,
+  MeetingOutcome,
+  MeetingResult,
+  MeetingRetryResponse,
+  MeetingStartResponse,
+  ModelDownloadResponse,
+  ModelView,
   SaveRequest,
   SaveResult,
   SearchResponse,
@@ -81,6 +91,21 @@ export const COMMANDS = {
   sessionDraftList: "session_draft_list",
   sessionDraftRead: "session_draft_read",
   sessionDraftDiscard: "session_draft_discard",
+  meetingStart: "meeting_start",
+  meetingRetry: "meeting_retry",
+  meetingCancel: "meeting_cancel",
+  meetingStatus: "meeting_status",
+  meetingTakeResult: "meeting_take_result",
+  meetingConfigGet: "meeting_config_get",
+  meetingConfigSet: "meeting_config_set",
+  meetingKeyStatus: "meeting_key_status",
+  meetingKeySet: "meeting_key_set",
+  meetingKeyClear: "meeting_key_clear",
+  meetingModelsList: "meeting_models_list",
+  meetingModelDownload: "meeting_model_download",
+  meetingModelDownloadCancel: "meeting_model_download_cancel",
+  meetingModelRemove: "meeting_model_remove",
+  appSettingsOpen: "app_settings_open",
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -133,6 +158,21 @@ export const COMMAND_NAMES = [
   COMMANDS.sessionDraftList,
   COMMANDS.sessionDraftRead,
   COMMANDS.sessionDraftDiscard,
+  COMMANDS.meetingStart,
+  COMMANDS.meetingRetry,
+  COMMANDS.meetingCancel,
+  COMMANDS.meetingStatus,
+  COMMANDS.meetingTakeResult,
+  COMMANDS.meetingConfigGet,
+  COMMANDS.meetingConfigSet,
+  COMMANDS.meetingKeyStatus,
+  COMMANDS.meetingKeySet,
+  COMMANDS.meetingKeyClear,
+  COMMANDS.meetingModelsList,
+  COMMANDS.meetingModelDownload,
+  COMMANDS.meetingModelDownloadCancel,
+  COMMANDS.meetingModelRemove,
+  COMMANDS.appSettingsOpen,
 ] as const satisfies readonly CommandName[];
 
 export const EVENTS = {
@@ -147,6 +187,8 @@ export const EVENTS = {
   documentNewFailed: "app://document-new-failed",
   workspaceChanged: "app://workspace-changed",
   workspaceIndexStatus: "app://workspace-index-status",
+  meetingProgress: "app://meeting-progress",
+  meetingModelProgress: "app://meeting-model-progress",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -163,6 +205,8 @@ export const EVENT_NAMES = [
   EVENTS.documentNewFailed,
   EVENTS.workspaceChanged,
   EVENTS.workspaceIndexStatus,
+  EVENTS.meetingProgress,
+  EVENTS.meetingModelProgress,
 ] as const satisfies readonly EventName[];
 
 /**
@@ -180,6 +224,7 @@ export const MENU_ACTIONS = {
   fileOpen: "file.open",
   fileOpenFolder: "file.openFolder",
   fileSave: "file.save",
+  fileMeeting: "file.meeting",
   paletteOpen: "palette.open",
   toggleLivePreview: "view.toggleLivePreview",
   toggleOutline: "view.toggleOutline",
@@ -199,6 +244,7 @@ export const MENU_ACTION_NAMES = [
   MENU_ACTIONS.fileOpen,
   MENU_ACTIONS.fileOpenFolder,
   MENU_ACTIONS.fileSave,
+  MENU_ACTIONS.fileMeeting,
   MENU_ACTIONS.paletteOpen,
   MENU_ACTIONS.toggleLivePreview,
   MENU_ACTIONS.toggleOutline,
@@ -281,6 +327,21 @@ export interface CommandRequestMap {
   [COMMANDS.sessionDraftList]: Record<string, never>;
   [COMMANDS.sessionDraftRead]: { id: string };
   [COMMANDS.sessionDraftDiscard]: { id: string };
+  [COMMANDS.meetingStart]: Record<string, never>;
+  [COMMANDS.meetingRetry]: { requestId: string };
+  [COMMANDS.meetingCancel]: { requestId: string };
+  [COMMANDS.meetingStatus]: { requestId: string };
+  [COMMANDS.meetingTakeResult]: { requestId: string };
+  [COMMANDS.meetingConfigGet]: Record<string, never>;
+  [COMMANDS.meetingConfigSet]: { patch: MeetingConfigPatch; expectedRevision: number };
+  [COMMANDS.meetingKeyStatus]: { slot: string };
+  [COMMANDS.meetingKeySet]: { slot: string; value: string };
+  [COMMANDS.meetingKeyClear]: { slot: string; all?: boolean };
+  [COMMANDS.meetingModelsList]: Record<string, never>;
+  [COMMANDS.meetingModelDownload]: { id: string };
+  [COMMANDS.meetingModelDownloadCancel]: { downloadId: string };
+  [COMMANDS.meetingModelRemove]: { id: string };
+  [COMMANDS.appSettingsOpen]: { section?: string };
 }
 
 export interface CommandResponseMap {
@@ -331,6 +392,21 @@ export interface CommandResponseMap {
   [COMMANDS.sessionDraftList]: DraftMeta[];
   [COMMANDS.sessionDraftRead]: DraftRecord;
   [COMMANDS.sessionDraftDiscard]: boolean;
+  [COMMANDS.meetingStart]: MeetingStartResponse;
+  [COMMANDS.meetingRetry]: MeetingRetryResponse;
+  [COMMANDS.meetingCancel]: null;
+  [COMMANDS.meetingStatus]: MeetingOutcome;
+  [COMMANDS.meetingTakeResult]: MeetingResult | null;
+  [COMMANDS.meetingConfigGet]: MeetingConfigGetResponse;
+  [COMMANDS.meetingConfigSet]: MeetingConfigSetResponse;
+  [COMMANDS.meetingKeyStatus]: KeyStatus;
+  [COMMANDS.meetingKeySet]: null;
+  [COMMANDS.meetingKeyClear]: null;
+  [COMMANDS.meetingModelsList]: ModelView[];
+  [COMMANDS.meetingModelDownload]: ModelDownloadResponse;
+  [COMMANDS.meetingModelDownloadCancel]: null;
+  [COMMANDS.meetingModelRemove]: null;
+  [COMMANDS.appSettingsOpen]: null;
 }
 
 export type CommandError = AppError;
@@ -391,6 +467,21 @@ export const COMMAND_PERMISSIONS = {
   [COMMANDS.sessionDraftList]: commandPermission(COMMANDS.sessionDraftList),
   [COMMANDS.sessionDraftRead]: commandPermission(COMMANDS.sessionDraftRead),
   [COMMANDS.sessionDraftDiscard]: commandPermission(COMMANDS.sessionDraftDiscard),
+  [COMMANDS.meetingStart]: commandPermission(COMMANDS.meetingStart),
+  [COMMANDS.meetingRetry]: commandPermission(COMMANDS.meetingRetry),
+  [COMMANDS.meetingCancel]: commandPermission(COMMANDS.meetingCancel),
+  [COMMANDS.meetingStatus]: commandPermission(COMMANDS.meetingStatus),
+  [COMMANDS.meetingTakeResult]: commandPermission(COMMANDS.meetingTakeResult),
+  [COMMANDS.meetingConfigGet]: commandPermission(COMMANDS.meetingConfigGet),
+  [COMMANDS.meetingConfigSet]: commandPermission(COMMANDS.meetingConfigSet),
+  [COMMANDS.meetingKeyStatus]: commandPermission(COMMANDS.meetingKeyStatus),
+  [COMMANDS.meetingKeySet]: commandPermission(COMMANDS.meetingKeySet),
+  [COMMANDS.meetingKeyClear]: commandPermission(COMMANDS.meetingKeyClear),
+  [COMMANDS.meetingModelsList]: commandPermission(COMMANDS.meetingModelsList),
+  [COMMANDS.meetingModelDownload]: commandPermission(COMMANDS.meetingModelDownload),
+  [COMMANDS.meetingModelDownloadCancel]: commandPermission(COMMANDS.meetingModelDownloadCancel),
+  [COMMANDS.meetingModelRemove]: commandPermission(COMMANDS.meetingModelRemove),
+  [COMMANDS.appSettingsOpen]: commandPermission(COMMANDS.appSettingsOpen),
 } as const satisfies Record<CommandName, string>;
 
 export type IpcInvoker = <K extends CommandName>(

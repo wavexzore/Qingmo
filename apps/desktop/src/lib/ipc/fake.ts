@@ -14,6 +14,18 @@ import type {
   HistoryRecord,
   ImageSaveResult,
   JsonValue,
+  KeyStatus,
+  MeetingConfigGetResponse,
+  MeetingConfigPatch,
+  MeetingConfigSetResponse,
+  MeetingOutcome,
+  MeetingProgress,
+  MeetingResult,
+  MeetingRetryResponse,
+  MeetingStartResponse,
+  ModelDownloadResponse,
+  ModelProgress,
+  ModelView,
   ReadOnlyReason,
   SaveRequest,
   SaveResult,
@@ -164,6 +176,8 @@ export class FakeIpc implements IpcPort {
   private readonly indexStatusListeners = new Set<
     (payload: import("@qingmo/shared").WorkspaceIndexStatusPayload) => void
   >();
+  private readonly meetingProgressListeners = new Set<(progress: MeetingProgress) => void>();
+  private readonly meetingModelProgressListeners = new Set<(progress: ModelProgress) => void>();
   private readonly history = new Map<string, HistoryEntry[]>();
   private readonly historyBodies = new Map<string, HistoryRecord>();
   private readonly trash = new Map<string, TrashEntry>();
@@ -194,6 +208,7 @@ export class FakeIpc implements IpcPort {
   readonly localeCalls: ApplyLocaleRequest[] = [];
   readonly openedLinks: string[] = [];
   readonly commandCalls: FakeWorkspaceCall[] = [];
+  readonly appSettingsOpenCalls: Array<string | undefined> = [];
 
   constructor(options: FakeIpcOptions = {}) {
     for (const file of options.files ?? []) {
@@ -1153,6 +1168,163 @@ export class FakeIpc implements IpcPort {
     await this.wait(COMMANDS.sessionDraftDiscard);
     this.maybeThrow(COMMANDS.sessionDraftDiscard);
     return this.drafts.delete(id);
+  }
+
+  async meetingStart(): Promise<MeetingStartResponse> {
+    await this.wait(COMMANDS.meetingStart);
+    this.maybeThrow(COMMANDS.meetingStart);
+    return { requestId: newUuid() };
+  }
+
+  async meetingRetry(requestId: string): Promise<MeetingRetryResponse> {
+    await this.wait(COMMANDS.meetingRetry);
+    this.maybeThrow(COMMANDS.meetingRetry);
+    this.record(COMMANDS.meetingRetry, { requestId });
+    return { requestId, attempt: 2 };
+  }
+
+  async meetingCancel(requestId: string): Promise<void> {
+    await this.wait(COMMANDS.meetingCancel);
+    this.maybeThrow(COMMANDS.meetingCancel);
+    this.record(COMMANDS.meetingCancel, { requestId });
+  }
+
+  async meetingStatus(requestId: string): Promise<MeetingOutcome> {
+    await this.wait(COMMANDS.meetingStatus);
+    this.maybeThrow(COMMANDS.meetingStatus);
+    this.record(COMMANDS.meetingStatus, { requestId });
+    return "gone";
+  }
+
+  async meetingTakeResult(requestId: string): Promise<MeetingResult | null> {
+    await this.wait(COMMANDS.meetingTakeResult);
+    this.maybeThrow(COMMANDS.meetingTakeResult);
+    this.record(COMMANDS.meetingTakeResult, { requestId });
+    return null;
+  }
+
+  async meetingConfigGet(): Promise<MeetingConfigGetResponse> {
+    await this.wait(COMMANDS.meetingConfigGet);
+    this.maybeThrow(COMMANDS.meetingConfigGet);
+    return {
+      config: {
+        runtime: { mode: "auto" },
+        asr: {
+          mode: "local",
+          provider: "openai",
+          model: "",
+          apiKeyRef: "",
+          keyStatus: "absent",
+        },
+        llm: {
+          mode: "local",
+          baseUrl: "",
+          model: "",
+          apiKeyRef: "",
+          keyStatus: "absent",
+        },
+        keepTranscript: true,
+        maxMinutes: 180,
+        revision: 0,
+      },
+      preview: {
+        defaults: {
+          asrModel: "paraformer-zh-en-int8",
+          llmModel: "qwen3-4b-instruct-q4km",
+          threads: 4,
+          accel: "cpu",
+          notes: [],
+        },
+        resolved: {
+          asr: "paraformer-zh-en-int8",
+          llm: "qwen3-4b-instruct-q4km",
+          asrOrigin: "auto",
+          llmOrigin: "auto",
+        },
+        asrBudgetMb: 4096,
+        llmBudgetMb: 8192,
+      },
+    };
+  }
+
+  async meetingConfigSet(
+    patch: MeetingConfigPatch,
+    expectedRevision: number,
+  ): Promise<MeetingConfigSetResponse> {
+    await this.wait(COMMANDS.meetingConfigSet);
+    this.maybeThrow(COMMANDS.meetingConfigSet);
+    this.record(COMMANDS.meetingConfigSet, { patch, expectedRevision });
+    return { revision: expectedRevision + 1 };
+  }
+
+  async meetingKeyStatus(slot: string): Promise<KeyStatus> {
+    await this.wait(COMMANDS.meetingKeyStatus);
+    this.maybeThrow(COMMANDS.meetingKeyStatus);
+    this.record(COMMANDS.meetingKeyStatus, { slot });
+    return "absent";
+  }
+
+  async meetingKeySet(slot: string, value: string): Promise<void> {
+    await this.wait(COMMANDS.meetingKeySet);
+    this.maybeThrow(COMMANDS.meetingKeySet);
+    this.record(COMMANDS.meetingKeySet, { slot, value });
+  }
+
+  async meetingKeyClear(slot: string, all?: boolean): Promise<void> {
+    await this.wait(COMMANDS.meetingKeyClear);
+    this.maybeThrow(COMMANDS.meetingKeyClear);
+    this.record(COMMANDS.meetingKeyClear, { slot, all });
+  }
+
+  async meetingModelsList(): Promise<ModelView[]> {
+    await this.wait(COMMANDS.meetingModelsList);
+    this.maybeThrow(COMMANDS.meetingModelsList);
+    return [];
+  }
+
+  async meetingModelDownload(id: string): Promise<ModelDownloadResponse> {
+    await this.wait(COMMANDS.meetingModelDownload);
+    this.maybeThrow(COMMANDS.meetingModelDownload);
+    this.record(COMMANDS.meetingModelDownload, { id });
+    return { downloadId: newUuid() };
+  }
+
+  async meetingModelDownloadCancel(downloadId: string): Promise<void> {
+    await this.wait(COMMANDS.meetingModelDownloadCancel);
+    this.maybeThrow(COMMANDS.meetingModelDownloadCancel);
+    this.record(COMMANDS.meetingModelDownloadCancel, { downloadId });
+  }
+
+  async meetingModelRemove(id: string): Promise<void> {
+    await this.wait(COMMANDS.meetingModelRemove);
+    this.maybeThrow(COMMANDS.meetingModelRemove);
+    this.record(COMMANDS.meetingModelRemove, { id });
+  }
+
+  async appSettingsOpen(section?: string): Promise<void> {
+    await this.wait(COMMANDS.appSettingsOpen);
+    this.maybeThrow(COMMANDS.appSettingsOpen);
+    this.appSettingsOpenCalls.push(section);
+  }
+
+  onMeetingProgress(callback: (progress: MeetingProgress) => void): () => void {
+    this.meetingProgressListeners.add(callback);
+    return () => this.meetingProgressListeners.delete(callback);
+  }
+
+  onMeetingModelProgress(callback: (progress: ModelProgress) => void): () => void {
+    this.meetingModelProgressListeners.add(callback);
+    return () => this.meetingModelProgressListeners.delete(callback);
+  }
+
+  /** Test hook: push one synthetic progress event to subscribers. */
+  emitMeetingProgress(progress: MeetingProgress): void {
+    for (const listener of this.meetingProgressListeners) listener(progress);
+  }
+
+  /** Test hook: push one synthetic model progress event to subscribers. */
+  emitMeetingModelProgress(progress: ModelProgress): void {
+    for (const listener of this.meetingModelProgressListeners) listener(progress);
   }
 
   private pruneDrafts(): void {
