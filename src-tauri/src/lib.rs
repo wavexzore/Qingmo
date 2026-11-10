@@ -564,12 +564,19 @@ fn resolve_window_title(
     labels: &NativeShellLabels,
     sessions: &state::WindowSessions,
     registry: &state::DocumentRegistry,
+    meetings: &state::MeetingRegistry,
 ) -> Option<String> {
     if label == ABOUT_WINDOW_LABEL {
         return Some(labels.about.clone());
     }
     if label == SETTINGS_WINDOW_LABEL {
         return Some(labels.settings.clone());
+    }
+    if let Some(title) = meetings.display_title_for_label(label) {
+        return Some(commands::document::window_title_for_untitled(
+            &title,
+            &labels.app_name,
+        ));
     }
     if let Some(path) = sessions.pending_path(label) {
         return Some(commands::document::window_title_for(
@@ -598,8 +605,11 @@ fn resolve_window_title(
 pub(crate) fn apply_window_titles<R: Runtime>(app: &AppHandle<R>, labels: &NativeShellLabels) {
     let sessions = app.state::<state::WindowSessions>();
     let registry = app.state::<state::DocumentRegistry>();
+    let meetings = app.state::<state::MeetingRegistry>();
     for window in app.webview_windows().values() {
-        if let Some(title) = resolve_window_title(window.label(), labels, &sessions, &registry) {
+        if let Some(title) =
+            resolve_window_title(window.label(), labels, &sessions, &registry, &meetings)
+        {
             if let Err(error) = window.set_title(&title) {
                 tracing::warn!(
                     %error,
@@ -1044,6 +1054,7 @@ pub fn run() {
                 }
             };
             app.manage(meeting_config);
+            app.manage(Arc::clone(&meeting_catalog));
             app.manage(state::MeetingRegistry::new(app.handle().clone()));
             app.manage(state::AssetScope::new(app.handle().clone()));
             let session_store = match local_data.as_ref() {
@@ -1257,6 +1268,14 @@ pub fn run() {
         } => {
             app_handle.state::<state::FocusTracker>().clear(&label);
             app_handle.state::<state::PreviewModes>().clear(&label);
+            // A meeting window must stop its job and drop its terminal before
+            // the document/workspace state goes away.
+            let meetings = app_handle.state::<state::MeetingRegistry>();
+            meetings.cancel_by_label(&label);
+            meetings.release_by_label(&label);
+            app_handle
+                .state::<state::AssetScope>()
+                .release_by_label(&label);
             // A window can be destroyed without the normal close handshake
             // (for example a crashed webview); release the document, workspace
             // and their watchers so no registry outlives the window.
@@ -1358,6 +1377,12 @@ pub fn run() {
 #[cfg(test)]
 mod menu_tests {
     use super::*;
+
+    struct NoopEmitter;
+
+    impl state::meeting::progress::ProgressEmitter for NoopEmitter {
+        fn emit(&self, _window_label: &str, _progress: &state::meeting::job::MeetingProgress) {}
+    }
 
     fn labels(prefix: &str) -> NativeShellLabels {
         NativeShellLabels {
@@ -1742,48 +1767,58 @@ mod menu_tests {
         let labels = labels("zh");
         let sessions = state::WindowSessions::new();
         let registry = state::DocumentRegistry::new();
+        let meetings = state::MeetingRegistry::with_emitter(std::sync::Arc::new(NoopEmitter));
 
         sessions.mark_untitled("main");
         assert_eq!(
-            resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
+            resolve_window_title("main", &labels, &sessions, &registry, &meetings).as_deref(),
             Some("zh.md — zh-app")
         );
         sessions.set_token("main", "main-token".to_string());
         assert!(!sessions.is_untitled("main"));
         assert!(
-            resolve_window_title("main", &labels, &sessions, &registry).is_none(),
+            resolve_window_title("main", &labels, &sessions, &registry, &meetings).is_none(),
             "main keeps its title while a token has no record"
         );
         sessions.release("main");
         assert_eq!(
-            resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
+            resolve_window_title("main", &labels, &sessions, &registry, &meetings).as_deref(),
             Some("zh-app")
         );
 
         sessions.mark_untitled("doc-new");
         assert_eq!(
-            resolve_window_title("doc-new", &labels, &sessions, &registry).as_deref(),
+            resolve_window_title("doc-new", &labels, &sessions, &registry, &meetings).as_deref(),
             Some("zh.md — zh-app")
         );
         sessions.clear_untitled("doc-new");
         assert_eq!(
-            resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
+            resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry, &meetings)
+                .as_deref(),
             Some("zh-about")
         );
         assert_eq!(
-            resolve_window_title(SETTINGS_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
+            resolve_window_title(
+                SETTINGS_WINDOW_LABEL,
+                &labels,
+                &sessions,
+                &registry,
+                &meetings
+            )
+            .as_deref(),
             Some("zh-settings")
         );
 
         sessions.stage("doc-pending", payload("/docs/pending.md", "pending-token"));
         assert_eq!(
-            resolve_window_title("doc-pending", &labels, &sessions, &registry).as_deref(),
+            resolve_window_title("doc-pending", &labels, &sessions, &registry, &meetings)
+                .as_deref(),
             Some("pending.md — zh-app")
         );
 
         sessions.set_token("doc-missing", "missing-token".to_string());
         assert_eq!(
-            resolve_window_title("doc-missing", &labels, &sessions, &registry),
+            resolve_window_title("doc-missing", &labels, &sessions, &registry, &meetings),
             None,
             "a token without a registry record must keep the current title"
         );
@@ -1794,8 +1829,20 @@ mod menu_tests {
         let opened = registry.open_path(path).expect("fixture must open");
         sessions.set_token("doc-token", opened.doc_token.clone());
         assert_eq!(
-            resolve_window_title("doc-token", &labels, &sessions, &registry).as_deref(),
+            resolve_window_title("doc-token", &labels, &sessions, &registry, &meetings).as_deref(),
             Some("note.md — zh-app")
+        );
+        let (meeting_id, _) = meetings
+            .begin(
+                state::MeetingSource::new("/docs/访谈.m4a", 1, 65_000),
+                "doc-token",
+            )
+            .unwrap();
+        meetings.set_display_title(meeting_id, "访谈".into());
+        assert_eq!(
+            resolve_window_title("doc-token", &labels, &sessions, &registry, &meetings).as_deref(),
+            Some("访谈 — zh-app"),
+            "meeting titles keep the source stem across locale rebuilds"
         );
     }
 }

@@ -167,14 +167,14 @@ async fn restore_one<R: tauri::Runtime>(
             )
             .await
         }
-        None => {
-            crate::commands::document::create_untitled_window_with_label(
-                app.clone(),
-                workspace_token.clone(),
-                label.map(str::to_string),
-            )
-            .await
-        }
+        None => crate::commands::document::create_untitled_window_with_label(
+            app.clone(),
+            workspace_token.clone(),
+            label.map(str::to_string),
+            None,
+        )
+        .await
+        .map(|_| ()),
     };
 
     if let Some(token) = workspace_token {

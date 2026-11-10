@@ -600,4 +600,43 @@ describe("EditorSession", () => {
     expect(detached.revealPosition(2)).toBe(true);
     expect(detached.getSnapshot().selection).toEqual({ anchor: 2, head: 2 });
   });
+
+  it("inserts meeting text in one undoable transaction and marks the draft dirty", () => {
+    const session = EditorSession.createUntitled("未命名");
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state: session.editorState, parent });
+    session.attach(view);
+
+    try {
+      session.insertDocumentText("# 纪要\n\n- 决定\n");
+
+      expect(session.readText()).toBe("# 纪要\n\n- 决定\n");
+      expect(view.state.selection.main.head).toBe(0);
+      expect(session.getSnapshot().saveState).toBe("dirty");
+      undo({
+        state: view.state,
+        dispatch: (transaction: Transaction) => view.dispatch(transaction),
+      });
+      expect(session.readText()).toBe("");
+    } finally {
+      session.detach(view);
+      view.destroy();
+      parent.remove();
+    }
+  });
+
+  it("inserts meeting text without an attached view and notifies the journal", () => {
+    const session = EditorSession.createUntitled("未命名");
+    const changes = vi.fn();
+    const unsubscribe = session.onDocChanged(changes);
+
+    session.insertDocumentText("# 纪要\n");
+
+    expect(session.readText()).toBe("# 纪要\n");
+    expect(session.getSnapshot()).toMatchObject({ saveState: "dirty", dirty: true });
+    expect(changes).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    session.dispose();
+  });
 });

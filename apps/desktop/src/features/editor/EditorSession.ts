@@ -700,6 +700,49 @@ export class EditorSession {
     this.publish({ fileName: title });
   }
 
+  /**
+   * Replaces the whole document with generated meeting minutes in one
+   * transaction, marks it dirty and notifies the journal. One `Mod+Z` undoes
+   * the entire insertion. Works without an attached view because MeetingBoot
+   * replaces EditorHost until the result has landed.
+   */
+  insertDocumentText(markdown: string): void {
+    if (this.disposed) {
+      throw new Error("editor session is disposed");
+    }
+    const state = this.currentState;
+    const transaction = state.update({
+      changes: { from: 0, to: state.doc.length, insert: markdown },
+      selection: { anchor: 0 },
+    });
+    if (this.view) {
+      this.view.dispatch(transaction);
+      return;
+    }
+    this.state = transaction.state;
+    const selection = selectionOf(this.state);
+    const cursor = cursorAt(this.state, selection.head);
+    const tier = previewTierFor(this.state.doc.length);
+    const effective = this.previewPreference && tier !== "source";
+    if (effective !== this.modeAttached) {
+      this.requestModeSync();
+    }
+    this.publish(
+      {
+        saveState: this.snapshot.readOnly ? this.snapshot.saveState : "dirty",
+        selection,
+        cursor,
+        previewTier: tier,
+        livePreviewPreferred: this.previewPreference,
+        livePreview: effective,
+      },
+      true,
+    );
+    for (const listener of [...this.docChangedListeners]) {
+      listener();
+    }
+  }
+
   /** SaveCoordinator subscribes here; the session never imports it. */
   onDocChanged(listener: () => void): () => void {
     if (this.disposed) {

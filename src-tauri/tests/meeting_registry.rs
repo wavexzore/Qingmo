@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use qingmo_lib::error::{AppError, AppErrorCode};
+use qingmo_lib::ipc::dto::{Accel, LlmMode};
 use qingmo_lib::services::meeting::pipeline::{StopExit, StopReason};
-use qingmo_lib::services::meeting::runtime::Accel;
-use qingmo_lib::services::meeting::summarize::LlmMode;
 use qingmo_lib::state::meeting::asset_scope::{AssetAllow, AssetScope};
 use qingmo_lib::state::meeting::job::{
     AsrBackend, Degraded, MeetingProgress, MeetingResult, MeetingSource, MeetingStage,

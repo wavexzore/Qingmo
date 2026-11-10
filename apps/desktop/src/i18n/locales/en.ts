@@ -4,6 +4,47 @@ import menu from "./menu.en.json";
 
 export { menu };
 
+const meeting = {
+  preparing: "Preparing the meeting minutes…",
+  stage: {
+    preparing: "Preparing",
+    transcribing: "Transcribing",
+    releasing: "Releasing resources",
+    partial: "Partially transcribed",
+    summarizing: "Summarizing",
+    rendering: "Rendering",
+    done: "Done",
+    partialDone: "Partially done",
+    cancelled: "Cancelled",
+    failed: "Failed",
+  },
+  field: {
+    backend: "Route",
+    model: "Model",
+    accel: "Acceleration",
+    speakers: "Speakers",
+    failed: "Failed segments",
+    rtf: "RTF",
+    stage: "Stage",
+  },
+  backend: { local: "Local", remote: "Remote · {{provider}}" },
+  accel: { cpu: "CPU", metal: "Metal" },
+  window: "Segment {{index}} / {{total}}",
+  failedTitle: "Meeting processing failed",
+  modelHint: "Download the model, then retry in this window without picking the file again.",
+  modelToast: "Meeting minutes need a downloaded model first",
+  openSettings: "Open Settings",
+  settingsFailed: "Could not open Settings",
+  retry: "Retry",
+  cancelledTitle: "Cancelled",
+  cancelledHint: "Close this window or start another meeting.",
+  goneTitle: "Task ended",
+  goneHint: "The result was released; start again.",
+  insertFailedTitle: "Insert failed",
+  insertFailedHint: "The minutes are still held by the task; retrying only inserts again.",
+  retryInsert: "Retry insertion",
+};
+
 export const common = {
   appName: "Qingmo",
   appNameLatin: "Qingmo",
@@ -673,6 +714,7 @@ export const trash = {
 export const en = {
   common,
   editor,
+  meeting,
   errors,
   update,
   commands: commandLabels,

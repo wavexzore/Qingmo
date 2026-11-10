@@ -6,16 +6,11 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::services::meeting::asr_route::AsrMode;
 use crate::services::meeting::pipeline::{StopExit, StopReason};
-use crate::services::meeting::remote_asr::RemoteProvider;
-use crate::services::meeting::runtime::Accel;
-use crate::services::meeting::summarize::LlmMode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MeetingSource {
@@ -44,20 +39,10 @@ fn source_name(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MeetingStage {
-    Preparing,
-    Transcribing,
-    Releasing,
-    Summarizing,
-    Rendering,
-    Partial,
-    PartialDone,
-    Done,
-    Cancelled,
-    Failed,
-}
+pub use crate::ipc::dto::{
+    Accel, AsrBackend, AsrMode, Degraded, LlmMode, MeetingOutcome, MeetingProgress, MeetingResult,
+    MeetingStage, MeetingStats, WindowPhase, WindowProgress,
+};
 
 impl MeetingStage {
     pub fn is_terminal(self) -> bool {
@@ -66,114 +51,6 @@ impl MeetingStage {
             Self::PartialDone | Self::Done | Self::Cancelled | Self::Failed
         )
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WindowPhase {
-    Decoding,
-    Diarizing,
-    Transcribing,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct WindowProgress {
-    pub index: u32,
-    pub total: u32,
-    pub phase: WindowPhase,
-    pub done_segments: u32,
-    pub total_segments: u32,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "provider", rename_all = "lowercase")]
-pub enum AsrBackend {
-    #[default]
-    Local,
-    Remote(RemoteProvider),
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Degraded {
-    #[serde(default)]
-    pub llm_model_missing: bool,
-    #[serde(default)]
-    pub llm_unconfigured: bool,
-    #[serde(default)]
-    pub llm_budget_exceeded: bool,
-    #[serde(default)]
-    pub partial_decode: bool,
-    #[serde(default)]
-    pub remote_fallback: bool,
-    #[serde(default)]
-    pub remote_key_missing: bool,
-    #[serde(default)]
-    pub remote_last_error: Option<crate::services::meeting::runtime::ReasonCode>,
-    #[serde(default)]
-    pub partial_until_ms: Option<u64>,
-    #[serde(default)]
-    pub speaker_degraded: bool,
-    #[serde(default)]
-    pub speaker_partial: bool,
-    #[serde(default)]
-    pub high_memory_model: bool,
-    #[serde(default)]
-    pub slow_machine: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MeetingStats {
-    pub decisions: u32,
-    pub actions: u32,
-    pub risks: u32,
-    pub unverified: u32,
-    pub failed_segments: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MeetingResult {
-    pub markdown: String,
-    pub audio_url: String,
-    pub title: String,
-    pub duration_ms: u64,
-    pub stats: MeetingStats,
-    pub partial: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MeetingProgress {
-    pub request_id: Uuid,
-    pub attempt: u32,
-    pub stage: MeetingStage,
-    pub window: Option<WindowProgress>,
-    pub elapsed_ms: u64,
-    pub source_name: String,
-    pub duration_ms: u64,
-    pub bytes: u64,
-    pub actual_backend: AsrBackend,
-    pub local_model: String,
-    pub llm_mode: LlmMode,
-    pub llm_model: String,
-    pub accel: Accel,
-    pub rtf: Option<f32>,
-    pub speaker_count: Option<u8>,
-    pub failed_segments: u32,
-    pub degraded: Degraded,
-    pub error: Option<AppError>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum MeetingOutcome {
-    Running(MeetingProgress),
-    Ready(MeetingResult),
-    Failed { error: AppError, attempt: u32 },
-    Gone,
 }
 
 pub enum Terminal {
@@ -252,9 +129,10 @@ impl MeetingJob {
 
     pub fn progress(&self) -> MeetingProgress {
         MeetingProgress {
-            request_id: self.id,
+            request_id: self.id.to_string(),
             attempt: self.attempt,
             stage: self.stage,
+            audio_url: self.audio_url.clone().unwrap_or_default(),
             window: self.window,
             elapsed_ms: self.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
             source_name: self.source.display_name(),

@@ -31,6 +31,7 @@ fn failing_build(
     _: &tauri::AppHandle<MockRuntime>,
     _: &str,
     _: String,
+    _: &str,
 ) -> tauri::Result<tauri::WebviewWindow<MockRuntime>> {
     Err(tauri::Error::AssetNotFound("missing".to_string()))
 }
@@ -64,6 +65,7 @@ fn a_failed_window_rolls_back_without_adding_the_main_window() {
         &handle,
         "doc-new".to_string(),
         "title".to_string(),
+        "",
         failing_build,
         || rolled_back.set(true),
     )
@@ -86,6 +88,7 @@ fn a_failed_last_window_falls_back_to_the_main_window() {
         &handle,
         "doc-new".to_string(),
         "title".to_string(),
+        "",
         failing_build,
         || {},
     )
@@ -108,6 +111,7 @@ fn the_fallback_main_build_finishes_the_boot_claim() {
         &handle,
         "doc-new".to_string(),
         "title".to_string(),
+        "",
         failing_build,
         || {},
     )

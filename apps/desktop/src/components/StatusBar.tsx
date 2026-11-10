@@ -5,7 +5,7 @@ import {
   PREVIEW_PARTIAL_MAX_UNITS,
   type PreviewTier,
 } from "@qingmo/editor-core";
-import type { ReadOnlyReason } from "@qingmo/shared";
+import type { MeetingProgress, ReadOnlyReason } from "@qingmo/shared";
 import { cx } from "@qingmo/ui";
 
 import type { SaveState } from "../lib/save-state";
@@ -85,10 +85,22 @@ export interface StatusBarProps {
   snapshot?: StatusBarSnapshot;
   /** Shown only for terminal save errors; retries through SaveCoordinator. */
   onRetry?: () => void;
+  /** Live meeting state for a result window; omitted for ordinary documents. */
+  meeting?: MeetingProgress | null;
+  /** Asset URL kept after the terminal state so playback survives completion. */
+  meetingAudioUrl?: string;
+  /** Renders the partial terminal badge even without a progress snapshot. */
+  meetingPartial?: boolean;
 }
 
-export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusBarProps) {
-  const { t, i18n } = useTranslation(["common", "editor"]);
+export function StatusBar({
+  snapshot = EMPTY_STATUS_SNAPSHOT,
+  onRetry,
+  meeting = null,
+  meetingAudioUrl = "",
+  meetingPartial = false,
+}: StatusBarProps) {
+  const { t, i18n } = useTranslation(["common", "editor", "meeting"]);
 
   const fileName = snapshot.fileName ?? t("common:status.noFile");
   const saveLabel = t(`common:saveState.${snapshot.saveState}`);
@@ -108,6 +120,9 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
   const formatLimit = (units: number) => new Intl.NumberFormat(i18n.language).format(units);
   const partialPreview = snapshot.previewTier === "partial" && snapshot.mode === "livePreview";
   const sourcePreview = snapshot.previewTier === "source";
+  const meetingStage = meeting
+    ? t(`meeting:stage.${meeting.stage}`, { defaultValue: meeting.stage })
+    : null;
 
   return (
     <footer
@@ -170,6 +185,43 @@ export function StatusBar({ snapshot = EMPTY_STATUS_SNAPSHOT, onRetry }: StatusB
           label={t("common:status.size")}
           value={formatBytes(snapshot.size, i18n.language)}
         />
+        {meetingPartial ? (
+          <Item
+            testId="status-meeting-stage"
+            className="hidden @md:inline-flex"
+            label={t("meeting:field.stage")}
+            value={t("meeting:stage.partialDone")}
+          />
+        ) : null}
+        {meeting ? (
+          <>
+            {!meetingPartial ? (
+              <Item
+                testId="status-meeting-stage"
+                className="hidden @md:inline-flex"
+                label={t("meeting:field.stage")}
+                value={meetingStage ?? meeting.stage}
+              />
+            ) : null}
+            <Item
+              testId="status-meeting-speakers"
+              className="hidden @xl:inline-flex"
+              label={t("meeting:field.speakers")}
+              value={meeting.speakerCount == null ? "—" : String(meeting.speakerCount)}
+            />
+            {meetingAudioUrl ? (
+              // The audio URL is a per-window asset URL; it stays valid for
+              // the window's lifetime and is released on Destroyed.
+              <audio
+                data-testid="meeting-audio"
+                src={meetingAudioUrl}
+                controls
+                preload="metadata"
+                className="h-6 max-w-48 shrink-0"
+              />
+            ) : null}
+          </>
+        ) : null}
       </div>
 
       <span className="ml-auto flex shrink-0 items-center gap-2">

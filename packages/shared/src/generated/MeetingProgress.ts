@@ -7,4 +7,4 @@ import type { LlmMode } from "./LlmMode";
 import type { MeetingStage } from "./MeetingStage";
 import type { WindowProgress } from "./WindowProgress";
 
-export type MeetingProgress = { requestId: string, attempt: number, stage: MeetingStage, window?: WindowProgress, elapsedMs: number, sourceName: string, durationMs: number, bytes: number, actualBackend: AsrBackend, localModel: string, llmMode: LlmMode, llmModel: string, accel: Accel, rtf?: number, speakerCount?: number, failedSegments: number, degraded: Degraded, error?: AppError, };
+export type MeetingProgress = { requestId: string, attempt: number, stage: MeetingStage, audioUrl: string, window?: WindowProgress, elapsedMs: number, sourceName: string, durationMs: number, bytes: number, actualBackend: AsrBackend, localModel: string, llmMode: LlmMode, llmModel: string, accel: Accel, rtf?: number, speakerCount?: number, failedSegments: number, degraded: Degraded, error?: AppError, };

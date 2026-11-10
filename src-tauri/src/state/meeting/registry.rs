@@ -15,6 +15,7 @@ use super::job::{
     retryable_error, AsrBackend, Degraded, MeetingJob, MeetingOutcome, MeetingResult,
     MeetingSource, MeetingStage, Terminal, WindowProgress,
 };
+use super::job::{Accel, LlmMode};
 use super::progress::{ProgressEmitter, TauriProgressEmitter};
 use crate::error::{AppError, AppErrorCode};
 use crate::services::meeting::pipeline::{StopExit, StopReason};
@@ -48,7 +49,9 @@ impl MeetingRegistry {
         self.state.lock().expect("meeting registry poisoned")
     }
 
-    fn emit(&self, label: &str, progress: &MeetingProgress) {
+    /// Emit one snapshot. Mutation helpers already emit; terminal snapshots
+    /// returned by `finish`/`fail` are emitted once by their caller.
+    pub fn emit_progress(&self, label: &str, progress: &MeetingProgress) {
         self.emitter.emit(label, progress);
     }
 
@@ -73,7 +76,7 @@ impl MeetingRegistry {
         let progress = job.progress();
         state.running = Some(job);
         drop(state);
-        self.emit(window_label, &progress);
+        self.emit_progress(window_label, &progress);
         Ok((id, token))
     }
 
@@ -141,7 +144,7 @@ impl MeetingRegistry {
         let progress = job.progress();
         state.running = Some(job);
         drop(state);
-        self.emit(window_label, &progress);
+        self.emit_progress(window_label, &progress);
         Ok((token, next_attempt))
     }
 
@@ -256,7 +259,7 @@ impl MeetingRegistry {
         let progress = job.progress();
         let label = job.window_label.clone();
         drop(state);
-        self.emit(&label, &progress);
+        self.emit_progress(&label, &progress);
         Ok(())
     }
 
@@ -292,6 +295,28 @@ impl MeetingRegistry {
 
     pub fn set_backend(&self, id: Uuid, backend: AsrBackend) -> bool {
         self.mutate(id, |job| job.actual_backend = backend)
+    }
+
+    pub fn set_local_model(&self, id: Uuid, model: &str) -> Result<(), AppError> {
+        self.mutate_checked(id, |job| {
+            job.local_model = model.to_owned();
+            true
+        })
+        .then_some(())
+        .ok_or_else(not_running)
+    }
+
+    pub fn set_accel(&self, id: Uuid, accel: Accel) -> Result<(), AppError> {
+        self.mutate_checked(id, |job| {
+            job.accel = accel;
+            true
+        })
+        .then_some(())
+        .ok_or_else(not_running)
+    }
+
+    pub fn set_llm_mode(&self, id: Uuid, mode: LlmMode) -> bool {
+        self.mutate(id, |job| job.llm_mode = mode)
     }
 
     pub fn set_speaker_count(&self, id: Uuid, count: u8) -> bool {
@@ -348,7 +373,7 @@ impl MeetingRegistry {
         let progress = job.progress();
         let label = job.window_label.clone();
         drop(state);
-        self.emit(&label, &progress);
+        self.emit_progress(&label, &progress);
         true
     }
 
@@ -435,6 +460,44 @@ impl MeetingRegistry {
         Some(progress)
     }
 
+    /// Label of the running job, used to emit its terminal snapshot.
+    pub fn running_label(&self, id: Uuid) -> Option<String> {
+        self.lock()
+            .running
+            .as_ref()
+            .filter(|job| job.id == id)
+            .map(|job| job.window_label.clone())
+    }
+
+    /// Clone the running source, used by `meeting_retry` to spawn again.
+    pub fn running_source(&self, id: Uuid) -> Option<MeetingSource> {
+        self.lock()
+            .running
+            .as_ref()
+            .filter(|job| job.id == id)
+            .map(|job| job.source.clone())
+    }
+
+    /// Display title for a meeting window, used when locale changes rebuild
+    /// native titles. Ready terminals keep the title that was rendered.
+    pub fn display_title_for_label(&self, label: &str) -> Option<String> {
+        let state = self.lock();
+        if let Some(job) = state
+            .running
+            .as_ref()
+            .filter(|job| job.window_label == label)
+        {
+            return Some(job.display_title.clone());
+        }
+        state
+            .terminals
+            .get(label)
+            .map(|(_, terminal)| match terminal {
+                Terminal::Ready(result) => result.title.clone(),
+                Terminal::Failed { display_title, .. } => display_title.clone(),
+            })
+    }
+
     pub fn take_result(&self, id: Uuid) -> Option<MeetingResult> {
         let state = self.lock();
         state
@@ -450,6 +513,10 @@ impl MeetingRegistry {
                 }
             })
     }
+}
+
+fn not_running() -> AppError {
+    AppError::new(AppErrorCode::NotFound, "meeting task is not running")
 }
 
 fn title_from_source(source: &MeetingSource) -> String {

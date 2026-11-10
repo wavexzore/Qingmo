@@ -5,18 +5,21 @@ import { StatusBar } from "../../components/StatusBar";
 import { ConflictBanner } from "./ConflictBanner";
 import { RecoveryBanner } from "./recovery/RecoveryBanner";
 import { RecoveryDialog } from "./recovery/RecoveryDialog";
+import { MeetingBoot } from "../meeting/MeetingBoot";
+import { useMeetingProgress } from "../meeting/useMeetingProgress";
 import { EditorHost } from "./EditorHost";
-import { useDocumentSession } from "./DocumentSessionContext";
+import { meetingRequestId, useDocumentSession } from "./DocumentSessionContext";
 import { useEditor } from "./useEditor";
 import { useEditorStatus } from "./useEditorStatus";
 import { useExternalDocumentChanges } from "./useExternalDocumentChanges";
 import { useSaveCoordinator } from "./useSaveCoordinator";
 
-function DocumentEditor() {
+function DocumentEditor({ meetingId }: { meetingId: string | null }) {
   const { t } = useTranslation(["common", "editor"]);
   const { session } = useEditor();
   const { coordinator, drafts, recorder, viewState, refreshDrafts, restoreDraft, discardDraft } =
     useDocumentSession();
+  const meeting = useMeetingProgress(meetingId ?? "");
   const status = useEditorStatus(session);
   const save = useSaveCoordinator(coordinator);
   useExternalDocumentChanges(session, coordinator);
@@ -27,7 +30,7 @@ function DocumentEditor() {
   const untitled = session.isUntitled;
   const conflict = save.state === "conflict" ? save.conflict : null;
   const showConflict = !untitled && conflict !== null && conflict.currentHash !== dismissedConflict;
-  const showStatusBar = !untitled || status.saveState !== "clean";
+  const showStatusBar = meetingId !== null || !untitled || status.saveState !== "clean";
   const canRestoreDraft =
     untitled && session.getSnapshot().saveState === "clean" && session.readText().length === 0;
 
@@ -107,21 +110,34 @@ function DocumentEditor() {
 
       <div className="flex min-h-0 w-full flex-1">
         <div className="min-h-0 min-w-0 flex-1">
-          <EditorHost
-            session={session}
-            autoFocus={untitled}
-            viewState={viewState}
-            recorder={recorder}
-          />
+          {meetingId && meeting.phase !== "inserted" ? (
+            <MeetingBoot meeting={meeting} />
+          ) : (
+            <EditorHost
+              session={session}
+              autoFocus={untitled}
+              viewState={viewState}
+              recorder={recorder}
+            />
+          )}
         </div>
       </div>
 
-      {showStatusBar ? <StatusBar snapshot={status} onRetry={retrySave} /> : null}
+      {showStatusBar ? (
+        <StatusBar
+          snapshot={status}
+          onRetry={retrySave}
+          meeting={meetingId ? meeting.progress : null}
+          meetingAudioUrl={meeting.audioUrl}
+          meetingPartial={meeting.partial}
+        />
+      ) : null}
     </main>
   );
 }
 
 export function EditorPage() {
   const { session } = useDocumentSession();
-  return session ? <DocumentEditor /> : null;
+  const meetingId = meetingRequestId();
+  return session ? <DocumentEditor meetingId={meetingId} /> : null;
 }

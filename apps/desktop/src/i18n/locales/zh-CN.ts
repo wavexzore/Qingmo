@@ -4,6 +4,47 @@ import menu from "./menu.zh-CN.json";
 
 export { menu };
 
+const meeting = {
+  preparing: "正在准备会议纪要…",
+  stage: {
+    preparing: "准备中",
+    transcribing: "转写中",
+    releasing: "释放资源",
+    partial: "已转写部分",
+    summarizing: "生成摘要",
+    rendering: "生成文档",
+    done: "已完成",
+    partialDone: "部分完成",
+    cancelled: "已取消",
+    failed: "失败",
+  },
+  field: {
+    backend: "方式",
+    model: "模型",
+    accel: "加速",
+    speakers: "说话人",
+    failed: "失败段",
+    rtf: "RTF",
+    stage: "阶段",
+  },
+  backend: { local: "本地", remote: "远程 · {{provider}}" },
+  accel: { cpu: "CPU", metal: "Metal" },
+  window: "第 {{index}} / {{total}} 个片段",
+  failedTitle: "会议处理失败",
+  modelHint: "下载模型后可在同一窗口重试，无需重选文件。",
+  modelToast: "会议纪要需要先下载模型",
+  openSettings: "打开设置",
+  settingsFailed: "打开设置失败",
+  retry: "重试",
+  cancelledTitle: "已取消",
+  cancelledHint: "可以关闭此窗口，或重新开始一场会议。",
+  goneTitle: "任务已结束",
+  goneHint: "结果已释放，请重新开始。",
+  insertFailedTitle: "插入失败",
+  insertFailedHint: "纪要仍保留在任务结果中；重试只会重新插入，不会重跑转写。",
+  retryInsert: "重试插入",
+};
+
 export const common = {
   appName: "青墨",
   appNameLatin: "Qingmo",
@@ -659,6 +700,7 @@ export const trash = {
 export const zhCN = {
   common,
   editor,
+  meeting,
   errors,
   update,
   commands: commandLabels,

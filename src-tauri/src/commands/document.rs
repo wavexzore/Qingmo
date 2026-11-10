@@ -71,11 +71,12 @@ fn build_document_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
     label: &str,
     title: String,
+    query: &str,
 ) -> tauri::Result<WebviewWindow<R>> {
     let window = WebviewWindowBuilder::new(
         app,
         label,
-        WebviewUrl::App("index.html?window=document".into()),
+        WebviewUrl::App(format!("index.html?window=document{query}").into()),
     )
     .title(title)
     .inner_size(1200.0, 800.0)
@@ -111,16 +112,17 @@ pub fn create_document_window<R, Build, Rollback>(
     app: &AppHandle<R>,
     label: String,
     title: String,
+    query: &str,
     build: Build,
     rollback: Rollback,
-) -> Result<(), AppError>
+) -> Result<WebviewWindow<R>, AppError>
 where
     R: tauri::Runtime,
-    Build: FnOnce(&AppHandle<R>, &str, String) -> tauri::Result<WebviewWindow<R>>,
+    Build: FnOnce(&AppHandle<R>, &str, String, &str) -> tauri::Result<WebviewWindow<R>>,
     Rollback: FnOnce(),
 {
-    match build(app, &label, title) {
-        Ok(_) => Ok(()),
+    match build(app, &label, title, query) {
+        Ok(window) => Ok(window),
         Err(error) => {
             rollback();
             if !has_editable_window(app) {
@@ -243,18 +245,22 @@ pub async fn create_untitled_window_with_workspace<R: tauri::Runtime>(
     app: AppHandle<R>,
     parent_workspace: Option<WorkspaceToken>,
 ) -> Result<(), AppError> {
-    create_untitled_window_with_label(app, parent_workspace, None).await
+    create_untitled_window_with_label(app, parent_workspace, None, None)
+        .await
+        .map(|_| ())
 }
 
-/// Creates an untitled window, optionally with a fixed label.
+/// Creates an untitled window, optionally with a fixed label and query.
 ///
 /// Session restore uses `main` for its first saved window and must bypass the
-/// boot-window reuse rules: there is no `main` window yet.
+/// boot-window reuse rules: there is no `main` window yet. Meeting windows pass
+/// a fixed `doc-<uuid>` label plus the meeting query and need the window back.
 pub(crate) async fn create_untitled_window_with_label<R: tauri::Runtime>(
     app: AppHandle<R>,
     parent_workspace: Option<WorkspaceToken>,
     requested_label: Option<String>,
-) -> Result<(), AppError> {
+    query: Option<String>,
+) -> Result<WebviewWindow<R>, AppError> {
     let startup = app.state::<StartupWindow>();
     if requested_label.is_none()
         && !startup.claim_document_if_undecided()
@@ -266,7 +272,7 @@ pub(crate) async fn create_untitled_window_with_label<R: tauri::Runtime>(
                 tracing::warn!(%error, "failed to focus the reused main window");
             }
             tracing::info!(window = "main", "New reused the boot main window");
-            return Ok(());
+            return Ok(main);
         }
         // The boot build ended without a window (it failed, or another launch
         // path took over); this New still needs a window.
@@ -317,18 +323,25 @@ pub(crate) async fn create_untitled_window_with_label<R: tauri::Runtime>(
     let rollback_label = label.clone();
     let rollback_sessions = sessions.clone();
     let rollback_app = app.clone();
-    create_document_window(&app, label, title, build_document_window, || {
-        let released = rollback_sessions.release(&rollback_label);
-        if let Some(token) = released.workspace_token {
-            workspaces.release(&token);
-        }
-        crate::commands::workspace::sync_workspace_watchers(&rollback_app);
-    })?;
+    let window = create_document_window(
+        &app,
+        label,
+        title,
+        query.as_deref().unwrap_or(""),
+        build_document_window,
+        || {
+            let released = rollback_sessions.release(&rollback_label);
+            if let Some(token) = released.workspace_token {
+                workspaces.release(&token);
+            }
+            crate::commands::workspace::sync_workspace_watchers(&rollback_app);
+        },
+    )?;
     // From here on a document owns the launch, even if the boot main window
     // exists; `was_opened` stays truthful for the rest of the process.
     startup.mark_opened();
     tracing::info!(window = %rollback_label, "opened an untitled document window");
-    Ok(())
+    Ok(window)
 }
 
 /// Number of parent directories granted non-recursively for `../` images.
@@ -640,7 +653,7 @@ pub(crate) async fn open_path_in_window_with_label<R: tauri::Runtime>(
 
     let rollback_label = label.clone();
     let rollback_app = app.clone();
-    create_document_window(&app, label, title, build_document_window, || {
+    create_document_window(&app, label, title, "", build_document_window, || {
         let released = sessions.release(&rollback_label);
         for token in [released.doc_token, released.previous_doc_token]
             .into_iter()
@@ -652,7 +665,8 @@ pub(crate) async fn open_path_in_window_with_label<R: tauri::Runtime>(
             workspaces.release(&token);
         }
         crate::commands::workspace::sync_workspace_watchers(&rollback_app);
-    })?;
+    })
+    .map(|_| ())?;
     tracing::info!(window = %rollback_label, "opened a document window");
     Ok(())
 }
@@ -869,6 +883,69 @@ pub fn document_activate<R: tauri::Runtime>(
     Ok(())
 }
 
+/// Derives the Save As default from a meeting window title.
+///
+/// The native title is `<stem> — <app>`, where `<stem>` already lost any
+/// `.md`/`.markdown` suffix when the meeting window was built. Ordinary
+/// untitled windows keep the projected untitled name.
+pub fn meeting_save_as_name(title: &str, app_name: &str, fallback: &str) -> String {
+    let suffix = format!(" — {app_name}");
+    let title = title.strip_suffix(&suffix).unwrap_or(title).trim();
+    let stem = title
+        .strip_suffix(".markdown")
+        .or_else(|| title.strip_suffix(".md"))
+        .unwrap_or(title)
+        .trim_end_matches(['.', ' '])
+        .trim();
+    if stem.is_empty() {
+        fallback.to_string()
+    } else {
+        format!("{stem}.md")
+    }
+}
+
+/// Opens the native save dialog, or uses the E2E path when the build enables
+/// the WebDriver feature.
+async fn pick_save_path<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    default_name: &str,
+) -> Result<PathBuf, AppError> {
+    #[cfg(feature = "e2e-webdriver")]
+    {
+        if std::env::var_os("MEETING_E2E_SAVE_CANCEL").is_some() {
+            return Err(AppError::new(
+                AppErrorCode::Cancelled,
+                "save dialog was cancelled",
+            ));
+        }
+        if let Some(path) = std::env::var_os("MEETING_E2E_SAVE_AS") {
+            return Ok(PathBuf::from(path));
+        }
+    }
+
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    window
+        .dialog()
+        .file()
+        .add_filter("Markdown", &["md", "markdown"])
+        .set_file_name(default_name)
+        .save_file(move |selected| {
+            let _ = sender.send(selected);
+        });
+
+    let selected = receiver
+        .await
+        .map_err(|_| AppError::new(AppErrorCode::Cancelled, "save dialog was closed"))?
+        .ok_or_else(|| AppError::new(AppErrorCode::Cancelled, "save dialog was cancelled"))?;
+
+    selected.into_path().map_err(|error| {
+        AppError::new(
+            AppErrorCode::InvalidPath,
+            format!("the save dialog returned an unreadable path: {error}"),
+        )
+    })
+}
+
 #[tauri::command]
 pub async fn document_save_as<R: tauri::Runtime>(
     window: WebviewWindow<R>,
@@ -887,28 +964,20 @@ pub async fn document_save_as<R: tauri::Runtime>(
         .labels()
         .map(|labels| labels.app_name)
         .unwrap_or_else(|| "青墨".to_string());
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-
-    window
-        .dialog()
-        .file()
-        .add_filter("Markdown", &["md", "markdown"])
-        .set_file_name(&untitled_file_name)
-        .save_file(move |selected| {
-            let _ = sender.send(selected);
-        });
-
-    let selected = receiver
-        .await
-        .map_err(|_| AppError::new(AppErrorCode::Cancelled, "save dialog was closed"))?
-        .ok_or_else(|| AppError::new(AppErrorCode::Cancelled, "save dialog was cancelled"))?;
-
-    let path = selected.into_path().map_err(|error| {
-        AppError::new(
-            AppErrorCode::InvalidPath,
-            format!("the save dialog returned an unreadable path: {error}"),
+    let meeting_window = window
+        .url()
+        .ok()
+        .is_some_and(|url| url.query_pairs().any(|(key, _)| key == "meeting"));
+    let default_name = if meeting_window {
+        meeting_save_as_name(
+            &window.title().unwrap_or_default(),
+            &app_name,
+            &untitled_file_name,
         )
-    })?;
+    } else {
+        untitled_file_name.clone()
+    };
+    let path = pick_save_path(&window, &default_name).await?;
 
     let payload = tauri::async_runtime::spawn_blocking(move || registry.save_as(path, &text))
         .await

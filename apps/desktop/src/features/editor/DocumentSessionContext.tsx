@@ -69,9 +69,25 @@ const DocumentSessionContext = createContext<DocumentSessionContextValue | null>
 /** Query marker added by Rust when it creates a window for one document. */
 const DOCUMENT_WINDOW_PARAM = "window";
 const DOCUMENT_WINDOW_VALUE = "document";
+const MEETING_PARAM = "meeting";
+const MEETING_NAME_PARAM = "name";
 
 export function isDocumentWindow(search = window.location.search): boolean {
   return new URLSearchParams(search).get(DOCUMENT_WINDOW_PARAM) === DOCUMENT_WINDOW_VALUE;
+}
+
+/** Request id of the meeting this window was created for, if any. */
+export function meetingRequestId(search = window.location.search): string | null {
+  const value = new URLSearchParams(search).get(MEETING_PARAM);
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
+
+/** Decoded source stem carried for the initial meeting title. */
+export function meetingSourceName(search = window.location.search): string | null {
+  // URLSearchParams already decodes percent escapes.
+  return new URLSearchParams(search).get(MEETING_NAME_PARAM);
 }
 
 /**
@@ -163,15 +179,20 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
     [startSession],
   );
 
-  const startUntitled = useCallback(() => {
-    setSession(
-      EditorSession.createUntitled(i18n.t("editor:empty.title"), {
+  const startUntitled = useCallback(
+    (title?: string) => {
+      const session = EditorSession.createUntitled(i18n.t("editor:empty.title"), {
         placeholder: i18n.t("editor:empty.placeholder"),
         uiCopy: buildEditorUiCopy(normalizeLanguage(i18n.language)),
         openExternal: createOpenExternal(ipc),
-      }),
-    );
-  }, [ipc, setSession]);
+      });
+      if (title) {
+        session.applyUntitledTitle(title);
+      }
+      setSession(session);
+    },
+    [ipc, setSession],
+  );
 
   const getCurrentBundle = useCallback(
     () => ({
@@ -189,8 +210,15 @@ export function DocumentSessionProvider({ children }: { children: ReactNode }) {
   // editor; the main window still starts untitled synchronously.
   useLayoutEffect(() => {
     let cancelled = false;
+    const meeting = meetingRequestId();
 
-    if (!documentWindow) {
+    if (meeting) {
+      // Meeting windows never consume a pending payload: they own a fresh
+      // untitled placeholder until the result arrives.
+      if (!currentRef.current) {
+        startUntitled(meetingSourceName() ?? undefined);
+      }
+    } else if (!documentWindow) {
       if (!currentRef.current) {
         startUntitled();
       }

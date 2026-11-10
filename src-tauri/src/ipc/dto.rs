@@ -1067,6 +1067,7 @@ pub struct MeetingProgress {
     pub request_id: String,
     pub attempt: u32,
     pub stage: MeetingStage,
+    pub audio_url: String,
     #[ts(optional)]
     pub window: Option<WindowProgress>,
     pub elapsed_ms: u64,
