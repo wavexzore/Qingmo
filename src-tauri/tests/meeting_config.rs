@@ -25,7 +25,7 @@ fn dir(name: &str) -> PathBuf {
 
 fn store(name: &str) -> (MeetingConfigStore, PathBuf) {
     let dir = dir(name);
-    let catalog = Arc::new(ManifestCatalog::new(dir.join("meeting-models")));
+    let catalog = Arc::new(ManifestCatalog::new(dir.join("models")));
     let path = store_path(name);
     (MeetingConfigStore::open(&path, catalog).unwrap(), path)
 }
@@ -35,7 +35,7 @@ fn raw(name: &str, value: &str) -> (MeetingConfigStore, PathBuf) {
     let path = store_path(name);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, value).unwrap();
-    let catalog = Arc::new(ManifestCatalog::new(dir.join("meeting-models")));
+    let catalog = Arc::new(ManifestCatalog::new(dir.join("models")));
     (MeetingConfigStore::open(&path, catalog).unwrap(), path)
 }
 

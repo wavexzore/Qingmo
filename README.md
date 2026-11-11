@@ -153,7 +153,7 @@ Linux packaging remains pending.
 
 ### Meeting models
 
-Meeting models are never bundled. On first use the settings page downloads them into the app data directory (`meeting-models/<id>/`), verifies SHA-256, and retries the meeting in the same window. To pre-seed a machine, run `scripts/meeting-models/fetch.sh <dir>` followed by `scripts/meeting-models/verify.sh <dir>`. Licenses and upstream links for all eleven packs are in `NOTICE`.
+Meeting models are never bundled. On first use the settings page downloads them into the app data directory (`models/<id>/`), verifies SHA-256, and retries the meeting in the same window. To pre-seed a machine, run `scripts/meeting-models/fetch.sh <dir>` followed by `scripts/meeting-models/verify.sh <dir>`. Licenses and upstream links for all eleven packs are in `NOTICE`.
 
 ### Release notes
 

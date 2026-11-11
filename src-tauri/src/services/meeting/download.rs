@@ -1,6 +1,6 @@
 //! Model downloading: staging, resume, hash checks, safe unpack and commit.
 //!
-//! Every byte lands in `meeting-models/.staging/<id>/` on the same volume as
+//! Every byte lands in `models/.staging/<id>/` on the same volume as
 //! the final directory, so the commit is a pair of renames. The staging path
 //! is keyed by model id so a retried attempt resumes the same `.part`. The
 //! archive is hashed before unpacking; every extracted file is hashed again

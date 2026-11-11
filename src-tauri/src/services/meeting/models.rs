@@ -1,7 +1,7 @@
 //! Compiled model manifest and on-disk resolution.
 //!
 //! The installer ships zero models. Every pack below is downloaded into
-//! `app_local_data_dir/meeting-models/<id>/` and resolved through the
+//! `app_local_data_dir/models/<id>/` and resolved through the
 //! `.ready` marker so a normal task never re-hashes gigabytes of weights.
 //!
 //! Every file pins its official URL, commit and SHA-256. An empty hash is
@@ -618,6 +618,18 @@ struct ReadyFile {
     sha256: String,
 }
 
+/// Downloaded-pack root. Release builds used to store packs under
+/// `meeting-models/`; rename that directory once so existing installs keep
+/// working without a second download.
+pub fn data_root(app_local_data: &Path) -> PathBuf {
+    let root = app_local_data.join("models");
+    let legacy = app_local_data.join("meeting-models");
+    if !root.exists() && legacy.is_dir() {
+        let _ = fs::rename(&legacy, &root);
+    }
+    root
+}
+
 pub fn resolve_pack(root: &Path, pack: &ModelPack, now_secs: u64) -> ModelState {
     let dir = root.join(pack.id);
     if !dir.is_dir() {
@@ -841,6 +853,20 @@ mod tests {
             resolve_pack(&root, pack(), READY_TTL_SECS + 10),
             ModelState::NotVerified
         );
+    }
+
+    #[test]
+    fn data_root_migrates_the_legacy_models_directory() {
+        let dir = temp_root();
+        fs::create_dir_all(dir.join("meeting-models")).unwrap();
+        fs::write(dir.join("meeting-models").join("pack.bin"), b"x").unwrap();
+
+        let root = data_root(&dir);
+
+        assert!(root.ends_with("models"));
+        assert!(root.join("pack.bin").is_file());
+        assert!(!dir.join("meeting-models").exists());
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

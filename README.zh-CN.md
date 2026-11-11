@@ -153,7 +153,7 @@ Linux 打包仍待完成。
 
 ### 会议模型
 
-会议模型不随包。首次使用时设置页把它们下载到应用数据目录（`meeting-models/<id>/`），校验 SHA-256，并在同一窗口重试会议。预置机器可运行 `scripts/meeting-models/fetch.sh <dir>` 后再跑 `scripts/meeting-models/verify.sh <dir>`。全部 11 个包的许可与上游链接见 `NOTICE`。
+会议模型不随包。首次使用时设置页把它们下载到应用数据目录（`models/<id>/`），校验 SHA-256，并在同一窗口重试会议。预置机器可运行 `scripts/meeting-models/fetch.sh <dir>` 后再跑 `scripts/meeting-models/verify.sh <dir>`。全部 11 个包的许可与上游链接见 `NOTICE`。
 
 ### 发布说明
 

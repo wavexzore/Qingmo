@@ -1036,14 +1036,14 @@ pub fn run() {
                 .or_else(|| {
                     local_data
                         .as_ref()
-                        .map(|dir| dir.join("meeting-models"))
+                        .map(|dir| services::meeting::models::data_root(dir))
                 })
-                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-meeting-models"));
+                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-models"));
             #[cfg(not(debug_assertions))]
             let meeting_root = local_data
                 .as_ref()
-                .map(|dir| dir.join("meeting-models"))
-                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-meeting-models"));
+                .map(|dir| services::meeting::models::data_root(dir))
+                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-models"));
             services::meeting::download::recover_orphans(&meeting_root);
             let meeting_catalog: Arc<dyn services::meeting::ModelCatalog> =
                 Arc::new(services::meeting::ManifestCatalog::new(meeting_root));
