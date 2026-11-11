@@ -277,6 +277,7 @@ impl MeetingRegistry {
             target.llm_model_missing |= degraded.llm_model_missing;
             target.llm_unconfigured |= degraded.llm_unconfigured;
             target.llm_budget_exceeded |= degraded.llm_budget_exceeded;
+            target.llm_failed |= degraded.llm_failed;
             target.partial_decode |= degraded.partial_decode;
             target.remote_fallback |= degraded.remote_fallback;
             target.remote_key_missing |= degraded.remote_key_missing;

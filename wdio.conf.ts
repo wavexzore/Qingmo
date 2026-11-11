@@ -6,6 +6,7 @@ import type { Options } from "@wdio/types";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const binary = path.join(root, "src-tauri", "target", "debug", "qingmo");
 const fixture = path.join(root, "e2e-tauri", "fixtures", "note.md");
+const e2eEnv = path.join(root, "e2e-tauri", "fixtures", "meeting", "e2e-env.json");
 
 // The Rust test feature reads this during setup. Setting it here also covers
 // the service's child-process environment on every platform.
@@ -41,7 +42,13 @@ export const config: TestrunnerConfig = {
       {
         driverProvider: "embedded",
         appBinaryPath: binary,
-        env: { QINGMO_E2E_OPEN: fixture },
+        env: {
+          QINGMO_E2E_OPEN: fixture,
+          QINGMO_E2E_ENV: e2eEnv,
+          ...(process.env.E2E_MODELS || process.env.MEETING_E2E_MODELS
+            ? { MEETING_E2E_MODELS: process.env.E2E_MODELS ?? process.env.MEETING_E2E_MODELS! }
+            : {}),
+        },
         captureBackendLogs: true,
         captureFrontendLogs: true,
         startTimeout: 120_000,
@@ -53,6 +60,8 @@ export const config: TestrunnerConfig = {
   reporters: ["spec"],
   mochaOpts: {
     ui: "bdd",
-    timeout: 120_000,
+    // Meeting specs decode real audio; `this.timeout()` is not honoured by
+    // the embedded runner.
+    timeout: 2_400_000,
   },
 };

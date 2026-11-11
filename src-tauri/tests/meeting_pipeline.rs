@@ -4,9 +4,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use qingmo_lib::ipc::dto::WindowPhase;
 use qingmo_lib::services::meeting::asr::{AsrEngine, RawAsr};
 use qingmo_lib::services::meeting::decode::decode_windows;
-use qingmo_lib::services::meeting::pipeline::{run_local, StopExit, StopReason};
+use qingmo_lib::services::meeting::diarize::SherpaDiarizer;
+use qingmo_lib::services::meeting::pipeline::{
+    run_local, run_local_with_diarizer, run_local_with_progress, StopExit, StopReason,
+};
+use qingmo_lib::services::meeting::speaker::SpeakerModels;
 use qingmo_lib::services::meeting::TARGET_SAMPLE_RATE;
 use tokio_util::sync::CancellationToken;
 
@@ -84,6 +89,44 @@ fn success_reaches_releasing_without_partial() {
 }
 
 #[test]
+fn progress_reports_each_window_and_segment() {
+    let path = wav("progress.wav", 3);
+    let windows = decode_windows(&path, CancellationToken::new()).unwrap();
+    let mut asr = Fake { fail: false };
+    let mut seen = Vec::new();
+    let outcome = run_local_with_progress(
+        windows,
+        None,
+        &mut asr,
+        None,
+        &CancellationToken::new(),
+        None,
+        1,
+        &mut |window| seen.push(window),
+    )
+    .unwrap();
+    assert!(outcome.available() >= 1);
+    let first = seen.first().expect("a window event");
+    assert_eq!(
+        (first.index, first.total, first.phase),
+        (0, 1, WindowPhase::Diarizing)
+    );
+    let transcribing: Vec<_> = seen
+        .iter()
+        .filter(|window| window.phase == WindowPhase::Transcribing)
+        .collect();
+    assert!(!transcribing.is_empty());
+    assert!(transcribing[0].total_segments >= 1);
+    assert_eq!(
+        transcribing.last().unwrap().done_segments,
+        transcribing[0].total_segments
+    );
+    assert!(transcribing
+        .windows(2)
+        .all(|pair| pair[1].done_segments >= pair[0].done_segments));
+}
+
+#[test]
 fn every_segment_failing_is_all_failed() {
     let path = wav("fail.wav", 3);
     let outcome = run(&path, &mut Fake { fail: true }, None);
@@ -144,4 +187,40 @@ fn deadline_after_segments_is_partial() {
     assert_eq!(outcome.exit, StopExit::Partial);
     assert!(outcome.partial);
     assert!(outcome.partial_until_ms.is_some());
+}
+
+#[test]
+#[ignore = "needs MEETING_PROBE_MODELS"]
+fn real_models_transcribe_two_speakers_with_monotonic_time() {
+    let root = PathBuf::from(std::env::var("MEETING_PROBE_MODELS").expect("models root"));
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/meeting/two-speakers-56s.wav");
+    let mut asr = qingmo_lib::services::meeting::asr::SherpaAsr::open(
+        "paraformer-zh-en-int8",
+        &root.join("models/paraformer-zh-en-int8"),
+        2,
+    )
+    .expect("asr");
+    let models = SpeakerModels {
+        segmentation: root.join("seg.onnx"),
+        embedding: root.join("emb.onnx"),
+    };
+    let mut diarizer = SherpaDiarizer::new(&models).expect("diarizer");
+    let outcome = run_local_with_diarizer(
+        decode_windows(&fixture, CancellationToken::new()).unwrap(),
+        None,
+        &mut asr,
+        Some(&mut diarizer),
+        &CancellationToken::new(),
+        None,
+    )
+    .expect("pipeline");
+    assert!(outcome.available() >= 1);
+    assert!(outcome.speaker_count.unwrap_or(0) >= 1);
+    let mut last = 0;
+    for segment in &outcome.segments {
+        assert!(segment.start_ms >= last);
+        last = segment.start_ms;
+        assert!(segment.speaker.is_some());
+    }
 }

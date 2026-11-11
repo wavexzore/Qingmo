@@ -912,13 +912,13 @@ async fn pick_save_path<R: tauri::Runtime>(
 ) -> Result<PathBuf, AppError> {
     #[cfg(feature = "e2e-webdriver")]
     {
-        if std::env::var_os("MEETING_E2E_SAVE_CANCEL").is_some() {
+        if crate::services::meeting::e2e::var("MEETING_E2E_SAVE_CANCEL").is_some() {
             return Err(AppError::new(
                 AppErrorCode::Cancelled,
                 "save dialog was cancelled",
             ));
         }
-        if let Some(path) = std::env::var_os("MEETING_E2E_SAVE_AS") {
+        if let Some(path) = crate::services::meeting::e2e::var("MEETING_E2E_SAVE_AS") {
             return Ok(PathBuf::from(path));
         }
     }

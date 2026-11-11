@@ -27,19 +27,24 @@ use crate::ipc::dto::{
 };
 use crate::services::meeting::asr::SherpaAsr;
 use crate::services::meeting::budget;
-use crate::services::meeting::decode::{decode_windows, ensure_duration, probe_audio};
+use crate::services::meeting::decode::{
+    decode_windows, ensure_duration, probe_audio, window_total,
+};
 use crate::services::meeting::diarize::{self, SherpaDiarizer};
 use crate::services::meeting::download::{self, DiskProbe};
 use crate::services::meeting::keys::KeyService;
 use crate::services::meeting::lang::detect_language;
 use crate::services::meeting::models::{find, manifest, ModelCatalog, ModelPack, ModelState};
-use crate::services::meeting::pipeline::{exit_for, run_local_with_diarizer, StopExit};
+use crate::services::meeting::pipeline::{
+    exit_for, run_local_with_progress, run_remote, run_remote_with_fallback_diarized, StopExit,
+};
+use crate::services::meeting::remote_asr::{HttpRemoteAsr, RemoteAsrConfig};
 use crate::services::meeting::render::{self, RenderInput};
 use crate::services::meeting::runtime::{
-    self, resolve_models, tier_defaults, HardwareProfile, Origin,
+    self, resolve_models, tier_defaults, HardwareProfile, MemoryProbe, Origin, SystemMemory,
 };
 use crate::services::meeting::speaker::DiarizationEngine;
-use crate::services::meeting::summarize;
+use crate::services::meeting::summarize::{self, DefaultLlmFactory, RemoteLlmSpec, SummarizePlan};
 use crate::state::meeting::config::MeetingConfigStore;
 use crate::state::meeting::downloads::ModelDownloads;
 use crate::state::meeting::job::MeetingSource;
@@ -82,9 +87,11 @@ fn parse_request_id(request_id: &str) -> Result<Uuid, AppError> {
 }
 
 async fn pick_audio<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, AppError> {
-    #[cfg(debug_assertions)]
-    if let Some(path) = std::env::var_os("MEETING_E2E_AUDIO") {
-        return Ok(PathBuf::from(path));
+    if let Some(path) = crate::services::meeting::e2e::var("MEETING_E2E_AUDIO")
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+    {
+        return Ok(path);
     }
 
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -306,6 +313,24 @@ fn spawn_job<R: Runtime>(
     });
 }
 
+/// Remote failure with no local fallback gets the documented recovery code.
+pub fn remote_failed(error: AppError, local_missing: bool) -> AppError {
+    if !local_missing || error.code == AppErrorCode::Cancelled {
+        return error;
+    }
+    let reason = error
+        .details
+        .as_ref()
+        .and_then(|details| details.get("reason"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!("remote_failed"));
+    AppError::new(
+        AppErrorCode::AsrFailed,
+        "remote ASR failed and no local model is ready",
+    )
+    .with_details(serde_json::json!({ "reason": reason, "fallback_unavailable": true }))
+}
+
 fn transcribe<R: Runtime>(
     app: &AppHandle<R>,
     registry: &MeetingRegistry,
@@ -319,27 +344,67 @@ fn transcribe<R: Runtime>(
 
     let config = app.state::<MeetingConfigStore>().get().config;
     let profile = HardwareProfile::detect();
-    let resolved = resolve_models(config.asr.local_model.as_deref(), None, &profile)?;
+    let llm_local = config.llm.mode == summarize::LlmMode::Local;
+    // A pinned summary model is irrelevant while remote summaries are chosen;
+    // rejecting it would block a machine that only has the local ASR pack.
+    let resolved = resolve_models(
+        config.asr.local_model.as_deref(),
+        llm_local
+            .then_some(config.llm.local_model.as_deref())
+            .flatten(),
+        &profile,
+    )?;
     let defaults = tier_defaults(&profile);
     let catalog = app.state::<Arc<dyn ModelCatalog>>();
     let asr_id = resolved.asr;
 
-    match catalog.state(asr_id) {
-        ModelState::Ready => {}
-        state => {
-            return Err(AppError::new(
-                AppErrorCode::ModelNotReady,
-                format!("{} is {:?}", asr_id, state),
-            )
-            .with_details(serde_json::json!({ "model_id": asr_id, "state": format!("{state:?}").to_lowercase() })));
+    let local_ready = catalog.state(asr_id) == ModelState::Ready;
+    let keys = app.state::<Arc<KeyService>>();
+    let asr_key = keys.get(&config.asr_key_ref());
+    let route = crate::services::meeting::asr_route::decide(
+        config.asr.mode,
+        asr_key.is_some(),
+        local_ready,
+    )?;
+    if route.remote_key_missing {
+        let _ = registry.degrade(
+            id,
+            Degraded {
+                remote_key_missing: true,
+                ..Degraded::default()
+            },
+        );
+    }
+    if local_ready {
+        match catalog.state(asr_id) {
+            ModelState::Ready => {}
+            state => {
+                return Err(AppError::new(
+                    AppErrorCode::ModelNotReady,
+                    format!("{} is {:?}", asr_id, state),
+                )
+                .with_details(serde_json::json!({ "model_id": asr_id, "state": format!("{state:?}").to_lowercase() })));
+            }
         }
     }
 
     let path = source.path.clone();
     registry.advance_checked(id, MeetingStage::Transcribing)?;
-    let _ = registry.set_backend(id, AsrBackend::Local);
+    let backend = match route.kind {
+        crate::services::meeting::asr_route::RouteKind::Local => AsrBackend::Local,
+        crate::services::meeting::asr_route::RouteKind::Remote => {
+            AsrBackend::Remote(provider_view(config.asr.provider))
+        }
+    };
+    let _ = registry.set_backend(id, backend);
     registry.set_local_model(id, asr_id)?;
-    let accel = match defaults.accel {
+    let cpu_only = config.runtime.mode == crate::state::meeting::config::RuntimeMode::Cpu;
+    let runtime_accel = if cpu_only {
+        runtime::Accel::Cpu
+    } else {
+        defaults.accel
+    };
+    let accel = match runtime_accel {
         runtime::Accel::Cpu => Accel::Cpu,
         runtime::Accel::Metal => Accel::Metal,
     };
@@ -353,7 +418,9 @@ fn transcribe<R: Runtime>(
     let asr_dir = catalog
         .path(asr_id)
         .ok_or_else(|| AppError::new(AppErrorCode::ModelNotReady, "unknown ASR model"))?;
-    let mut asr = SherpaAsr::open(asr_id, &asr_dir, defaults.threads)?;
+    let mut local_asr = local_ready
+        .then(|| SherpaAsr::open(asr_id, &asr_dir, defaults.threads))
+        .transpose()?;
     let vad_model = (catalog.state("silero-vad") == ModelState::Ready)
         .then(|| catalog.path("silero-vad"))
         .flatten();
@@ -370,17 +437,69 @@ fn transcribe<R: Runtime>(
     let mut diarizer = speaker_models
         .as_ref()
         .and_then(|models| SherpaDiarizer::new(models).ok());
-    let windows = decode_windows(&path, token.clone())?;
-    let outcome = run_local_with_diarizer(
-        windows,
-        vad_model.as_deref(),
-        &mut asr,
-        diarizer
-            .as_mut()
-            .map(|diarizer| diarizer as &mut dyn DiarizationEngine),
-        token,
-        Some(deadline),
-    )?;
+    let mut outcome = match route.kind {
+        crate::services::meeting::asr_route::RouteKind::Local => {
+            let asr = local_asr.as_mut().ok_or_else(|| {
+                AppError::new(AppErrorCode::ModelNotReady, "local ASR is not ready")
+            })?;
+            let total_windows = window_total(source.duration_ms);
+            run_local_with_progress(
+                decode_windows(&path, token.clone())?,
+                vad_model.as_deref(),
+                asr,
+                diarizer
+                    .as_mut()
+                    .map(|diarizer| diarizer as &mut dyn DiarizationEngine),
+                token,
+                Some(deadline),
+                total_windows,
+                &mut |window| {
+                    registry.set_window(id, Some(window));
+                },
+            )?
+        }
+        crate::services::meeting::asr_route::RouteKind::Remote => {
+            let key = asr_key.ok_or_else(|| {
+                AppError::new(AppErrorCode::InvalidConfig, "remote ASR key is missing")
+            })?;
+            let mut remote = HttpRemoteAsr::new(RemoteAsrConfig::new(
+                config.asr.provider,
+                config.asr.model.clone(),
+                key,
+            ))?;
+            let local_missing = local_asr.is_none();
+            let outcome = match (local_asr.as_mut(), diarizer.as_mut()) {
+                (Some(asr), diarizer) => run_remote_with_fallback_diarized(
+                    &path,
+                    &mut remote,
+                    asr,
+                    vad_model.as_deref(),
+                    diarizer.map(|diarizer| diarizer as &mut dyn DiarizationEngine),
+                    token,
+                    Some(deadline),
+                )
+                .map_err(|error| remote_failed(error, local_missing))?,
+                (None, _) => run_remote(
+                    decode_windows(&path, token.clone())?,
+                    &mut remote,
+                    token,
+                    Some(deadline),
+                )
+                .map_err(|error| remote_failed(error, local_missing))?,
+            };
+            outcome
+        }
+    };
+    outcome.remote_key_missing = route.remote_key_missing;
+    let _ = registry.set_backend(
+        id,
+        match outcome.actual_backend {
+            crate::services::meeting::pipeline::ActualBackend::Local => AsrBackend::Local,
+            crate::services::meeting::pipeline::ActualBackend::Remote => {
+                AsrBackend::Remote(provider_view(config.asr.provider))
+            }
+        },
+    );
 
     let available = outcome.available();
     let total = outcome.segments.len();
@@ -419,7 +538,6 @@ fn transcribe<R: Runtime>(
         ));
     }
 
-    registry.advance_checked(id, MeetingStage::Rendering)?;
     let transcript_text = outcome
         .segments
         .iter()
@@ -431,13 +549,79 @@ fn transcribe<R: Runtime>(
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_else(|| "会议纪要".to_owned());
+
+    // ASR and diarization sessions are done; release them before the summary
+    // model is loaded and re-sample the live memory instead of the value from
+    // before ASR.
+    drop(local_asr);
+    drop(diarizer);
+    let available_memory_mb = SystemMemory.available_mb();
+
+    let llm_mode = config.llm.mode;
+    let local_model = (llm_mode == summarize::LlmMode::Local).then_some(resolved.llm);
+    let local_ready = local_model.is_some_and(|id| catalog.state(id) == ModelState::Ready);
+    let local_path = local_model
+        .and_then(|id| catalog.path(id))
+        .filter(|_| local_ready);
+    let keys = app.state::<Arc<KeyService>>();
+    let remote = (llm_mode == summarize::LlmMode::Remote).then(|| RemoteLlmSpec {
+        base_url: config.llm.base_url.clone(),
+        model: config.llm.model.clone(),
+        api_key: keys.get(&config.llm_key_ref()),
+    });
+    let plan = SummarizePlan {
+        mode: llm_mode,
+        local_model: local_model.map(str::to_owned),
+        local_path,
+        local_ready,
+        remote,
+        available_memory_mb,
+        threads: defaults.threads,
+        accel: runtime_accel,
+    };
+    registry.advance_checked(id, MeetingStage::Summarizing)?;
+    let summary_deadline = Instant::now() + summarize::SUMMARY_DEADLINE;
+    let summary_outcome = summarize::summarize(
+        &outcome.segments,
+        language,
+        &plan,
+        &DefaultLlmFactory,
+        token,
+        Some(summary_deadline),
+    )?;
+    if token.is_cancelled() {
+        return Err(AppError::new(AppErrorCode::Cancelled, "meeting cancelled"));
+    }
+    if summary_outcome.llm_model_missing
+        || summary_outcome.llm_unconfigured
+        || summary_outcome.llm_budget_exceeded
+    {
+        let _ = registry.degrade(
+            id,
+            Degraded {
+                llm_model_missing: summary_outcome.llm_model_missing,
+                llm_unconfigured: summary_outcome.llm_unconfigured,
+                llm_budget_exceeded: summary_outcome.llm_budget_exceeded,
+                ..Degraded::default()
+            },
+        );
+    }
+    let stats = card_stats(&summary_outcome.cards, summary_outcome.unverified, &outcome);
+    registry.advance_checked(id, MeetingStage::Rendering)?;
     let degraded = Degraded {
         partial_decode: outcome.partial_decode,
         partial_until_ms: outcome.partial_until_ms,
         remote_fallback: outcome.remote_fallback,
         remote_last_error: outcome.remote_last_error.map(reason_view),
+        remote_key_missing: outcome.remote_key_missing,
         speaker_degraded: outcome.speaker_degraded,
         speaker_partial: outcome.speaker_partial,
+        llm_model_missing: summary_outcome.llm_model_missing,
+        llm_unconfigured: summary_outcome.llm_unconfigured,
+        llm_budget_exceeded: summary_outcome.llm_budget_exceeded,
+        llm_failed: summary_outcome.last_error.is_some()
+            || summary_outcome.llm_load_failed
+            || summary_outcome.deadline_exceeded,
         high_memory_model: high_memory_model(&profile, asr_id),
         ..Degraded::default()
     };
@@ -452,12 +636,9 @@ fn transcribe<R: Runtime>(
         },
         local_model: Some(asr_id),
         speaker_count: outcome.speaker_count,
-        stats: MeetingStats {
-            failed_segments: outcome.failed_segments as u32,
-            ..MeetingStats::default()
-        },
+        stats,
         segments: &outcome.segments,
-        cards: &[],
+        cards: &summary_outcome.cards,
         degraded,
         keep_transcript: config.keep_transcript,
     });
@@ -466,10 +647,7 @@ fn transcribe<R: Runtime>(
         audio_url: String::new(),
         title: String::new(),
         duration_ms: source.duration_ms,
-        stats: MeetingStats {
-            failed_segments: outcome.failed_segments as u32,
-            ..MeetingStats::default()
-        },
+        stats,
         partial,
     })
 }
@@ -477,6 +655,30 @@ fn transcribe<R: Runtime>(
 // ---------------------------------------------------------------------------
 // Configuration, keys and models (T-010/T-011)
 // ---------------------------------------------------------------------------
+
+fn card_stats(
+    cards: &[crate::services::meeting::cards::Card],
+    unverified: u32,
+    outcome: &crate::services::meeting::pipeline::PipelineOutcome,
+) -> MeetingStats {
+    use crate::services::meeting::cards::CardKind;
+    MeetingStats {
+        decisions: cards
+            .iter()
+            .filter(|card| card.kind == CardKind::Decision)
+            .count() as u32,
+        actions: cards
+            .iter()
+            .filter(|card| card.kind == CardKind::Action)
+            .count() as u32,
+        risks: cards
+            .iter()
+            .filter(|card| card.kind == CardKind::Risk)
+            .count() as u32,
+        unverified,
+        failed_segments: outcome.failed_segments as u32,
+    }
+}
 
 fn provider_view(
     provider: crate::services::meeting::remote_asr::RemoteProvider,
@@ -1030,4 +1232,36 @@ pub fn app_settings_open<R: Runtime>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_failure_without_local_gets_the_fallback_code() {
+        let error = AppError::new(AppErrorCode::AsrFailed, "boom")
+            .with_details(serde_json::json!({ "reason": "remote_timeout" }));
+        let mapped = remote_failed(error, true);
+        assert_eq!(mapped.code, AppErrorCode::AsrFailed);
+        let details = mapped.details.expect("details");
+        assert_eq!(details["reason"], "remote_timeout");
+        assert_eq!(details["fallback_unavailable"], true);
+    }
+
+    #[test]
+    fn remote_failure_with_local_or_cancel_passes_through() {
+        let error = AppError::new(AppErrorCode::AsrFailed, "boom")
+            .with_details(serde_json::json!({ "reason": "remote_timeout" }));
+        let kept = remote_failed(error, false);
+        assert!(kept
+            .details
+            .as_ref()
+            .unwrap()
+            .get("fallback_unavailable")
+            .is_none());
+
+        let cancelled = AppError::new(AppErrorCode::Cancelled, "stop");
+        assert_eq!(remote_failed(cancelled, true).code, AppErrorCode::Cancelled);
+    }
 }

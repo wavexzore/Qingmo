@@ -53,6 +53,7 @@ function progress(overrides: Partial<MeetingProgress> = {}): MeetingProgress {
       llmModelMissing: false,
       llmUnconfigured: false,
       llmBudgetExceeded: false,
+      llmFailed: false,
       partialDecode: false,
       remoteFallback: false,
       remoteKeyMissing: false,

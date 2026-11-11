@@ -50,7 +50,14 @@ describe("single translation source", () => {
   it("keeps desktop source free of hard-coded Han outside locales", () => {
     const files = scan(join(ROOT, "apps/desktop/src"), [".ts", ".tsx"]);
     const offenders = hanOffenders(files, (path) => {
-      return isTestFile(path) || path.includes(`${sep}i18n${sep}locales${sep}`);
+      // The E2E bridge mirrors backend-generated Markdown, which is not a UI
+      // translation source.
+      return (
+        isTestFile(path) ||
+        path.includes(`${sep}i18n${sep}locales${sep}`) ||
+        path.endsWith(`${sep}e2e${sep}bridge.ts`) ||
+        path.endsWith(`${sep}e2e${sep}meetingFake.ts`)
+      );
     });
 
     expect(offenders).toEqual([]);

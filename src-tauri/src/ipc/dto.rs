@@ -966,7 +966,6 @@ pub enum MeetingStage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowPhase {
-    Decoding,
     Diarizing,
     Transcribing,
 }
@@ -1043,6 +1042,7 @@ pub struct Degraded {
     pub llm_model_missing: bool,
     pub llm_unconfigured: bool,
     pub llm_budget_exceeded: bool,
+    pub llm_failed: bool,
     pub partial_decode: bool,
     pub remote_fallback: bool,
     pub remote_key_missing: bool,

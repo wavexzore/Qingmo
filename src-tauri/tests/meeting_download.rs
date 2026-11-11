@@ -458,3 +458,24 @@ fn a_verified_archive_is_reused_after_an_unpack_failure() {
     assert!(!root.join(".staging/test-pack/archive.tar.bz2").exists());
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+#[ignore = "downloads the 312 MB official zipformer archive"]
+fn official_zipformer_installs_and_verifies_every_file() {
+    use qingmo_lib::services::meeting::models::{find, resolve_pack, ModelState};
+
+    std::env::remove_var("QINGMO_E2E_ENV");
+    std::env::remove_var("MEETING_E2E_DOWNLOAD_BASE");
+    let root = temp_root();
+    let pack = find("zipformer-zh-en-int8").expect("manifest");
+    run(
+        &root,
+        pack,
+        Uuid::new_v4(),
+        &CancellationToken::new(),
+        &mut |_, _| {},
+    )
+    .expect("official install");
+    assert_eq!(resolve_pack(&root, pack, 0), ModelState::Ready);
+    let _ = std::fs::remove_dir_all(root);
+}

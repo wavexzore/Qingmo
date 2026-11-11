@@ -252,6 +252,8 @@ jobs:
       - name: Native E2E (includes meeting specs)
         env:
           MEETING_E2E_MODELS: ${{ runner.temp }}/meeting-models
+          E2E_MODELS: ${{ runner.temp }}/meeting-models
+          E2E_TEN_MIN: ${{ github.workspace }}/e2e-tauri/fixtures/meeting-ten.wav
         run: pnpm ci:tauri
 
       - name: Upload failure artifacts

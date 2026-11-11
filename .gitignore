@@ -42,3 +42,10 @@ third_party/
 AGENTS.md
 .gitignore
 CLAUDE.md
+
+# Generated long meeting E2E fixtures (scripts/dev/gen-meeting-fixtures.sh)
+/e2e-tauri/fixtures/meeting-25min.wav
+/e2e-tauri/fixtures/meeting-4h.m4a
+/e2e-tauri/fixtures/meeting-ten.wav
+/e2e-tauri/fixtures/meeting-long.sha256
+/e2e-tauri/fixtures/meeting/e2e-env.json

@@ -188,28 +188,28 @@ const ZIPFORMER_FILES: &[ModelFile] = &[
         name: "encoder-epoch-34-avg-19.int8.onnx",
         role: FileRole::Encoder,
         sha256: "28780a73b0fc5a05ec579ad4dbbc7d8fcd09fed5e6c431f84dcaab8f8170d9bf",
-        bytes: 68_779_404,
+        bytes: 69_037_476,
         source: ZIP_SOURCE[0],
     },
     ModelFile {
         name: "decoder-epoch-34-avg-19.onnx",
         role: FileRole::Decoder,
         sha256: "110dc19143f0731ce0f64513e524d7d8f729e37107e1392da790f66d6c936a0b",
-        bytes: 5_089_010,
+        bytes: 5_165_101,
         source: ZIP_SOURCE[0],
     },
     ModelFile {
         name: "joiner-epoch-34-avg-19.int8.onnx",
         role: FileRole::Joiner,
         sha256: "498861ff0963ecbbff101a940ed533a715e5d68ee96431a3b092d0ca00c3ba38",
-        bytes: 1_048_576,
+        bytes: 1_033_479,
         source: ZIP_SOURCE[0],
     },
     ModelFile {
         name: "tokens.txt",
         role: FileRole::Tokens,
         sha256: "2d5d6245197582cea396b23fa29d592705be31bac9a97bb74a8d1bca3ca6a0e0",
-        bytes: 25_600,
+        bytes: 25_645,
         source: ZIP_SOURCE[0],
     },
 ];
@@ -218,7 +218,7 @@ const VAD_FILES: &[ModelFile] = &[ModelFile {
     name: "silero_vad.onnx",
     role: FileRole::Vad,
     sha256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
-    bytes: 629_145,
+    bytes: 643_854,
     source: VAD_SOURCE[0],
 }];
 const SMALL_FILES: &[ModelFile] = &[
@@ -366,15 +366,15 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 1200,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 223_400_000,
-        install_bytes: 223_400_000,
+        download_bytes: 234_051_698,
+        install_bytes: 243_446_974,
         source: PARA_SOURCE,
         archive: Some(ArchiveSpec {
             format: ArchiveFormat::TarBz2,
             root: "sherpa-onnx-paraformer-zh-2023-09-14",
             root_files: &["model.int8.onnx", "tokens.txt"],
-            bytes: 223_400_000,
-            sha256: "",
+            bytes: 234_051_698,
+            sha256: "9c49fd9c6fb63de8e18c1054cf3d100f804741b7e608e187923cd8ff09fa9f03",
         }),
         files: PARAFORMER_FILES,
     },
@@ -406,8 +406,8 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 1400,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 312_400_000,
-        install_bytes: 316_000_000,
+        download_bytes: 312_398_028,
+        install_bytes: 75_261_701,
         source: ZIP_SOURCE,
         archive: Some(ArchiveSpec {
             format: ArchiveFormat::TarBz2,
@@ -418,8 +418,8 @@ pub static CATALOG: &[ModelPack] = &[
                 "joiner-epoch-34-avg-19.int8.onnx",
                 "tokens.txt",
             ],
-            bytes: 312_400_000,
-            sha256: "",
+            bytes: 312_398_028,
+            sha256: "0c3f2b9c884335a6931b8ccee6ede30e8dd3f89efc289ff64cd79d530a3bcf91",
         }),
         files: ZIPFORMER_FILES,
     },
@@ -502,8 +502,8 @@ pub static CATALOG: &[ModelPack] = &[
         peak_memory_mb: 20,
         peak_basis: PeakBasis::Estimated,
         group: None,
-        download_bytes: 629_145,
-        install_bytes: 629_145,
+        download_bytes: 643_854,
+        install_bytes: 643_854,
         source: VAD_SOURCE,
         archive: None,
         files: VAD_FILES,
@@ -688,7 +688,18 @@ pub fn resolve_pack(root: &Path, pack: &ModelPack, now_secs: u64) -> ModelState 
 pub fn write_ready(dir: &Path, pack: &ModelPack, now_secs: u64) -> Result<(), AppError> {
     let mut files = Vec::with_capacity(pack.files.len());
     for file in pack.files {
-        let actual = sha256_file(&dir.join(file.name))?;
+        let path = dir.join(file.name);
+        if fs::metadata(&path)
+            .map_err(|error| AppError::from_io(&error))?
+            .len()
+            != file.bytes
+        {
+            return Err(AppError::new(
+                AppErrorCode::ModelNotReady,
+                "model length mismatch",
+            ));
+        }
+        let actual = sha256_file(&path)?;
         if !file.sha256.is_empty() && actual != file.sha256 {
             return Err(AppError::new(
                 AppErrorCode::ModelNotReady,

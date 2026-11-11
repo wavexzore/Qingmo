@@ -44,7 +44,8 @@
     "typecheck:bench": "tsc -p bench/tsconfig.json --noEmit",
     "depcruise": "depcruise --config dependency-cruiser.config.cjs apps packages",
     "tauri": "tauri",
-    "test:tauri:soak": "wdio run wdio.soak.conf.ts"
+    "test:tauri:soak": "wdio run wdio.soak.conf.ts",
+    "test:tauri:meeting": "wdio run wdio.meeting.conf.ts"
   },
   "devDependencies": {
     "@codemirror/language": "6.13.1",

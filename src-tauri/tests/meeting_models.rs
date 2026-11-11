@@ -272,3 +272,23 @@ fn expired_ready_marker_rehashes_once() {
     assert_ne!(refreshed["verified_at"], 1);
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn archive_packs_declare_the_exact_archive_length_and_hash() {
+    for pack in manifest().iter().filter(|pack| pack.archive.is_some()) {
+        let spec = pack.archive.expect("archive");
+        assert_eq!(
+            pack.download_bytes, spec.bytes,
+            "{} download bytes must be the archive length",
+            pack.id
+        );
+        assert!(
+            spec.sha256.len() == 64 && spec.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+            "{} needs a hex sha256",
+            pack.id
+        );
+        assert!(spec.bytes > 0);
+        let installed: u64 = pack.files.iter().map(|file| file.bytes).sum();
+        assert_eq!(pack.install_bytes, installed, "{} install bytes", pack.id);
+    }
+}

@@ -3,7 +3,13 @@ import path from "node:path";
 
 import { expect, type Page } from "@playwright/test";
 
-import type { E2eWorkspaceSeed, SeedDraft, SeedFile, SeedViewState } from "./types";
+import type {
+  E2eWorkspaceSeed,
+  MeetingScenario,
+  SeedDraft,
+  SeedFile,
+  SeedViewState,
+} from "./types";
 
 export const NOTE_PATH = "/docs/note.md";
 export const CONFLICT_PATH = "/docs/conflict.md";
@@ -166,6 +172,40 @@ export async function emitMenuAction(
   await page.evaluate((next) => {
     window.__QINGMO_E2E__?.emitMenuAction(next);
   }, action);
+}
+
+export async function startMeeting(page: Page, scenario: MeetingScenario): Promise<string> {
+  return page.evaluate((next) => window.__QINGMO_E2E__!.startMeeting(next), scenario);
+}
+
+export async function advanceMeeting(page: Page): Promise<void> {
+  await page.evaluate(() => window.__QINGMO_E2E__?.advanceMeeting());
+}
+
+export async function failMeeting(page: Page, code = "ASR_FAILED"): Promise<void> {
+  await page.evaluate((next) => window.__QINGMO_E2E__?.failMeeting(next), code);
+}
+
+/** Boots the meeting document window for `requestId` in the same page. */
+export async function openMeetingWindow(
+  page: Page,
+  requestId: string,
+  name = "周会",
+): Promise<void> {
+  await page.goto(`/?window=document&meeting=${requestId}&name=${encodeURIComponent(name)}`);
+  await expect(page.getByTestId("untitled-editor")).toBeVisible();
+  await expect(page.getByTestId("meeting-boot")).toBeVisible();
+}
+
+/** Advances to Ready and waits for the result to land in the editor. */
+export async function finishMeeting(page: Page): Promise<void> {
+  for (let step = 0; step < 6; step += 1) {
+    if ((await page.getByTestId("meeting-boot").count()) === 0) {
+      break;
+    }
+    await advanceMeeting(page);
+  }
+  await expect(page.getByTestId("meeting-boot")).toHaveCount(0);
 }
 
 export async function typeInEditor(page: Page, text: string): Promise<void> {

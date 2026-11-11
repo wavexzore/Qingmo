@@ -43,6 +43,7 @@ struct Text {
     llm_missing: &'static str,
     llm_unconfigured: &'static str,
     llm_budget: &'static str,
+    llm_failed: &'static str,
     speaker_degraded: &'static str,
     speaker_partial: &'static str,
     partial: &'static str,
@@ -81,6 +82,7 @@ fn text(language: Lang) -> Text {
             llm_missing: "本地摘要模型未就绪",
             llm_unconfigured: "未配置远程摘要",
             llm_budget: "内存不足，未生成抽象摘要，以下为抽取式要点",
+            llm_failed: "摘要模型失败或超时，以下为抽取式要点",
             speaker_degraded: "未分离说话人",
             speaker_partial: "部分片段未分离说话人",
             partial: "只转写了前",
@@ -116,6 +118,7 @@ fn text(language: Lang) -> Text {
             llm_missing: "Local summary model is not ready",
             llm_unconfigured: "Remote summary is not configured",
             llm_budget: "Not enough memory for an abstract summary; extractive points below",
+            llm_failed: "The summary model failed or timed out; extractive points below",
             speaker_degraded: "Speakers were not separated",
             speaker_partial: "Some segments were not separated",
             partial: "Only the first",
@@ -258,6 +261,9 @@ fn banners(input: &RenderInput<'_>, words: &Text) -> Vec<String> {
     }
     if degraded.llm_budget_exceeded {
         lines.push(words.llm_budget.to_owned());
+    }
+    if degraded.llm_failed {
+        lines.push(words.llm_failed.to_owned());
     }
     if degraded.speaker_degraded {
         lines.push(words.speaker_degraded.to_owned());

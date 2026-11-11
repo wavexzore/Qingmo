@@ -173,3 +173,21 @@ fn missing_file_is_not_found() {
     let error = probe_audio(Path::new("/definitely/missing.wav")).unwrap_err();
     assert_eq!(error.code, AppErrorCode::NotFound);
 }
+
+#[test]
+fn window_total_never_drops_below_one() {
+    assert_eq!(qingmo_lib::services::meeting::decode::window_total(0), 1);
+    assert_eq!(qingmo_lib::services::meeting::decode::window_total(1), 1);
+    assert_eq!(
+        qingmo_lib::services::meeting::decode::window_total(
+            qingmo_lib::services::meeting::DECODE_WINDOW_MS
+        ),
+        1
+    );
+    assert_eq!(
+        qingmo_lib::services::meeting::decode::window_total(
+            qingmo_lib::services::meeting::DECODE_WINDOW_MS + 1
+        ),
+        2
+    );
+}

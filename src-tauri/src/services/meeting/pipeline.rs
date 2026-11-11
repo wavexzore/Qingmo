@@ -16,6 +16,7 @@ use super::runtime::ReasonCode;
 use super::speaker::{join, DiarizationEngine, DiarizeError, SpeakerTurn};
 use super::vad::{segment_window, SpeechSegment};
 use crate::error::{AppError, AppErrorCode};
+use crate::ipc::dto::{WindowPhase, WindowProgress};
 
 pub const MAX_FAILED_SHARE: f32 = 0.2;
 
@@ -77,6 +78,7 @@ pub struct PipelineOutcome {
     pub failed_segments: usize,
     pub actual_backend: ActualBackend,
     pub remote_fallback: bool,
+    pub remote_key_missing: bool,
     pub remote_last_error: Option<ReasonCode>,
     pub speaker_degraded: bool,
     pub speaker_partial: bool,
@@ -126,15 +128,65 @@ pub fn run_local(
     run_local_with_diarizer(windows, vad_model, asr, None, cancel, deadline)
 }
 
+/// Local loop with per-segment window progress for `meeting_status`.
+///
+/// `total_windows` is derived from the source duration by the caller; a zero
+/// still reports every window, just without a total.
+#[allow(clippy::too_many_arguments)]
+pub fn run_local_with_progress(
+    windows: DecodeWindow,
+    vad_model: Option<&std::path::Path>,
+    asr: &mut dyn AsrEngine,
+    diarizer: Option<&mut dyn DiarizationEngine>,
+    cancel: &CancellationToken,
+    deadline: Option<Instant>,
+    total_windows: usize,
+    on_window: &mut dyn FnMut(WindowProgress),
+) -> Result<PipelineOutcome, AppError> {
+    run_local_inner(
+        windows,
+        vad_model,
+        asr,
+        diarizer,
+        cancel,
+        deadline,
+        total_windows,
+        on_window,
+    )
+}
+
 /// Local loop with an optional diarizer. VAD and diarization run on the same
 /// immutable window in one scoped thread pair; ASR waits for both.
 pub fn run_local_with_diarizer(
     windows: DecodeWindow,
     vad_model: Option<&std::path::Path>,
     asr: &mut dyn AsrEngine,
+    diarizer: Option<&mut dyn DiarizationEngine>,
+    cancel: &CancellationToken,
+    deadline: Option<Instant>,
+) -> Result<PipelineOutcome, AppError> {
+    run_local_inner(
+        windows,
+        vad_model,
+        asr,
+        diarizer,
+        cancel,
+        deadline,
+        0,
+        &mut |_| {},
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_local_inner(
+    windows: DecodeWindow,
+    vad_model: Option<&std::path::Path>,
+    asr: &mut dyn AsrEngine,
     mut diarizer: Option<&mut dyn DiarizationEngine>,
     cancel: &CancellationToken,
     deadline: Option<Instant>,
+    total_windows: usize,
+    on_window: &mut dyn FnMut(WindowProgress),
 ) -> Result<PipelineOutcome, AppError> {
     let mut segments = Vec::new();
     let mut total = 0usize;
@@ -163,6 +215,13 @@ pub fn run_local_with_diarizer(
             }
         };
 
+        on_window(WindowProgress {
+            index: window_index as u32,
+            total: total_windows as u32,
+            phase: WindowPhase::Diarizing,
+            done_segments: 0,
+            total_segments: 0,
+        });
         let (segmentation, turns) = match diarizer.as_deref_mut() {
             Some(engine) => {
                 let result = std::thread::scope(|scope| {
@@ -215,12 +274,30 @@ pub fn run_local_with_diarizer(
         };
 
         let mut window_segments = Vec::new();
+        let window_total = segmentation.segments.len() as u32;
+        let mut window_done = 0u32;
+        on_window(WindowProgress {
+            index: window_index as u32,
+            total: total_windows as u32,
+            phase: WindowPhase::Transcribing,
+            done_segments: 0,
+            total_segments: window_total,
+        });
         for speech in segmentation.segments {
             if cancel.is_cancelled() {
                 return Err(AppError::new(AppErrorCode::Cancelled, "pipeline cancelled"));
             }
             total += 1;
-            match transcribe(asr, &window.samples, speech, cancel) {
+            let recognized = transcribe(asr, &window.samples, speech, cancel);
+            window_done = window_done.saturating_add(1);
+            on_window(WindowProgress {
+                index: window_index as u32,
+                total: total_windows as u32,
+                phase: WindowPhase::Transcribing,
+                done_segments: window_done,
+                total_segments: window_total,
+            });
+            match recognized {
                 Ok(segment) => {
                     if segment.text.is_empty()
                         && segment.end_ms.saturating_sub(segment.start_ms) > 2_000
@@ -280,6 +357,7 @@ pub fn run_local_with_diarizer(
         failed_segments: failed,
         actual_backend: ActualBackend::Local,
         remote_fallback: false,
+        remote_key_missing: false,
         remote_last_error: None,
         speaker_degraded,
         speaker_partial,
@@ -349,6 +427,7 @@ pub fn run_remote(
         failed_segments: 0,
         actual_backend: ActualBackend::Remote,
         remote_fallback: false,
+        remote_key_missing: false,
         remote_last_error: None,
         speaker_degraded: false,
         speaker_partial: false,
@@ -522,6 +601,7 @@ mod tests {
             failed_segments: 1,
             actual_backend: ActualBackend::Local,
             remote_fallback: false,
+            remote_key_missing: false,
             remote_last_error: None,
             speaker_degraded: false,
             speaker_partial: false,

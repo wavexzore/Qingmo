@@ -228,6 +228,11 @@ pub struct DecodedWindow {
     pub samples: Vec<f32>,
 }
 
+/// Number of 10 minute windows a source of `duration_ms` produces.
+pub fn window_total(duration_ms: u64) -> usize {
+    duration_ms.div_ceil(super::DECODE_WINDOW_MS).max(1) as usize
+}
+
 pub struct DecodeWindow {
     path: std::path::PathBuf,
     format: Box<dyn FormatReader>,

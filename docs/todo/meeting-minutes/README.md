@@ -22,15 +22,15 @@ schema_version: "1.0"
 feature_id: "meeting-minutes"
 feature_name: "会议纪要（本地音频转结构化纪要）"
 status: "in_progress"           # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-004"          # 当前应执行的任务；Q 全部已决
-last_completed_task: "T-003"
-next_action: "T-004 Pre-Implementation Check"
+current_task: "T-013"          # 当前应执行的任务；Q 全部已决
+last_completed_task: "T-012"
+next_action: "T-013 Pre-Implementation Check（打包/体积/公证/许可）"
 verification_status: "pass" # not_run | pass | fail | partial | skipped
 research_status: "pass"        # 官方文档 / 论文 / 开源实现 / 引擎选型四路调研已完成，证据见 01 §2.4 / 05
 call_chain_status: "pass"      # GitNexus impact + context + PDG + 源码复核已完成，证据见 01 §3
 code_calibration_status: "pass"
-last_verification_command: "cargo test --all-targets"
-last_updated: "2026-11-10T13:00:00+08:00"
+last_verification_command: "pnpm ci:local && pnpm ci:tauri && scripts/meeting-models/calibrate.sh"
+last_updated: "2026-11-11T06:35:00+08:00"
 resume_from:
   - "README.md#0-llm-state每轮实施前必须读取"
   - "01-实施计划.md#12-待确认事项"
@@ -227,19 +227,19 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 | 类型 | 路径/对象 | 预期变更 | 状态 | 证据 |
 |---|---|---|---|---|
-| Code | `src-tauri/src/services/meeting/` | 新增（pipeline/decode/diarize/speaker/models/download/runtime/budget/vad/asr/remote_asr/asr_route/cards/summarize/validate/render/llm/llm_local） | todo | none |
-| Code | `src-tauri/vendor/sherpa-onnx/` | 新增（2.0.1 补丁：`ys_log_probs` 解析 + 差异说明 + Apache-2.0） | todo | none |
-| Code | `src-tauri/src/state/meeting/` | 新增（registry、job、progress、asset_scope、config、downloads） | todo | none |
-| Code | `src-tauri/src/commands/meeting.rs`、`commands/settings.rs` | 新增/修改（任务 5、配置 2、密钥 3、模型 4、`app_settings_open`） | todo | none |
-| Code | `src-tauri/src/commands/document.rs` | 修改（`build_document_window` / `create_untitled_window_with_label` 接受 query、`create_document_window` 返回窗口、`document_save_as` 仅 meeting 默认名） | todo | none |
-| Code | `apps/desktop/src/features/meeting/` | 新增（Progress、错误态、结果接入、模型清单） | todo | none |
-| Code | `apps/desktop/src/features/editor/DocumentSessionContext.tsx`、`EditorSession.ts`、`EditorPage.tsx`、`components/StatusBar.tsx` | 修改（meeting 参数分支、`insertDocumentText`、状态栏 meeting 段） | todo | none |
-| Contract | `src-tauri/src/ipc/contract.rs`、`dto.rs`、`error.rs` | 修改（命令、事件、DTO、错误码） | todo | none |
-| Config | `src-tauri/tauri.conf.json`（确认不含模型资源）、`capabilities/*.json`、`NOTICE` | 修改 | todo | none |
-| Script | `scripts/meeting-models/**`（拉取/哈希核对，不打包） | 新增 | todo | none |
-| Config | `app_local_data_dir/meeting/config.json` + 设置页；`uiStore.ts` 仅 UI 偏好 | 新增 | todo | none |
-| Test | `src-tauri/tests/meeting_*.rs`、`apps/desktop/src/features/meeting/*.test.tsx`、`e2e/meeting*.spec.ts`、`e2e/fixtures/*` | 新增 | todo | none |
-| Doc | `README.md`、`README.zh-CN.md`、`docs/roadmap.md`、`04-设计方案.md`、`03-复盘与交接.md` | 修改（两处「v1 不做 AI」撤回、评审与交接收尾） | todo | none |
+| Code | `src-tauri/src/services/meeting/` | 新增（pipeline/decode/diarize/speaker/models/download/runtime/budget/vad/asr/remote_asr/asr_route/cards/summarize/validate/render/llm/llm_local） | done | T-001~T-012 全绿 |
+| Code | `src-tauri/vendor/sherpa-onnx/` | 新增（2.0.1 补丁：`ys_log_probs` 解析 + 差异说明 + Apache-2.0） | done | check-vendor --require |
+| Code | `src-tauri/src/state/meeting/` | 新增（registry、job、progress、asset_scope、config、downloads） | done | T-006 35/35 |
+| Code | `src-tauri/src/commands/meeting.rs`、`commands/settings.rs` | 新增/修改（任务 5、配置 2、密钥 3、模型 4、`app_settings_open`） | done | T-007 契约/权限 |
+| Code | `src-tauri/src/commands/document.rs` | 修改（`build_document_window` / `create_untitled_window_with_label` 接受 query、`create_document_window` 返回窗口、`document_save_as` 仅 meeting 默认名） | done | T-008 窗口 6/6 |
+| Code | `apps/desktop/src/features/meeting/` | 新增（Progress、错误态、结果接入、模型清单） | done | 前端测试与 E2E |
+| Code | `apps/desktop/src/features/editor/DocumentSessionContext.tsx`、`EditorSession.ts`、`EditorPage.tsx`、`components/StatusBar.tsx` | 修改（meeting 参数分支、`insertDocumentText`、状态栏 meeting 段） | done | editor-session 测试 |
+| Contract | `src-tauri/src/ipc/contract.rs`、`dto.rs`、`error.rs` | 修改（命令、事件、DTO、错误码） | done | ci:generated/ci:negative |
+| Config | `src-tauri/tauri.conf.json`（确认不含模型资源）、`capabilities/*.json`、`NOTICE` | 修改 | partial | capability 已改；NOTICE/确认零模型归 T-013 |
+| Script | `scripts/meeting-models/**`（拉取/哈希核对，不打包） | 新增 | done | fetch/verify/calibrate/ci-fetch |
+| Config | `app_local_data_dir/meeting/config.json` + 设置页；`uiStore.ts` 仅 UI 偏好 | 新增 | done | config 13 项与迁移 |
+| Test | `src-tauri/tests/meeting_*.rs`、`apps/desktop/src/features/meeting/*.test.tsx`、`e2e/meeting*.spec.ts`、`e2e/fixtures/*` | 新增 | done | Rust/浏览器/原生全绿 |
+| Doc | `README.md`、`README.zh-CN.md`、`docs/roadmap.md`、`04-设计方案.md`、`03-复盘与交接.md` | 修改（两处「v1 不做 AI」撤回、评审与交接收尾） | todo | T-014 收尾 |
 | Prototype | `docs/todo/meeting-minutes/prototype.html` | 新增（已产出） | done | 本目录 |
 
 ---

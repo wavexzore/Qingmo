@@ -11,3 +11,4 @@ src-tauri/gen
 third_party
 packages/shared/src/generated
 src-tauri/linux/*.hbs
+src-tauri/vendor

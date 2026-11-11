@@ -10,6 +10,7 @@ pub mod cards;
 pub mod decode;
 pub mod diarize;
 pub mod download;
+pub mod e2e;
 pub mod keys;
 pub mod lang;
 pub mod llm;

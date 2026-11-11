@@ -76,8 +76,30 @@ impl HardwareProfile {
     }
 
     #[cfg(debug_assertions)]
+    fn from_alias(raw: &str) -> Option<Self> {
+        let (os, arch, total, available, cores, metal) = match raw {
+            "8g-mac" => (Os::Macos, Arch::Aarch64, 8 * 1024, 6 * 1024, 4, true),
+            "16g-mac" => (Os::Macos, Arch::Aarch64, 16 * 1024, 12 * 1024, 6, true),
+            "32g-mac" => (Os::Macos, Arch::Aarch64, 32 * 1024, 24 * 1024, 8, true),
+            "8g-win" => (Os::Windows, Arch::X86_64, 8 * 1024, 6 * 1024, 4, false),
+            _ => return None,
+        };
+        Some(Self {
+            os,
+            arch,
+            total_memory_mb: total,
+            available_memory_mb: available,
+            performance_cores: cores,
+            metal_available: metal,
+        })
+    }
+
+    #[cfg(debug_assertions)]
     pub fn from_env() -> Option<Self> {
-        let raw = std::env::var("MEETING_E2E_PROFILE").ok()?;
+        let raw = super::e2e::var("MEETING_E2E_PROFILE")?;
+        if let Some(profile) = Self::from_alias(&raw) {
+            return Some(profile);
+        }
         let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
         let os = match value.get("os")?.as_str()? {
             "macos" => Os::Macos,
@@ -104,6 +126,24 @@ impl HardwareProfile {
 pub trait MemoryProbe: Send + Sync {
     fn available_mb(&self) -> u64;
     fn profile(&self) -> LiveMemory;
+}
+
+/// Re-samples memory right before the summary model loads. `detect()` wins in
+/// debug so an E2E profile also pins the re-sample.
+pub struct SystemMemory;
+
+impl MemoryProbe for SystemMemory {
+    fn available_mb(&self) -> u64 {
+        HardwareProfile::detect().available_memory_mb
+    }
+
+    fn profile(&self) -> LiveMemory {
+        let profile = HardwareProfile::detect();
+        LiveMemory {
+            total_memory_mb: profile.total_memory_mb,
+            available_memory_mb: profile.available_memory_mb,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

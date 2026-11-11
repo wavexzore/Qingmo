@@ -36,6 +36,12 @@ pub struct SystemDiskProbe;
 
 impl DiskProbe for SystemDiskProbe {
     fn free_bytes(&self, path: &Path) -> Result<u64, AppError> {
+        #[cfg(debug_assertions)]
+        if let Some(free) =
+            super::e2e::var("MEETING_E2E_FREE_SPACE").and_then(|value| value.parse::<u64>().ok())
+        {
+            return Ok(free.saturating_mul(1024 * 1024));
+        }
         let probe = path.to_path_buf();
         let disks = Disks::new_with_refreshed_list();
         let mut best: Option<(usize, u64)> = None;
@@ -107,6 +113,97 @@ fn checked_cancel(cancel: &CancellationToken) -> Result<(), AppError> {
     }
 }
 
+/// `MEETING_E2E_*` rewrites official URLs into a local mirror.
+#[cfg(debug_assertions)]
+fn rewrite_source(pack_id: &str, url: &str, name: &str) -> String {
+    let Some(base) = super::e2e::var("MEETING_E2E_DOWNLOAD_BASE") else {
+        return url.to_owned();
+    };
+    format!("{}/{pack_id}/{name}", base.trim_end_matches('/'))
+}
+
+#[cfg(not(debug_assertions))]
+fn rewrite_source(_pack_id: &str, url: &str, _name: &str) -> String {
+    url.to_owned()
+}
+
+/// A local mirror is rebuilt from unpacked files, so its archive hash cannot
+/// match the official `.tar.bz2`; per-file hashes are still checked after
+/// unpacking.
+#[cfg(debug_assertions)]
+fn mirroring() -> bool {
+    super::e2e::var("MEETING_E2E_DOWNLOAD_BASE").is_some()
+}
+
+#[cfg(not(debug_assertions))]
+fn mirroring() -> bool {
+    false
+}
+
+/// Official sources for non-archive packs are usually directories; one file
+/// is one `.../<name>` entry. A few packs (the VAD) already point at the file,
+/// so an existing `/<name>` suffix is kept.
+fn file_source(pack_id: &str, source: &str, name: &str) -> String {
+    let base = source.trim_end_matches('/');
+    let url = if base.ends_with(&format!("/{name}")) {
+        base.to_owned()
+    } else {
+        format!("{base}/{name}")
+    };
+    rewrite_source(pack_id, &url, name)
+}
+
+fn local_source(url: &str) -> Option<PathBuf> {
+    let path = url.strip_prefix("file://").unwrap_or(url);
+    (url.starts_with("file://") || Path::new(path).is_absolute()).then(|| PathBuf::from(path))
+}
+
+/// Copy a mirror file with the same Range/progress contract as HTTP.
+fn copy_local(
+    source: &Path,
+    part: &Path,
+    offset: u64,
+    expected: u64,
+    cancel: &CancellationToken,
+    done: &mut u64,
+    progress: &mut dyn FnMut(u64, DownloadState),
+) -> Result<u64, AppError> {
+    let mut input = File::open(source).map_err(|error| failure("network", error.to_string()))?;
+    if offset > 0 {
+        std::io::Seek::seek(&mut input, std::io::SeekFrom::Start(offset))
+            .map_err(|error| AppError::from_io(&error))?;
+    }
+    let mut output = if offset > 0 {
+        OpenOptions::new()
+            .append(true)
+            .open(part)
+            .map_err(|error| AppError::from_io(&error))?
+    } else {
+        File::create(part).map_err(|error| AppError::from_io(&error))?
+    };
+    let mut buffer = vec![0u8; CHUNK_BYTES];
+    let mut written = 0u64;
+    loop {
+        checked_cancel(cancel)?;
+        let read = input
+            .read(&mut buffer)
+            .map_err(|error| AppError::from_io(&error))?;
+        if read == 0 {
+            break;
+        }
+        output
+            .write_all(&buffer[..read])
+            .map_err(|error| AppError::from_io(&error))?;
+        written = written.saturating_add(read as u64);
+        *done = done.saturating_add(read as u64);
+        progress(*done, DownloadState::Downloading);
+    }
+    if expected > 0 && offset + written < expected {
+        return Err(failure("network", "mirror file is shorter than declared"));
+    }
+    Ok(offset + written.max(expected))
+}
+
 /// Resume one file. Returns the final byte count written for it.
 fn download_file(
     client: &reqwest::blocking::Client,
@@ -118,7 +215,7 @@ fn download_file(
     progress: &mut dyn FnMut(u64, DownloadState),
 ) -> Result<u64, AppError> {
     let existing = fs::metadata(part).map(|meta| meta.len()).unwrap_or(0);
-    let offset = if existing > expected {
+    let offset = if expected > 0 && existing > expected {
         // A leftover from a different byte count cannot be resumed.
         let _ = fs::remove_file(part);
         0
@@ -130,6 +227,10 @@ fn download_file(
     if offset == expected && expected > 0 {
         progress(*done, DownloadState::Downloading);
         return Ok(offset);
+    }
+
+    if let Some(local) = local_source(url) {
+        return copy_local(&local, part, offset, expected, cancel, done, progress);
     }
 
     let mut request = client.get(url);
@@ -350,19 +451,29 @@ pub fn run(
             .source
             .first()
             .ok_or_else(|| failure("manifest", "archive has no source"))?;
-        if has_length(&archive, spec.bytes) {
-            done = done.saturating_add(spec.bytes);
+        let source_url = rewrite_source(pack.id, source.url, "archive.tar.bz2");
+        // A mirror archive is rebuilt locally, so neither its length nor its
+        // hash match the official release; unpacked files are verified below.
+        let expected = if mirroring() { 0 } else { spec.bytes };
+        if (expected == 0 && archive.is_file()) || has_length(&archive, expected) {
+            done = done.saturating_add(expected);
             progress(done, DownloadState::Downloading);
             let _ = fs::remove_file(&part);
         } else {
             download_file(
-                &client, source.url, &part, spec.bytes, cancel, &mut done, progress,
+                &client,
+                &source_url,
+                &part,
+                expected,
+                cancel,
+                &mut done,
+                progress,
             )?;
             persist_downloaded(&part, &archive)?;
         }
         progress(done, DownloadState::Verifying);
         let actual = sha256_file(&archive)?;
-        if !spec.sha256.is_empty() && actual != spec.sha256 {
+        if !mirroring() && !spec.sha256.is_empty() && actual != spec.sha256 {
             let _ = fs::remove_file(&archive);
             return Err(failure("hash_mismatch", "archive hash mismatch"));
         }
@@ -381,7 +492,7 @@ pub fn run(
             let _ = fs::remove_file(&target);
             download_file(
                 &client,
-                file.source.url,
+                &file_source(pack.id, file.source.url, file.name),
                 &part,
                 file.bytes,
                 cancel,
@@ -514,6 +625,90 @@ pub fn recover_orphans(root: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_source_appends_the_file_name() {
+        std::env::remove_var("QINGMO_E2E_ENV");
+        std::env::remove_var("MEETING_E2E_DOWNLOAD_BASE");
+        assert_eq!(
+            file_source("pack", "https://host/resolve/main/", "model.onnx"),
+            "https://host/resolve/main/model.onnx"
+        );
+        // The VAD source already points at the file.
+        assert_eq!(
+            file_source(
+                "silero-vad",
+                "https://host/asr-models/silero_vad.onnx",
+                "silero_vad.onnx"
+            ),
+            "https://host/asr-models/silero_vad.onnx"
+        );
+        std::env::set_var("MEETING_E2E_DOWNLOAD_BASE", "/mirror");
+        assert_eq!(
+            file_source("pack", "https://host/resolve/main", "model.onnx"),
+            "/mirror/pack/model.onnx"
+        );
+        std::env::remove_var("MEETING_E2E_DOWNLOAD_BASE");
+    }
+
+    #[test]
+    fn copy_local_honours_the_offset_and_rejects_a_short_source() {
+        let dir = std::env::temp_dir().join(format!("qingmo-copy-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source");
+        let part = dir.join("part");
+        fs::write(&source, b"0123456789").unwrap();
+        fs::write(&part, b"0123").unwrap();
+        let mut done = 4;
+        let mut calls = 0;
+        let mut progress = |_done: u64, _state: DownloadState| calls += 1;
+        let total = copy_local(
+            &source,
+            &part,
+            4,
+            6,
+            &CancellationToken::new(),
+            &mut done,
+            &mut progress,
+        )
+        .unwrap();
+        assert_eq!(total, 10);
+        assert_eq!(done, 10);
+        assert_eq!(fs::read(&part).unwrap(), b"0123456789");
+        assert!(calls > 0);
+
+        fs::write(&part, b"0123").unwrap();
+        let mut done = 4;
+        let mut progress = |_done: u64, _state: DownloadState| {};
+        assert!(copy_local(
+            &source,
+            &part,
+            4,
+            12,
+            &CancellationToken::new(),
+            &mut done,
+            &mut progress,
+        )
+        .is_err());
+
+        // A mirror download has no declared length; copy everything after the
+        // offset and report the real byte count.
+        fs::write(&part, b"0123").unwrap();
+        let mut done = 4;
+        let total = copy_local(
+            &source,
+            &part,
+            4,
+            0,
+            &CancellationToken::new(),
+            &mut done,
+            &mut progress,
+        )
+        .unwrap();
+        assert_eq!(total, 10);
+        assert_eq!(done, 10);
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn required_space_uses_the_larger_side() {
