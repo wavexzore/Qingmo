@@ -43,6 +43,10 @@
     "createUpdaterArtifacts": true,
     "license": "Apache-2.0",
     "licenseFile": "../LICENSE",
+    "resources": {
+      "../NOTICE": "NOTICE",
+      "../THIRD_PARTY_LICENSES": "THIRD_PARTY_LICENSES"
+    },
     "fileAssociations": [
       {
         "ext": ["md", "markdown", "mdx"],

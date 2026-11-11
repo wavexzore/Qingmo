@@ -429,7 +429,7 @@ pub static CATALOG: &[ModelPack] = &[
         kind: ModelKind::Asr,
         family: Some(AsrFamily::FireRedCtc),
         license: License::Apache2,
-        license_url: "https://github.com/FireRedTeam/FireRedASR",
+        license_url: "https://github.com/FireRedTeam/FireRedASR/blob/main/LICENSE",
         languages: ASR_LANGS,
         peak_memory_mb: 2000,
         peak_basis: PeakBasis::Estimated,
@@ -446,7 +446,7 @@ pub static CATALOG: &[ModelPack] = &[
         kind: ModelKind::Asr,
         family: Some(AsrFamily::SenseVoice),
         license: License::FunAsr,
-        license_url: "https://github.com/FunAudioLLM/SenseVoice",
+        license_url: "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE",
         languages: ASR_LANGS,
         peak_memory_mb: 1000,
         peak_basis: PeakBasis::Estimated,
@@ -514,7 +514,7 @@ pub static CATALOG: &[ModelPack] = &[
         kind: ModelKind::Llm,
         family: None,
         license: License::Apache2,
-        license_url: "https://huggingface.co/unsloth",
+        license_url: "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF",
         languages: ASR_LANGS,
         peak_memory_mb: 2050,
         peak_basis: PeakBasis::Estimated,
@@ -531,7 +531,7 @@ pub static CATALOG: &[ModelPack] = &[
         kind: ModelKind::Llm,
         family: None,
         license: License::Apache2,
-        license_url: "https://huggingface.co/unsloth",
+        license_url: "https://huggingface.co/unsloth/Qwen3-4B-GGUF",
         languages: ASR_LANGS,
         peak_memory_mb: 3560,
         peak_basis: PeakBasis::Estimated,
@@ -548,7 +548,7 @@ pub static CATALOG: &[ModelPack] = &[
         kind: ModelKind::Llm,
         family: None,
         license: License::Apache2,
-        license_url: "https://huggingface.co/unsloth",
+        license_url: "https://huggingface.co/unsloth/Qwen3-8B-GGUF",
         languages: ASR_LANGS,
         peak_memory_mb: 6000,
         peak_basis: PeakBasis::Estimated,
@@ -841,6 +841,26 @@ mod tests {
             resolve_pack(&root, pack(), READY_TTL_SECS + 10),
             ModelState::NotVerified
         );
+    }
+
+    #[test]
+    fn license_links_point_at_the_license_not_the_repository() {
+        let url = |id: &str| {
+            manifest()
+                .iter()
+                .find(|pack| pack.id == id)
+                .unwrap()
+                .license_url
+        };
+        assert!(url("fireredasr2-ctc-int8").ends_with("/LICENSE"));
+        assert!(url("sensevoice-small-int8").ends_with("/MODEL_LICENSE"));
+        for id in [
+            "qwen3-1.7b-instruct-q4km",
+            "qwen3-4b-instruct-q4km",
+            "qwen3-8b-instruct-q4km",
+        ] {
+            assert!(url(id).starts_with("https://huggingface.co/unsloth/Qwen3-"));
+        }
     }
 
     #[test]

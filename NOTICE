@@ -25,5 +25,38 @@ runtime dependencies and their licenses are:
 - KaTeX — MIT
 - i18next, react-i18next — MIT
 - Tailwind CSS — MIT
+- symphonia — MPL-2.0
 
-See the respective package metadata for the full license text.
+Native inference engines (statically linked, no separate dylib):
+
+- sherpa-onnx 2.0.1 (vendored patch, `ys_log_probs` on the offline result) — Apache-2.0
+  https://github.com/k2-fsa/sherpa-onnx/blob/master/LICENSE
+- llama.cpp via llama-cpp-2 0.1.161 — MIT
+  https://github.com/ggerganov/llama.cpp/blob/master/LICENSE
+
+Models are not bundled in the installer. They are downloaded on demand from
+the official sources pinned in `src-tauri/src/services/meeting/models.rs` and
+verified by SHA-256 before installation:
+
+- Paraformer 中英 · int8, Paraformer 中文 small · int8, Zipformer 中英 · int8 — Apache-2.0
+  https://github.com/k2-fsa/sherpa-onnx/blob/master/LICENSE
+- FireRedASR2-CTC · int8 — Apache-2.0
+  https://github.com/FireRedTeam/FireRedASR/blob/main/LICENSE
+- CAM++ zh_en · advanced — Apache-2.0
+  https://github.com/modelscope/3D-Speaker/blob/main/LICENSE
+- pyannote segmentation 3.0 · int8 — MIT
+  https://github.com/pyannote/pyannote-audio/blob/develop/LICENSE
+- SenseVoice Small · int8 — FunASR Model License, © 2023-2028 Alibaba Group / FunAudioLLM
+  (attribution required)
+  https://github.com/FunAudioLLM/SenseVoice
+  https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE
+- Silero VAD — MIT
+  https://github.com/snakers4/silero-vad/blob/master/LICENSE
+- Qwen3 1.7B / 4B / 8B Instruct Q4_K_M (GGUF) — Apache-2.0
+  https://huggingface.co/unsloth/Qwen3-1.7B-GGUF
+  https://huggingface.co/unsloth/Qwen3-4B-GGUF
+  https://huggingface.co/unsloth/Qwen3-8B-GGUF
+
+Full MIT texts for llama.cpp, pyannote and Silero are in `THIRD_PARTY_LICENSES`,
+shipped next to this file. See the respective package metadata and model cards
+for the remaining full license texts.

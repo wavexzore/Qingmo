@@ -115,8 +115,13 @@ fn checked_cancel(cancel: &CancellationToken) -> Result<(), AppError> {
 
 /// `MEETING_E2E_*` rewrites official URLs into a local mirror.
 #[cfg(debug_assertions)]
+fn download_base() -> Option<String> {
+    super::e2e::var("MEETING_E2E_DOWNLOAD_BASE").filter(|base| !base.is_empty())
+}
+
+#[cfg(debug_assertions)]
 fn rewrite_source(pack_id: &str, url: &str, name: &str) -> String {
-    let Some(base) = super::e2e::var("MEETING_E2E_DOWNLOAD_BASE") else {
+    let Some(base) = download_base() else {
         return url.to_owned();
     };
     format!("{}/{pack_id}/{name}", base.trim_end_matches('/'))
@@ -132,7 +137,7 @@ fn rewrite_source(_pack_id: &str, url: &str, _name: &str) -> String {
 /// unpacking.
 #[cfg(debug_assertions)]
 fn mirroring() -> bool {
-    super::e2e::var("MEETING_E2E_DOWNLOAD_BASE").is_some()
+    download_base().is_some()
 }
 
 #[cfg(not(debug_assertions))]
@@ -240,6 +245,17 @@ fn download_file(
     let mut response = request
         .send()
         .map_err(|error| failure("network", format!("model request failed: {error}")))?;
+    if response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE && offset > 0 {
+        // The `.part` already holds the whole payload (the process died before
+        // the rename). A mirror has no declared length, so it is done; with a
+        // declared length a stale range is restarted once without `Range`.
+        if expected > 0 && offset < expected {
+            *done = done.saturating_sub(offset);
+            let _ = fs::remove_file(part);
+            return download_file(client, url, part, expected, cancel, done, progress);
+        }
+        return Ok(offset);
+    }
     if !response.status().is_success() {
         return Err(failure(
             "http_status",
@@ -277,7 +293,8 @@ fn download_file(
     }
     output.flush().map_err(|error| AppError::from_io(&error))?;
     let written = fs::metadata(part).map(|meta| meta.len()).unwrap_or(0);
-    if written != expected {
+    // `expected == 0` means the caller has no declared length (mirror archive).
+    if expected > 0 && written != expected {
         return Err(failure(
             "length",
             format!("model file length {written} != expected {expected}"),
@@ -625,9 +642,46 @@ pub fn recover_orphans(root: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpListener};
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Answers the first request with 416 and any later one with the body.
+    fn serve_416_then_body(body: &'static [u8], replies: usize) -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for _ in 0..replies {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 2048];
+                let read = stream.read(&mut request).unwrap();
+                let text = String::from_utf8_lossy(&request[..read]).to_ascii_lowercase();
+                if text.contains("\r\nrange:") {
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */10\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                        )
+                        .unwrap();
+                } else {
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .unwrap();
+                    stream.write_all(body).unwrap();
+                }
+                stream.flush().unwrap();
+            }
+        });
+        addr
+    }
 
     #[test]
     fn file_source_appends_the_file_name() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         std::env::remove_var("QINGMO_E2E_ENV");
         std::env::remove_var("MEETING_E2E_DOWNLOAD_BASE");
         assert_eq!(
@@ -649,6 +703,85 @@ mod tests {
             "/mirror/pack/model.onnx"
         );
         std::env::remove_var("MEETING_E2E_DOWNLOAD_BASE");
+    }
+
+    #[test]
+    fn an_empty_file_value_forces_the_official_source() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let dir = std::env::temp_dir().join(format!("qingmo-env-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let env = dir.join("env.json");
+        fs::write(&env, br#"{"MEETING_E2E_DOWNLOAD_BASE": ""}"#).unwrap();
+        std::env::set_var("QINGMO_E2E_ENV", &env);
+        std::env::set_var("MEETING_E2E_DOWNLOAD_BASE", "/mirror");
+
+        assert!(!mirroring());
+        assert_eq!(
+            rewrite_source("pack", "https://host/x", "x"),
+            "https://host/x"
+        );
+
+        std::env::remove_var("QINGMO_E2E_ENV");
+        std::env::remove_var("MEETING_E2E_DOWNLOAD_BASE");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_complete_part_is_done_when_the_server_replies_416() {
+        let dir = std::env::temp_dir().join(format!("qingmo-416-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("archive.part");
+        fs::write(&part, b"0123456789").unwrap();
+        let addr = serve_416_then_body(b"0123456789", 1);
+        let url = format!("http://{addr}/archive.tar.bz2");
+        let client = reqwest::blocking::Client::new();
+        let mut done = 0;
+        let mut progress = |_done: u64, _state: DownloadState| {};
+
+        let total = download_file(
+            &client,
+            &url,
+            &part,
+            0,
+            &CancellationToken::new(),
+            &mut done,
+            &mut progress,
+        )
+        .unwrap();
+
+        assert_eq!(total, 10);
+        assert_eq!(done, 10);
+        assert_eq!(fs::read(&part).unwrap(), b"0123456789");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_stale_range_restarts_without_range_on_416() {
+        let dir = std::env::temp_dir().join(format!("qingmo-416r-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("file.part");
+        fs::write(&part, b"0123").unwrap();
+        let addr = serve_416_then_body(b"0123456789", 2);
+        let url = format!("http://{addr}/file.bin");
+        let client = reqwest::blocking::Client::new();
+        let mut done = 0;
+        let mut progress = |_done: u64, _state: DownloadState| {};
+
+        let total = download_file(
+            &client,
+            &url,
+            &part,
+            10,
+            &CancellationToken::new(),
+            &mut done,
+            &mut progress,
+        )
+        .unwrap();
+
+        assert_eq!(total, 10);
+        assert_eq!(done, 10);
+        assert_eq!(fs::read(&part).unwrap(), b"0123456789");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -127,6 +127,13 @@ fi
 
 if [[ $skip_build -eq 0 ]]; then
   info "cross-compiling the Windows NSIS installer (this can take several minutes)"
+  # The sherpa-onnx Windows prebuilt is MT (static CRT); llama.cpp must match
+  # it and so must the Rust standard library, or lld-link reports
+  # `/failifmismatch RuntimeLibrary`.
+  export LLAMA_STATIC_CRT=1
+  # cargo-xwin's target spec passes `/NODEFAULTLIB:libucrt.lib`; a direct
+  # library argument survives it (math/string live in the UCRT static lib).
+  export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static -C link-arg=libucrt.lib"
   build_args=(--runner cargo-xwin --target "$target" --bundles nsis)
   if [[ -z "$signing_key" ]]; then
     build_args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')

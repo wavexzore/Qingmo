@@ -22,15 +22,15 @@ schema_version: "1.0"
 feature_id: "meeting-minutes"
 feature_name: "会议纪要（本地音频转结构化纪要）"
 status: "in_progress"           # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-013"          # 当前应执行的任务；Q 全部已决
-last_completed_task: "T-012"
-next_action: "T-013 Pre-Implementation Check（打包/体积/公证/许可）"
+current_task: "T-014"          # 当前应执行的任务；Q 全部已决
+last_completed_task: "T-013"
+next_action: "T-014 Pre-Implementation Check（README/roadmap/04/03 收尾）"
 verification_status: "pass" # not_run | pass | fail | partial | skipped
 research_status: "pass"        # 官方文档 / 论文 / 开源实现 / 引擎选型四路调研已完成，证据见 01 §2.4 / 05
 call_chain_status: "pass"      # GitNexus impact + context + PDG + 源码复核已完成，证据见 01 §3
 code_calibration_status: "pass"
-last_verification_command: "pnpm ci:local && pnpm ci:tauri && scripts/meeting-models/calibrate.sh"
-last_updated: "2026-11-11T06:35:00+08:00"
+last_verification_command: "make build && pnpm ci:local && pnpm ci:tauri"
+last_updated: "2026-11-11T13:10:00+08:00"
 resume_from:
   - "README.md#0-llm-state每轮实施前必须读取"
   - "01-实施计划.md#12-待确认事项"
@@ -112,7 +112,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | R-007 | 结果写入是普通 untitled 文档，保存走既有 `SaveCoordinator`，AI 改动进 undo 栈 | E2E-001：生成后 `Mod+Z` 可整体撤销；`Mod+S` 触发既有 Save As | todo |
 | R-008 | 中文与英文界面/纪要双语；语言可自动判定 | 单测：`language=auto` 对纯中文、纯英文、混合样本的判定；i18n key 完整性 | todo |
 | R-009 | 失败可解释：模型缺失、LLM 未配置、音频损坏、推理崩溃各有稳定错误码与恢复动作 | 契约负例：9 个新码 + 4 个已落地音频码，36 总数在 `commands_contract` 断言 | todo |
-| R-010 | 打包与许可可验证 | `make build` 通过公证；安装包零模型；转写组合可下载并校验、摘要模型可单独下载；`NOTICE` 完整 | todo |
+| R-010 | 打包与许可可验证 | `make build` 通过公证；安装包零模型；转写组合可下载并校验、摘要模型可单独下载；`NOTICE` 完整 | done |
 | R-011 | 可选 BYOK 远程转写，失败回退本地一次并标注 | wiremock 401/429/超时；回退只一次 | todo |
 | R-012 | 本地离线说话人分离：转录与引句带「说话人 N」标签，同人同色（8 色 emoji）；失败降级 | 集成：双人 fixture 至少 2 个稳定标签；全失败标注「未分离说话人」，部分失败标「部分未分离」 | todo |
 | R-013 | 模型下载可恢复、有界 | 同卷 staging、续传、预哈希、SHA-256、单槽、按 `max(2×download_bytes, download_bytes + install_bytes×1.05 + 64MB)` 预检；全量提示预留 ≥ 20.5 GB | todo |
@@ -235,7 +235,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | Code | `apps/desktop/src/features/meeting/` | 新增（Progress、错误态、结果接入、模型清单） | done | 前端测试与 E2E |
 | Code | `apps/desktop/src/features/editor/DocumentSessionContext.tsx`、`EditorSession.ts`、`EditorPage.tsx`、`components/StatusBar.tsx` | 修改（meeting 参数分支、`insertDocumentText`、状态栏 meeting 段） | done | editor-session 测试 |
 | Contract | `src-tauri/src/ipc/contract.rs`、`dto.rs`、`error.rs` | 修改（命令、事件、DTO、错误码） | done | ci:generated/ci:negative |
-| Config | `src-tauri/tauri.conf.json`（确认不含模型资源）、`capabilities/*.json`、`NOTICE` | 修改 | partial | capability 已改；NOTICE/确认零模型归 T-013 |
+| Config | `src-tauri/tauri.conf.json`（确认不含模型资源）、`capabilities/*.json`、`NOTICE` | 修改 | done | 零模型；NOTICE 全量许可 |
 | Script | `scripts/meeting-models/**`（拉取/哈希核对，不打包） | 新增 | done | fetch/verify/calibrate/ci-fetch |
 | Config | `app_local_data_dir/meeting/config.json` + 设置页；`uiStore.ts` 仅 UI 偏好 | 新增 | done | config 13 项与迁移 |
 | Test | `src-tauri/tests/meeting_*.rs`、`apps/desktop/src/features/meeting/*.test.tsx`、`e2e/meeting*.spec.ts`、`e2e/fixtures/*` | 新增 | done | Rust/浏览器/原生全绿 |
@@ -330,7 +330,7 @@ ASR 清单不变（Paraformer 默认、small、SenseVoice、Zipformer、FireRed�
 | AC-005 | 取消后无残留线程/临时文件（ASR ≤30 s、分离 ≤60 s 内停机） | T-006, T-012 | `cargo test --test meeting_cancel` | todo |
 | AC-006 | 命令/权限/生成绑定零漂移 | T-007, T-012 | `pnpm ci:generated && pnpm ci:negative` + `cargo test --test meeting_contract` | todo |
 | AC-007 | 设置页配置往返、密钥不入 localStorage、模型列表与下载态往返 | T-010, T-012 | settings 35/35 + `meeting_keys` 4/4 + `commands_contract` | done |
-| AC-008 | 安装包零模型、公证通过、转写组合可下载并校验、摘要模型可单独下载、NOTICE 覆盖全部模型许可 | T-013 | `make build` + E2E-004/010 + `pnpm test -- settings` | todo |
+| AC-008 | 安装包零模型、公证通过、转写组合可下载并校验、摘要模型可单独下载、NOTICE 覆盖全部模型许可 | T-013 | `make build` + E2E-004/004b/010 + `pnpm test -- settings` | done |
 | AC-009 | 无重复实现：仅一处窗口构建、一处保存路径 | 全量 | `git grep` 窗口构建各 1 处 + `AtomicWriter` 唯一写路径 + `detect_changes` + 人工复核 | todo |
 | AC-010 | 中英文案完整、无硬编码 | T-009, T-012 | `pnpm test -- i18n` | todo |
 | AC-011 | 远程失败只回退一次并标注 | T-004b, T-012 | `cargo test --test meeting_remote` | todo |

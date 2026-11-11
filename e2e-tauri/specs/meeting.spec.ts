@@ -42,8 +42,14 @@ function parkPack(id: string): () => void {
     fs.renameSync(parked, dir);
   }
   fs.rmSync(parked, { recursive: true, force: true });
-  fs.renameSync(dir, parked);
+  const present = fs.existsSync(dir);
+  if (present) {
+    fs.renameSync(dir, parked);
+  }
   return () => {
+    if (!present) {
+      return;
+    }
     fs.rmSync(dir, { recursive: true, force: true });
     fs.renameSync(parked, dir);
   };
@@ -225,6 +231,52 @@ describe("real Tauri meeting pipeline", () => {
       const text = await waitForMeetingResult(420_000);
       expect(text).toContain("转录");
       expect(text).toMatch(/说话人 [12]/);
+    } finally {
+      restore();
+    }
+  });
+
+  it("E2E-004b: the official ASR source downloads without a mirror", async function () {
+    if (process.env.E2E_OFFICIAL !== "1") {
+      this.skip();
+    }
+    this.timeout(1_800_000);
+    fs.rmSync(path.join(models, ".staging", "paraformer-zh-en-int8"), {
+      recursive: true,
+      force: true,
+    });
+    const restore = parkPack("paraformer-zh-en-int8");
+    try {
+      await applyMeetingEnv({
+        ...baseEnv(twoSpeakers),
+        MEETING_E2E_DOWNLOAD_BASE: "",
+      });
+      await startMeeting();
+      const failed = await browser.$('[data-testid="meeting-failed"]');
+      await failed.waitForDisplayed({ timeout: 120_000 });
+      await (await browser.$('[data-testid="meeting-open-settings"]')).click();
+      await switchToSettings();
+
+      const primary = await browser.$('[data-testid="download-primary-asr"]');
+      await primary.waitForClickable({ timeout: 60_000 });
+      await primary.click();
+      await browser.waitUntil(
+        async () => {
+          const list =
+            await invokeHere<Array<{ id: string; state: string }>>("meeting_models_list");
+          return list.find((model) => model.id === "paraformer-zh-en-int8")?.state === "ready";
+        },
+        {
+          timeout: 900_000,
+          interval: 1_000,
+          timeoutMsg: "the official ASR download did not finish",
+        },
+      );
+
+      await focusMeetingWindow();
+      await (await browser.$('[data-testid="meeting-retry"]')).click();
+      const text = await waitForMeetingResult(420_000);
+      expect(text).toContain("转录");
     } finally {
       restore();
     }
@@ -516,5 +568,12 @@ describe("real Tauri meeting pipeline", () => {
 after(async () => {
   await closeMeetingWindow().catch(() => undefined);
   await ensureDocumentWindow().catch(() => undefined);
+  // Meeting output is inserted into whichever document the session restored
+  // (often image.md); let autosave settle, then put the tracked fixture back.
+  await browser.pause(1_500);
+  fs.writeFileSync(
+    path.join(root, "..", "fixtures", "image.md"),
+    "# Image\n\n![pixel](assets/pixel.png)\n",
+  );
   clearMeetingEnv();
 });
