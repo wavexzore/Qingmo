@@ -2,14 +2,14 @@
 
 > **模板定位：** LLM 持续实施控制台
 > **功能 ID：** `meeting-minutes`
-> **对应 SDD Spec：** 无（依据 `docs/roadmap.md:74` 的「内置 AI 写作」方向；用户 2026-11-10 明确本批只做音频会议纪要）
+> **对应 SDD Spec：** 无（依据 `docs/roadmap.md §2` 的「通用 AI 后置」方向；用户 2026-11-10 明确本批只做音频会议纪要）
 > **对应需求：** R-001 ~ R-014
 > **功能分支：** `feat/meeting-minutes`（建议；当前工作树在 `feat/p0-p1-closure`，未新建）
 > **优先级：** P2（新增能力，不改变既有保存/打开不变量）
 > **负责人：** Qingmo 维护者
 > **最新代码校准日期：** 2026-11-10
-> **代码基线：** `feat/p0-p1-closure@e3b5697` + T-001/T-002 未提交改动（33 个文件；`docs/` 未跟踪；`HEAD` 领先 `origin/main` 6 个本地提交）
-> **GitNexus 索引：** `Qingmo`，`lastCommit = e3b56975cfad657b1d1691e9053227ee9d778814`，`status = current`
+> **代码基线：** `feat/p0-p1-closure@c4b0e75`（T-001~T-014 完成；`docs/` 按仓库惯例不入库）
+> **GitNexus 索引：** `Qingmo`，`lastCommit = c4b0e75`，`status = current`
 > **设计文档：** [`04-设计方案.md`](04-设计方案.md)
 > **高保真原型：** [`prototype.html`](prototype.html)
 
@@ -21,10 +21,10 @@
 schema_version: "1.0"
 feature_id: "meeting-minutes"
 feature_name: "会议纪要（本地音频转结构化纪要）"
-status: "in_progress"           # todo | in_progress | blocked | partial | done | rolled_back | cancelled
-current_task: "T-014"          # 当前应执行的任务；Q 全部已决
-last_completed_task: "T-013"
-next_action: "T-014 Pre-Implementation Check（README/roadmap/04/03 收尾）"
+status: "done"           # todo | in_progress | blocked | partial | done | rolled_back | cancelled
+current_task: "—"          # 已交接；Q 全部已决
+last_completed_task: "T-014"
+next_action: "无；已交接，可发布"
 verification_status: "pass" # not_run | pass | fail | partial | skipped
 research_status: "pass"        # 官方文档 / 论文 / 开源实现 / 引擎选型四路调研已完成，证据见 01 §2.4 / 05
 call_chain_status: "pass"      # GitNexus impact + context + PDG + 源码复核已完成，证据见 01 §3
@@ -93,7 +93,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 ## 1. 一句话结论
 
-会议纪要处于 `in_progress`（T-001/T-002 done，R42 已 PASS，T-003 解冻）；方案已定型为「Rust 独占音频解码与推理、复用 untitled 文档窗口承载结果、复用 `SaveCoordinator` 保存、本地离线分离说话人、两级 map-reduce 出结构化纪要并在无 LLM 时降级为抽取式」。R10 把本地模型从档位改成编译期 manifest 清单选择，并把说话人分离提为第一版能力；R23 按用户裁决改为安装包零模型、全部模型在设置页下载。**十一项人工闸门已全部裁决（含本地 LLM 与配置集），T-001~T-003 已完成，T-004 待预检。**
+会议纪要已完成（T-001~T-014 done，R45/R46 PASS，VERDICT PASS）；方案已定型为「Rust 独占音频解码与推理、复用 untitled 文档窗口承载结果、复用 `SaveCoordinator` 保存、本地离线分离说话人、两级 map-reduce 出结构化纪要并在无 LLM 时降级为抽取式」。R10 把本地模型从档位改成编译期 manifest 清单选择，并把说话人分离提为第一版能力；R23 按用户裁决改为安装包零模型、全部模型在设置页下载。**十一项人工闸门已全部裁决；零模型打包、官方下载、许可与文档收尾均已验证。**
 
 ---
 
@@ -103,20 +103,20 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 | R-ID | 目标 | 验收方式 | 状态 |
 |---|---|---|---|
-| R-001 | 从本地音频文件（m4a/mp3/wav/mp4/flac）生成一篇 Markdown 会议纪要，含摘要、决议、待办、风险、带时间戳的转录 | E2E-001：导入 60 s 中英混合 fixture，断言五个必需小节且时间戳单调 | todo |
-| R-002 | 音频路径不作命令参数（仅只读 asset URL 供播放）；密钥只经 IPC 写 keyring、读取不回传明文、不入 localStorage；默认不外传 | 契约测试：`commands.ts` 无音频路径参数；CSP 不变；`asr.mode=local` 时 wiremock 计数为 0 | todo |
-| R-003 | 断网可用：ASR 全本地，摘要可在无 LLM 时降级为抽取式 | E2E-003：断网 + 未配置 LLM，仍产出转录与抽取要点，且标注「未生成抽象摘要」 | todo |
-| R-004 | 转录必须可追溯到时间戳，结论必须带原文引句 | 单测：`render` 对每个卡片强制输出 `[hh:mm:ss]` 与引句；缺引句降级为「无依据」 | todo |
-| R-005 | 长音频分块有界：默认 180 分钟（硬上限 600）/ 500 MiB，超限在选文件阶段拒绝 | 单测：边界值与超限错误码 | todo |
-| R-006 | 任务可取消、可观察、单并发 | 单测：取消后 1 个段（≤30 s）或 1 个分离子窗（≤60 s）内停机且无残留；第二次 `meeting_start` 返回 `MEETING_BUSY` | todo |
-| R-007 | 结果写入是普通 untitled 文档，保存走既有 `SaveCoordinator`，AI 改动进 undo 栈 | E2E-001：生成后 `Mod+Z` 可整体撤销；`Mod+S` 触发既有 Save As | todo |
-| R-008 | 中文与英文界面/纪要双语；语言可自动判定 | 单测：`language=auto` 对纯中文、纯英文、混合样本的判定；i18n key 完整性 | todo |
-| R-009 | 失败可解释：模型缺失、LLM 未配置、音频损坏、推理崩溃各有稳定错误码与恢复动作 | 契约负例：9 个新码 + 4 个已落地音频码，36 总数在 `commands_contract` 断言 | todo |
+| R-001 | 从本地音频文件（m4a/mp3/wav/mp4/flac）生成一篇 Markdown 会议纪要，含摘要、决议、待办、风险、带时间戳的转录 | E2E-001：导入 60 s 中英混合 fixture，断言五个必需小节且时间戳单调 | done |
+| R-002 | 音频路径不作命令参数（仅只读 asset URL 供播放）；密钥只经 IPC 写 keyring、读取不回传明文、不入 localStorage；默认不外传 | 契约测试：`commands.ts` 无音频路径参数；CSP 不变；`asr.mode=local` 时 wiremock 计数为 0 | done |
+| R-003 | 断网可用：ASR 全本地，摘要可在无 LLM 时降级为抽取式 | E2E-003：断网 + 未配置 LLM，仍产出转录与抽取要点，且标注「未生成抽象摘要」 | done |
+| R-004 | 转录必须可追溯到时间戳，结论必须带原文引句 | 单测：`render` 对每个卡片强制输出 `[hh:mm:ss]` 与引句；缺引句降级为「无依据」 | done |
+| R-005 | 长音频分块有界：默认 180 分钟（硬上限 600）/ 500 MiB，超限在选文件阶段拒绝 | 单测：边界值与超限错误码 | done |
+| R-006 | 任务可取消、可观察、单并发 | 单测：取消后 1 个段（≤30 s）或 1 个分离子窗（≤60 s）内停机且无残留；第二次 `meeting_start` 返回 `MEETING_BUSY` | done |
+| R-007 | 结果写入是普通 untitled 文档，保存走既有 `SaveCoordinator`，AI 改动进 undo 栈 | E2E-001：生成后 `Mod+Z` 可整体撤销；`Mod+S` 触发既有 Save As | done |
+| R-008 | 中文与英文界面/纪要双语；语言可自动判定 | 单测：`language=auto` 对纯中文、纯英文、混合样本的判定；i18n key 完整性 | done |
+| R-009 | 失败可解释：模型缺失、LLM 未配置、音频损坏、推理崩溃各有稳定错误码与恢复动作 | 契约负例：9 个新码 + 4 个已落地音频码，36 总数在 `commands_contract` 断言 | done |
 | R-010 | 打包与许可可验证 | `make build` 通过公证；安装包零模型；转写组合可下载并校验、摘要模型可单独下载；`NOTICE` 完整 | done |
-| R-011 | 可选 BYOK 远程转写，失败回退本地一次并标注 | wiremock 401/429/超时；回退只一次 | todo |
-| R-012 | 本地离线说话人分离：转录与引句带「说话人 N」标签，同人同色（8 色 emoji）；失败降级 | 集成：双人 fixture 至少 2 个稳定标签；全失败标注「未分离说话人」，部分失败标「部分未分离」 | todo |
-| R-013 | 模型下载可恢复、有界 | 同卷 staging、续传、预哈希、SHA-256、单槽、按 `max(2×download_bytes, download_bytes + install_bytes×1.05 + 64MB)` 预检；全量提示预留 ≥ 20.5 GB | todo |
-| R-014 | 按硬件自动分层：内存/平台决定默认模型与线程，8B 仅 ≥32 GiB，用户可钉死模型与纯 CPU | 单测：4 档 profile、`runtime.mode=cpu`、Windows 纯 CPU；AC-016 | todo |
+| R-011 | 可选 BYOK 远程转写，失败回退本地一次并标注 | wiremock 401/429/超时；回退只一次 | done |
+| R-012 | 本地离线说话人分离：转录与引句带「说话人 N」标签，同人同色（8 色 emoji）；失败降级 | 集成：双人 fixture 至少 2 个稳定标签；全失败标注「未分离说话人」，部分失败标「部分未分离」 | done |
+| R-013 | 模型下载可恢复、有界 | 同卷 staging、续传、预哈希、SHA-256、单槽、按 `max(2×download_bytes, download_bytes + install_bytes×1.05 + 64MB)` 预检；全量提示预留 ≥ 20.5 GB | done |
+| R-014 | 按硬件自动分层：内存/平台决定默认模型与线程，8B 仅 ≥32 GiB，用户可钉死模型与纯 CPU | 单测：4 档 profile、`runtime.mode=cpu`、Windows 纯 CPU；AC-016 | done |
 
 ### 2.2 非目标
 
@@ -214,10 +214,10 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-008 | 结果窗口接入（query 参数 + 首屏进度 + StatusBar 分支 + 失败重试） | done（2026-11-10） | T-007 | 6/6 + 前端 13 | — |
 | T-009 | 菜单、命令面板、i18n、树内音频行 | done（2026-11-10） | T-008, Q-008 | 菜单/树 211 项 | — |
 | T-010 | 设置页：转写/摘要双模型、本地/远程与密钥 | done（2026-11-10） | T-007, T-011, Q-003, Q-004, Q-009, Q-010, Q-011 | settings 35/35、keys 4/4 | — |
-| T-011 | 模型 manifest、下载/校验/存储（含 3 个 LLM） | todo | T-003, T-006, T-007, T-008, Q-002, Q-006, Q-010, Q-011 | none | — |
-| T-012 | 单元/契约/集成/E2E 测试 | todo | T-005, T-009, T-010, T-011, T-004b, T-004c, Q-007, Q-009, Q-010, Q-011 | none | — |
-| T-013 | 打包、公证、体积与许可核验 | todo | Q-001, Q-002, Q-006, Q-007, Q-010, Q-011 | none | — |
-| T-014 | 文档与路线图收尾 | todo | 全部 | none | — |
+| T-011 | 模型 manifest、下载/校验/存储（含 3 个 LLM） | done | T-003, T-006, T-007, T-008, Q-002, Q-006, Q-010, Q-011 | models 7/7、download 10/10 | — |
+| T-012 | 单元/契约/集成/E2E 测试 | done | T-005, T-009, T-010, T-011, T-004b, T-004c, Q-007, Q-009, Q-010, Q-011 | browser 12/12、native 14/14、40 条校准 | — |
+| T-013 | 打包、公证、体积与许可核验 | done | Q-001, Q-002, Q-006, Q-007, Q-010, Q-011 | `make build`、零模型、公证/装订、NOTICE 随包 | — |
+| T-014 | 文档与路线图收尾 | done | 全部 | `pnpm format:check` | `02 T-014` |
 
 状态值只允许：`todo`、`in_progress`、`blocked`、`done`、`skipped`。
 
@@ -239,7 +239,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | Script | `scripts/meeting-models/**`（拉取/哈希核对，不打包） | 新增 | done | fetch/verify/calibrate/ci-fetch |
 | Config | `app_local_data_dir/meeting/config.json` + 设置页；`uiStore.ts` 仅 UI 偏好 | 新增 | done | config 13 项与迁移 |
 | Test | `src-tauri/tests/meeting_*.rs`、`apps/desktop/src/features/meeting/*.test.tsx`、`e2e/meeting*.spec.ts`、`e2e/fixtures/*` | 新增 | done | Rust/浏览器/原生全绿 |
-| Doc | `README.md`、`README.zh-CN.md`、`docs/roadmap.md`、`04-设计方案.md`、`03-复盘与交接.md` | 修改（两处「v1 不做 AI」撤回、评审与交接收尾） | todo | T-014 收尾 |
+| Doc | `README.md`、`README.zh-CN.md`、`docs/roadmap.md`、`04-设计方案.md`、`03-复盘与交接.md` | 修改（两处「v1 不做 AI」撤回、评审与交接收尾） | done | 链接 0 失效 |
 | Prototype | `docs/todo/meeting-minutes/prototype.html` | 新增（已产出） | done | 本目录 |
 
 ---
@@ -294,9 +294,9 @@ ASR 清单不变（Paraformer 默认、small、SenseVoice、Zipformer、FireRed�
 |---|---|---:|---:|---|---|
 | `qwen3-1.7b-instruct-q4km` | Qwen3 1.7B Instruct · Q4_K_M | 约 1.1 GB | 2050 MB | Apache-2.0 | ≤15 GiB 默认 |
 | `qwen3-4b-instruct-q4km` | Qwen3 4B Instruct · Q4_K_M | 约 2.5 GB | 3560 MB | Apache-2.0 | 16–31 GiB 默认 |
-| `qwen3-8b-instruct-q4km` | Qwen3 8B Instruct · Q4_K_M | 约 4.9 GB | 6000 MB | Apache-2.0 | 仅 ≥32 GiB 可选 |
+| `qwen3-8b-instruct-q4km` | Qwen3 8B Instruct · Q4_K_M | 约 5.0 GB | 6000 MB | Apache-2.0 | 仅 ≥32 GiB 可选 |
 
-> 说话人能力来自独立分离包（pyannote segmentation-3.0 int8 1.5 MB + CAM++ zh_en 28.3 MB），固定开启、不绑定识别模型。远程转写仅 Deepgram 有标签且为 0 基，需 +1 与跨块归一。**首次只强制转写组合 254 MB，摘要模型可选；全量约 10.2 GB，全部下载预留 ≥ 20.5 GB；分离缺失只降级，实际走本地且 ASR 缺失阻断；LLM 缺失只降级抽取式。**
+> 说话人能力来自独立分离包（pyannote segmentation-3.0 int8 1.5 MB + CAM++ zh_en 28.3 MB），固定开启、不绑定识别模型。远程转写仅 Deepgram 有标签且为 0 基，需 +1 与跨块归一。**首次只强制转写组合 265 MB，摘要模型可选；全量约 10.2 GB，全部下载预留 ≥ 20.5 GB；分离缺失只降级，实际走本地且 ASR 缺失阻断；LLM 缺失只降级抽取式。**
 
 运行时分层：`TierDefaults` 只依赖注入的 `HardwareProfile`；`ResolvedModels` 记录自动/钉死；设置页拿 `RuntimePreview`。ASR 第一版纯 CPU，macOS 本地 LLM 可用 Metal，Windows 纯 CPU；8B 仅 ≥32 GiB。首跑跳过 2 段预热、取 3 段中位 RTF 并按版本/模型/线程/加速缓存，>0.6 提示远程。
 
@@ -323,23 +323,23 @@ ASR 清单不变（Paraformer 默认、small、SenseVoice、Zipformer、FireRed�
 
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
-| AC-001 | 60 s fixture 产出五个必需小节与单调时间戳；25 分钟跨窗不归零 | T-005, T-012 | `cargo test --test meeting_pipeline -- --ignored` + `meeting_time` + native E2E-018 | todo |
-| AC-002 | 断网且本地 LLM 未下载时降级为抽取式并显式标注 | T-004, T-012 | `cargo test --test meeting_degrade` | todo |
-| AC-003 | 结果可整体 undo；完成后直接关窗必弹保存 | T-008, T-012 | browser E2E-001 + native E2E-019 | todo |
-| AC-004 | 超限音频在选文件阶段被拒 | T-001, T-012 | `cargo test --test meeting_decode` | todo |
-| AC-005 | 取消后无残留线程/临时文件（ASR ≤30 s、分离 ≤60 s 内停机） | T-006, T-012 | `cargo test --test meeting_cancel` | todo |
-| AC-006 | 命令/权限/生成绑定零漂移 | T-007, T-012 | `pnpm ci:generated && pnpm ci:negative` + `cargo test --test meeting_contract` | todo |
+| AC-001 | 60 s fixture 产出五个必需小节与单调时间戳；跨 10 分钟窗口不归零 | T-005, T-012 | `cargo test --test meeting_pipeline -- --ignored` + `meeting_time` + native E2E-018（13 分钟真实录音） | done |
+| AC-002 | 断网且本地 LLM 未下载时降级为抽取式并显式标注 | T-004, T-012 | `cargo test --test meeting_degrade` | done |
+| AC-003 | 结果可整体 undo；完成后直接关窗必弹保存 | T-008, T-012 | browser E2E-001 + native E2E-019 | done |
+| AC-004 | 超限音频在选文件阶段被拒 | T-001, T-012 | `cargo test --test meeting_decode` | done |
+| AC-005 | 取消后无残留线程/临时文件（ASR ≤30 s、分离 ≤60 s 内停机） | T-006, T-012 | `cargo test --test meeting_cancel` | done |
+| AC-006 | 命令/权限/生成绑定零漂移 | T-007, T-012 | `pnpm ci:generated && pnpm ci:negative` + `cargo test --test meeting_contract` | done |
 | AC-007 | 设置页配置往返、密钥不入 localStorage、模型列表与下载态往返 | T-010, T-012 | settings 35/35 + `meeting_keys` 4/4 + `commands_contract` | done |
 | AC-008 | 安装包零模型、公证通过、转写组合可下载并校验、摘要模型可单独下载、NOTICE 覆盖全部模型许可 | T-013 | `make build` + E2E-004/004b/010 + `pnpm test -- settings` | done |
-| AC-009 | 无重复实现：仅一处窗口构建、一处保存路径 | 全量 | `git grep` 窗口构建各 1 处 + `AtomicWriter` 唯一写路径 + `detect_changes` + 人工复核 | todo |
-| AC-010 | 中英文案完整、无硬编码 | T-009, T-012 | `pnpm test -- i18n` | todo |
-| AC-011 | 远程失败只回退一次并标注 | T-004b, T-012 | `cargo test --test meeting_remote` | todo |
-| AC-012 | `asr.mode=local` 时 ASR 外传计数为 0 | T-004b, T-012 | wiremock 计数断言 | todo |
-| AC-013 | 说话人标签稳定、同人同色、失败降级有标注 | T-004c, T-012 | `meeting_diarize` 真模型 2/2 + `meeting_speaker` 3/3 | done（E2E 待 T-012） |
-| AC-014 | 每条结论都有时间戳与引句；缺引句渲染「待核」 | T-005, T-012 | `cargo test --test meeting_render` | todo |
-| AC-015 | 英文界面与英文纪要模板完整 | T-005, T-009, T-012 | `cargo test --test meeting_render` + `pnpm test -- i18n` | todo |
-| AC-016 | 分层/钉死/预算正确，`runtime.mode=cpu` 关 Metal，8B 仅 ≥32 GiB 且低配钉死被拒 | T-003, T-012 | `cargo test --test meeting_runtime --test meeting_budget` + E2E-017 | todo |
-| AC-017 | 本地 LLM 缺失/超时/预算/非法 JSON/取消均降级且不阻断 | T-004, T-012 | `cargo test --test meeting_llm --test meeting_llm_local` | todo |
+| AC-009 | 无重复实现：仅一处窗口构建、一处保存路径 | 全量 | `git grep` 窗口构建各 1 处 + `AtomicWriter` 唯一写路径 + `detect_changes` + 人工复核 | done |
+| AC-010 | 中英文案完整、无硬编码 | T-009, T-012 | `pnpm test -- i18n` | done |
+| AC-011 | 远程失败只回退一次并标注 | T-004b, T-012 | `cargo test --test meeting_remote` | done |
+| AC-012 | `asr.mode=local` 时 ASR 外传计数为 0 | T-004b, T-012 | wiremock 计数断言 | done |
+| AC-013 | 说话人标签稳定、同人同色、失败降级有标注 | T-004c, T-012 | `meeting_diarize` 真模型 2/2 + `meeting_speaker` 3/3 + E2E-011n | done |
+| AC-014 | 每条结论都有时间戳与引句；缺引句渲染「待核」 | T-005, T-012 | `cargo test --test meeting_render` | done |
+| AC-015 | 英文界面与英文纪要模板完整 | T-005, T-009, T-012 | `cargo test --test meeting_render` + `pnpm test -- i18n` | done |
+| AC-016 | 分层/钉死/预算正确，`runtime.mode=cpu` 关 Metal，8B 仅 ≥32 GiB 且低配钉死被拒 | T-003, T-012 | `cargo test --test meeting_runtime --test meeting_budget` + E2E-017 | done |
+| AC-017 | 本地 LLM 缺失/超时/预算/非法 JSON/取消均降级且不阻断 | T-004, T-012 | `cargo test --test meeting_llm --test meeting_llm_local` | done |
 
 ---
 

@@ -61,6 +61,14 @@ The editor is built around three non-negotiable goals:
 - **Signed macOS updates** through the official Tauri updater: Developer ID, notarized app and DMG, minisign signatures and `requireSignedVersion`.
 - ARIA status roles, keyboard focus restoration, IME-safe save shortcuts, and an error boundary around the shell.
 
+### Meetings, on your machine
+
+- **Audio to structured Markdown**: pick a recording (m4a, mp4, wav, mp3, flac) and get a timestamped Document with summary, decisions, action items, risks and transcript, inserted into a normal untitled window.
+- **Local by default**: transcription runs on sherpa-onnx, speaker diarization on pyannote + CAM++, summaries on llama.cpp with a local GGUF. Nothing leaves the machine unless you switch transcription or summaries to a BYOK OpenAI-compatible / Deepgram endpoint.
+- **Speaker labels and quotes**: every conclusion carries `[hh:mm:ss]`, a speaker label and the source quote; numbers, amounts and dates are checked against the transcript and marked when unverified.
+- **Zero models in the installer**: the DMG and NSIS installer ship code only. The settings page downloads the transcription set, the diarization pack and one summary model on demand, resumable and SHA-256 verified; the transcription set is about 265 MB, summary models range from 1.1 GB to 5.0 GB.
+- **Degrades instead of failing**: a missing summary model or a failed local run falls back to extractive bullets, a missing diarization pack still produces a transcript, and every failure keeps the document editable.
+
 ## Project status
 
 Qingmo is **pre-1.0** and under active development. The editor MVP is usable today; the wider product is not finished.
@@ -69,15 +77,16 @@ Qingmo is **pre-1.0** and under active development. The editor MVP is usable tod
 | --- | --- |
 | Editor MVP (open, edit, save, Live Preview, themes, palette, large files) | ✅ Implemented and covered by unit, Rust integration and Playwright E2E tests |
 | Save reliability (autosave, atomic write, conflict banner, live external-change detection, close guard) | ✅ Implemented |
-| Native menu, multi-window, runtime i18n (zh-CN / en) | ✅ Implemented and covered by unit, Rust contract, Playwright E2E and macOS real-device menu smoke; Windows build, 122 Rust tests, 469 unit tests and 80 E2E pass (native GUI not automated) |
+| Native menu, multi-window, runtime i18n (zh-CN / en) | ✅ Implemented and covered by unit, Rust contract, Playwright E2E and macOS real-device menu smoke; Windows build passes; the full suite runs 749 Rust tests, 920 unit tests and 172 Playwright E2E (native GUI not automated) |
 | macOS signed auto-update | ✅ Local release chain validated; real-device install smoke test still pending |
-| Workspace file tree, full-text search, SQLite index, crash recovery | 🚧 Planned for P2 |
+| Workspace file tree, full-text search, SQLite index, crash recovery | ✅ Implemented |
+| Meeting minutes (local ASR, diarization, local/remote summaries, zero-model installer) | ✅ Implemented; macOS release chain, official model download and native E2E verified |
 | Plugin SDK, Worker/iframe runtime, capability broker, plugin market | 🚧 Designed for P3, not shipped |
-| Windows and Linux release builds | 🚧 Compile-checked in CI; packaging and release verification pending |
+| Windows and Linux release builds | 🚧 Windows NSIS installer cross-built and updater-signed; Linux packaging and real-device verification pending |
 
 ### Platform support
 
-macOS is the primary target and the only platform with a verified release/update path today. Windows and Linux are compile-checked in CI, but remain compile-only until their installers and release flows are validated.
+macOS is the primary target and the only platform with a verified release/update path today. Windows ships an unsigned NSIS installer and a signed updater entry; Linux remains compile-only until packaging is validated.
 
 ## Install and build
 
@@ -141,6 +150,10 @@ gh release edit v<version> --draft=false --latest
 ```
 
 Linux packaging remains pending.
+
+### Meeting models
+
+Meeting models are never bundled. On first use the settings page downloads them into the app data directory (`meeting-models/<id>/`), verifies SHA-256, and retries the meeting in the same window. To pre-seed a machine, run `scripts/meeting-models/fetch.sh <dir>` followed by `scripts/meeting-models/verify.sh <dir>`. Licenses and upstream links for all eleven packs are in `NOTICE`.
 
 ### Release notes
 
@@ -231,11 +244,12 @@ docs/                Local design docs and task records (not versioned)
 
 ## Roadmap
 
-- **P2 — Workspace**: file tree, indexed search, recovery, workspace-wide file watching, unified settings.
+- **P2 — Workspace** (shipped): file tree, indexed search, recovery, workspace-wide file watching, unified settings.
 - **P3 — Plugins**: signed manifests, Worker logic host, sandboxed iframe UI, capability broker, three first-party plugins (Mermaid, math, export).
-- **Release engineering**: Windows/Linux installers, cross-platform updates, real-device update verification, changelog automation.
+- **Release engineering**: Linux packaging, cross-platform update verification on real devices, changelog automation.
+- **Meeting minutes** shipped as a local-first feature: on-device transcription and diarization, optional BYOK remote backends, zero models in the installer, per-model licenses in `NOTICE`.
 
-Explicit non-goals for v1: real-time collaboration, mobile apps, built-in AI, and a first-party cloud sync service.
+Explicit non-goals for v1: real-time collaboration, mobile apps, a general-purpose AI assistant, and a first-party cloud sync service.
 
 ## Contributing
 
