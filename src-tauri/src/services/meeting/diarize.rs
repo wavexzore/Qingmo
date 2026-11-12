@@ -23,8 +23,8 @@ use super::TARGET_SAMPLE_RATE;
 pub const SUBWINDOW_SAMPLES: usize = 60 * TARGET_SAMPLE_RATE as usize;
 pub const SEGMENTATION_ID: &str = "pyannote-segmentation-3-int8";
 pub const EMBEDDING_ID: &str = "campplus-zh-en-advanced";
-pub const MATCH_THRESHOLD: f32 = 0.65;
-pub const CLUSTER_THRESHOLD: f32 = 0.5;
+pub const MATCH_THRESHOLD: f32 = 0.5;
+pub const CLUSTER_THRESHOLD: f32 = 0.65;
 /// 10 s per local speaker bounds the embedding pass and its transient buffer.
 const EMBED_SAMPLES: usize = 5 * TARGET_SAMPLE_RATE as usize;
 
@@ -49,6 +49,7 @@ struct Centroids {
     vectors: Vec<Vec<f32>>,
     counts: Vec<u64>,
     next: u8,
+    last: u8,
 }
 
 impl Centroids {
@@ -57,12 +58,18 @@ impl Centroids {
             vectors: Vec::with_capacity(MAX_SPEAKERS as usize),
             counts: Vec::with_capacity(MAX_SPEAKERS as usize),
             next: 0,
+            last: 0,
         }
     }
 
     fn assign(&mut self, embedding: Option<&[f32]>) -> u8 {
         let Some(embedding) = embedding.filter(|value| !value.is_empty()) else {
-            return self.fresh();
+            // Short or clipped turns often have no usable embedding. Reuse the
+            // previous speaker instead of burning a new id on every gap.
+            if self.vectors.is_empty() {
+                self.last = 1;
+            }
+            return self.last.max(1);
         };
         let best = self
             .vectors
@@ -79,7 +86,8 @@ impl Centroids {
                 }
                 self.counts[index] = count + 1;
                 normalize(centroid);
-                return index as u8 + 1;
+                self.last = index as u8 + 1;
+                return self.last;
             }
         }
         self.fresh_with(embedding)
@@ -100,6 +108,7 @@ impl Centroids {
             normalize(&mut centroid);
             self.vectors.push(centroid);
             self.counts.push(1);
+            self.last = id;
         }
         id
     }
@@ -396,7 +405,17 @@ mod tests {
             assert_eq!(centroids.assign(Some(&vector)), index as u8 + 1);
         }
         assert_eq!(centroids.assign(Some(&[1.0; 8])), OVERFLOW_SPEAKER);
-        assert_eq!(centroids.assign(None), OVERFLOW_SPEAKER);
+        // Missing embeddings reuse the last known speaker instead of sliding
+        // into the overflow bucket.
+        assert_eq!(centroids.assign(None), 8);
+    }
+
+    #[test]
+    fn missing_embedding_before_any_voice_is_speaker_one() {
+        let mut centroids = Centroids::new();
+        assert_eq!(centroids.assign(None), 1);
+        assert_eq!(centroids.assign(Some(&[1.0, 0.0])), 1);
+        assert_eq!(centroids.assign(None), 1);
     }
 
     #[test]

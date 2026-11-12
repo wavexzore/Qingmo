@@ -13,7 +13,7 @@ use super::asr::{repeat_ratio, AsrEngine, Segment, SegmentStatus, REPEAT_LIMIT};
 use super::decode::{decode_windows, DecodeWindow};
 use super::remote_asr::RemoteAsr;
 use super::runtime::ReasonCode;
-use super::speaker::{join, DiarizationEngine, DiarizeError, SpeakerTurn};
+use super::speaker::{join, DiarizationEngine, DiarizeError, SpeakerTurn, MAX_SPEAKERS};
 use super::vad::{segment_window, SpeechSegment};
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{WindowPhase, WindowProgress};
@@ -288,7 +288,7 @@ fn run_local_inner(
                 return Err(AppError::new(AppErrorCode::Cancelled, "pipeline cancelled"));
             }
             total += 1;
-            let recognized = transcribe(asr, &window.samples, speech, cancel);
+            let recognized = transcribe(asr, &window.samples, window.start_ms, speech, cancel);
             window_done = window_done.saturating_add(1);
             on_window(WindowProgress {
                 index: window_index as u32,
@@ -318,6 +318,10 @@ fn run_local_inner(
             speaker_count = speaker_count.max(stats.speakers);
         }
         segments.append(&mut window_segments);
+    }
+
+    if speaker_count > 0 {
+        speaker_count = normalize_speakers(&mut segments);
     }
 
     let available = segments
@@ -363,6 +367,73 @@ fn run_local_inner(
         speaker_partial,
         speaker_count: (speaker_count > 0).then_some(speaker_count),
     })
+}
+
+/// Fold rare one-off speaker ids into their nearest kept neighbour and
+/// renumber the survivors by first appearance.
+///
+/// Clustering noise can mint an id from a single noisy turn; without this a
+/// two-person call reports "9+ 人". Speakers below 10% (at least 3 segments)
+/// are treated as noise; at most eight survive.
+fn normalize_speakers(segments: &mut [Segment]) -> u8 {
+    use std::collections::HashMap;
+
+    let floor = (segments.len() / 10).max(3);
+    let mut counts = HashMap::<u8, usize>::new();
+    for segment in segments.iter() {
+        if let Some(speaker) = segment.speaker {
+            *counts.entry(speaker).or_default() += 1;
+        }
+    }
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|(left, left_count), (right, right_count)| {
+        right_count.cmp(left_count).then(left.cmp(right))
+    });
+    let mut kept = ranked
+        .iter()
+        .filter(|(_, count)| *count >= floor)
+        .take(MAX_SPEAKERS as usize)
+        .map(|(speaker, _)| *speaker)
+        .collect::<Vec<_>>();
+    if kept.is_empty() {
+        if let Some((speaker, _)) = ranked.first() {
+            kept.push(*speaker);
+        }
+    }
+    kept.sort_by_key(|speaker| {
+        segments
+            .iter()
+            .position(|segment| segment.speaker == Some(*speaker))
+            .unwrap_or(usize::MAX)
+    });
+    let renumber = kept
+        .iter()
+        .enumerate()
+        .map(|(index, speaker)| (*speaker, index as u8 + 1))
+        .collect::<HashMap<_, _>>();
+    let anchors = segments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, segment)| {
+            segment
+                .speaker
+                .and_then(|speaker| renumber.get(&speaker).copied())
+                .map(|speaker| (index, speaker))
+        })
+        .collect::<Vec<_>>();
+
+    for (index, segment) in segments.iter_mut().enumerate() {
+        let Some(speaker) = segment.speaker else {
+            continue;
+        };
+        segment.speaker = renumber.get(&speaker).copied().or_else(|| {
+            anchors
+                .iter()
+                .min_by_key(|(anchor, _)| anchor.abs_diff(index))
+                .map(|(_, speaker)| *speaker)
+        });
+    }
+    kept.len() as u8
 }
 
 pub fn run_remote(
@@ -494,11 +565,15 @@ fn parse_reason(value: &str) -> Option<ReasonCode> {
 fn transcribe(
     asr: &mut dyn AsrEngine,
     window: &[f32],
+    window_start_ms: u64,
     speech: SpeechSegment,
     cancel: &CancellationToken,
 ) -> Result<Segment, AppError> {
-    let start = ms_to_samples(speech.start_ms);
-    let end = ms_to_samples(speech.end_ms).min(window.len());
+    // VAD reports absolute times; slices index into this window only.
+    let rel_start = speech.start_ms.saturating_sub(window_start_ms);
+    let rel_end = speech.end_ms.saturating_sub(window_start_ms);
+    let start = ms_to_samples(rel_start);
+    let end = ms_to_samples(rel_end).min(window.len());
     let slice = window.get(start..end).unwrap_or(&[]);
     let raw = asr.recognize(slice, speech.start_ms, speech.end_ms, cancel)?;
     let mut segment = Segment::from_raw(raw, speech.start_ms, speech.end_ms);
@@ -524,6 +599,135 @@ mod tests {
         segment.status = SegmentStatus::Ok;
         segment.text = text.into();
         segment
+    }
+
+    #[test]
+    fn transcribe_slices_relative_to_the_window_origin() {
+        use crate::services::meeting::asr::RawAsr;
+
+        struct Capture {
+            seen: Vec<(usize, u64, u64)>,
+        }
+        impl AsrEngine for Capture {
+            fn recognize(
+                &mut self,
+                samples: &[f32],
+                start_ms: u64,
+                end_ms: u64,
+                _cancel: &CancellationToken,
+            ) -> Result<RawAsr, AppError> {
+                self.seen.push((samples.len(), start_ms, end_ms));
+                Ok(RawAsr {
+                    start_ms: 0,
+                    end_ms: 1,
+                    text: "x".into(),
+                    tokens: Vec::new(),
+                })
+            }
+        }
+
+        let cancel = CancellationToken::new();
+        let window = vec![0.25f32; crate::services::meeting::TARGET_SAMPLE_RATE as usize * 2];
+        let speech = SpeechSegment {
+            start_ms: 601_000,
+            end_ms: 601_500,
+        };
+        let mut asr = Capture { seen: Vec::new() };
+        let segment = transcribe(&mut asr, &window, 600_000, speech, &cancel).expect("recognize");
+        assert_eq!(
+            asr.seen,
+            vec![(8_000, 601_000, 601_500), (8_000, 601_000, 601_500)]
+        );
+        assert_eq!(segment.start_ms, 601_000);
+        assert_eq!(segment.end_ms, 601_001);
+    }
+
+    #[test]
+    fn transcribe_clamps_past_window_end() {
+        use crate::services::meeting::asr::RawAsr;
+
+        struct Capture {
+            seen: Vec<usize>,
+        }
+        impl AsrEngine for Capture {
+            fn recognize(
+                &mut self,
+                samples: &[f32],
+                _start_ms: u64,
+                _end_ms: u64,
+                _cancel: &CancellationToken,
+            ) -> Result<RawAsr, AppError> {
+                self.seen.push(samples.len());
+                Ok(RawAsr {
+                    start_ms: 0,
+                    end_ms: 1,
+                    text: "x".into(),
+                    tokens: Vec::new(),
+                })
+            }
+        }
+
+        let cancel = CancellationToken::new();
+        let window = vec![0.25f32; crate::services::meeting::TARGET_SAMPLE_RATE as usize];
+        let speech = SpeechSegment {
+            start_ms: 600_900,
+            end_ms: 603_000,
+        };
+        let mut asr = Capture { seen: Vec::new() };
+        transcribe(&mut asr, &window, 600_000, speech, &cancel).expect("recognize");
+        assert_eq!(
+            asr.seen,
+            vec![crate::services::meeting::TARGET_SAMPLE_RATE as usize - 14_400; 2]
+        );
+    }
+
+    fn spoken(index: u8, speaker: u8) -> Segment {
+        let mut segment = seg(u64::from(index) * 100, u64::from(index) * 100 + 50, "x");
+        segment.speaker = Some(speaker);
+        segment
+    }
+
+    #[test]
+    fn rare_speakers_fold_into_neighbours() {
+        let mut segments = (0..50).map(|index| spoken(index, 1)).collect::<Vec<_>>();
+        segments.extend((50..100).map(|index| spoken(index, 2)));
+        for (index, speaker) in [(20, 3), (40, 4), (60, 5)] {
+            segments[index] = spoken(index as u8, speaker);
+        }
+        assert_eq!(normalize_speakers(&mut segments), 2);
+        assert!(segments
+            .iter()
+            .all(|segment| matches!(segment.speaker, Some(1 | 2))));
+    }
+
+    #[test]
+    fn speakers_are_renumbered_by_first_appearance() {
+        let mut segments = (0..10).map(|index| spoken(index, 7)).collect::<Vec<_>>();
+        segments.extend((10..20).map(|index| spoken(index, 4)));
+        assert_eq!(normalize_speakers(&mut segments), 2);
+        assert_eq!(segments[0].speaker, Some(1));
+        assert_eq!(segments[10].speaker, Some(2));
+    }
+
+    #[test]
+    fn speaker_cap_keeps_the_eight_most_frequent() {
+        let mut segments = Vec::new();
+        for speaker in 1..=10 {
+            for _ in 0..10 {
+                segments.push(spoken(segments.len() as u8, speaker));
+            }
+        }
+        assert_eq!(normalize_speakers(&mut segments), 8);
+        assert!(segments
+            .iter()
+            .all(|segment| segment.speaker.is_some_and(|speaker| speaker <= 8)));
+    }
+
+    #[test]
+    fn no_labels_stay_unlabelled() {
+        let mut segments = vec![seg(0, 10, "x"), seg(10, 20, "y")];
+        assert_eq!(normalize_speakers(&mut segments), 0);
+        assert!(segments.iter().all(|segment| segment.speaker.is_none()));
     }
 
     #[test]
