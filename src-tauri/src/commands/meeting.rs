@@ -360,7 +360,7 @@ fn transcribe<R: Runtime>(
 
     let local_ready = catalog.state(asr_id) == ModelState::Ready;
     let keys = app.state::<Arc<KeyService>>();
-    let asr_key = keys.get(&config.asr_key_ref());
+    let asr_key = resolve_key(&config.asr.api_key, keys.inner(), &config.asr_key_ref());
     let route = crate::services::meeting::asr_route::decide(
         config.asr.mode,
         asr_key.is_some(),
@@ -567,7 +567,7 @@ fn transcribe<R: Runtime>(
     let remote = (llm_mode == summarize::LlmMode::Remote).then(|| RemoteLlmSpec {
         base_url: config.llm.base_url.clone(),
         model: config.llm.model.clone(),
-        api_key: keys.get(&config.llm_key_ref()),
+        api_key: resolve_key(&config.llm.api_key, keys.inner(), &config.llm_key_ref()),
     });
     let plan = SummarizePlan {
         mode: llm_mode,
@@ -720,6 +720,23 @@ fn high_memory_model(profile: &HardwareProfile, id: &str) -> bool {
     profile.total_memory_mb <= 8 * 1024 && find(id).is_some_and(|pack| pack.peak_memory_mb >= 1_400)
 }
 
+fn resolve_key(stored: &str, keys: &KeyService, reference: &str) -> Option<String> {
+    let stored = stored.trim();
+    if stored.is_empty() {
+        keys.get(reference)
+    } else {
+        Some(stored.to_owned())
+    }
+}
+
+fn resolve_status(stored: &str, keys: &KeyService, reference: &str) -> KeyStatus {
+    if stored.trim().is_empty() {
+        keys.status(reference)
+    } else {
+        KeyStatus::Present
+    }
+}
+
 fn key_slot(config: &crate::state::meeting::MeetingConfig, slot: &str) -> Result<String, AppError> {
     match slot {
         "asr" => Ok(config.asr_key_ref()),
@@ -850,7 +867,11 @@ pub fn meeting_config_get<R: Runtime>(
                 },
                 model: snapshot.config.asr.model.clone(),
                 api_key_ref: snapshot.config.asr.api_key_ref.clone(),
-                key_status: keys.status(&snapshot.config.asr_key_ref()),
+                key_status: resolve_status(
+                    &snapshot.config.asr.api_key,
+                    keys.inner(),
+                    &snapshot.config.asr_key_ref(),
+                ),
             },
             llm: LlmConfigView {
                 mode: match snapshot.config.llm.mode {
@@ -861,7 +882,11 @@ pub fn meeting_config_get<R: Runtime>(
                 base_url: snapshot.config.llm.base_url.clone(),
                 model: snapshot.config.llm.model.clone(),
                 api_key_ref: snapshot.config.llm.api_key_ref.clone(),
-                key_status: keys.status(&snapshot.config.llm_key_ref()),
+                key_status: resolve_status(
+                    &snapshot.config.llm.api_key,
+                    keys.inner(),
+                    &snapshot.config.llm_key_ref(),
+                ),
             },
             keep_transcript: snapshot.config.keep_transcript,
             max_minutes: snapshot.config.max_minutes,
@@ -958,8 +983,13 @@ pub fn meeting_key_status<R: Runtime>(
     slot: String,
 ) -> Result<KeyStatus, AppError> {
     ensure_settings_window(&window)?;
-    let reference = key_slot(&config.get().config, &slot)?;
-    Ok(keys.status(&reference))
+    let snapshot = config.get();
+    let reference = key_slot(&snapshot.config, &slot)?;
+    let stored = match slot.as_str() {
+        "asr" => &snapshot.config.asr.api_key,
+        _ => &snapshot.config.llm.api_key,
+    };
+    Ok(resolve_status(stored, keys.inner(), &reference))
 }
 
 #[tauri::command]
@@ -972,8 +1002,8 @@ pub fn meeting_key_set<R: Runtime>(
 ) -> Result<(), AppError> {
     ensure_settings_window(&window)?;
     let reference = key_slot(&config.get().config, &slot)?;
-    keys.set(&reference, value.trim())?;
-    let _ = config.note_key_ref(&reference)?;
+    config.set_key(&slot, &value)?;
+    keys.clear(&reference);
     Ok(())
 }
 
@@ -986,10 +1016,7 @@ pub fn meeting_key_clear<R: Runtime>(
     all: Option<bool>,
 ) -> Result<(), AppError> {
     ensure_settings_window(&window)?;
-    let snapshot = config.get();
-    for reference in
-        crate::services::meeting::keys::clear_set(&snapshot.config, &slot, all == Some(true))?
-    {
+    for reference in config.clear_key(&slot, all == Some(true))? {
         keys.clear(&reference);
     }
     Ok(())

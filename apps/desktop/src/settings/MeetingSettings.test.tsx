@@ -138,7 +138,7 @@ describe("MeetingSettings", () => {
     settings.setKeyStatus("asr", "keyring_unavailable");
     fireEvent.change(screen.getByTestId("key-input-asr"), { target: { value: "sk-again" } });
     fireEvent.click(screen.getByTestId("key-save-asr"));
-    expect(await screen.findByText("钥匙串不可用 · 仅本次会话")).toBeInTheDocument();
+    expect(await screen.findByText("旧密钥读取失败 · 仅本次会话")).toBeInTheDocument();
   });
 
   it("shows the merged speaker-pack row with partial state", async () => {

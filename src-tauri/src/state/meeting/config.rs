@@ -22,6 +22,7 @@ use crate::services::meeting::summarize::LlmMode;
 pub const SCHEMA_VERSION: u32 = 1;
 pub const MAX_KEY_REFS: usize = 16;
 pub const MAX_MODEL_NAME: usize = 128;
+pub const MAX_API_KEY: usize = 4096;
 pub const DEFAULT_MAX_MINUTES: u16 = 180;
 pub const MIN_MAX_MINUTES: u16 = 5;
 pub const MAX_MAX_MINUTES: u16 = 600;
@@ -55,6 +56,10 @@ pub struct AsrConfig {
     pub local_model: Option<String>,
     pub provider: RemoteProvider,
     pub model: String,
+    /// Remote API key, persisted in this JSON file (not the keyring).
+    #[serde(default)]
+    pub api_key: String,
+    /// Legacy keyring account; kept for migrating pre-JSON installs.
     pub api_key_ref: String,
 }
 
@@ -65,6 +70,7 @@ impl Default for AsrConfig {
             local_model: None,
             provider: RemoteProvider::OpenAi,
             model: String::new(),
+            api_key: String::new(),
             api_key_ref: String::new(),
         }
     }
@@ -77,6 +83,10 @@ pub struct LlmConfig {
     pub local_model: Option<String>,
     pub base_url: String,
     pub model: String,
+    /// Remote API key, persisted in this JSON file (not the keyring).
+    #[serde(default)]
+    pub api_key: String,
+    /// Legacy keyring account; kept for migrating pre-JSON installs.
     pub api_key_ref: String,
 }
 
@@ -87,6 +97,7 @@ impl Default for LlmConfig {
             local_model: None,
             base_url: String::new(),
             model: String::new(),
+            api_key: String::new(),
             api_key_ref: String::new(),
         }
     }
@@ -403,6 +414,91 @@ impl MeetingConfigStore {
         Ok(revision)
     }
 
+    /// Store one remote API key in `config.json`. The keyring is no longer a
+    /// storage backend; callers clear the legacy entry afterwards.
+    pub fn set_key(&self, slot: &str, value: &str) -> Result<u64, AppError> {
+        let value = normalize_api_key(value);
+        if value.is_empty() {
+            return Err(invalid("API key must not be empty", "api_key"));
+        }
+        let mut state = self.lock();
+        let mut candidate = state.config.clone();
+        set_slot_key(&mut candidate, slot, value)?;
+        validate(&candidate, self.catalog.as_ref())?;
+        derive_key_refs(&mut candidate);
+        let revision = state.revision.saturating_add(1);
+        let stored = StoredFile::from_config(&candidate, revision);
+        self.persist(&stored)?;
+        state.config = candidate;
+        state.revision = revision;
+        Ok(revision)
+    }
+
+    /// Remove the key(s) from `config.json` and return the legacy keyring
+    /// accounts that should be cleared.
+    pub fn clear_key(&self, slot: &str, all: bool) -> Result<Vec<String>, AppError> {
+        let snapshot = self.get();
+        let references = crate::services::meeting::keys::clear_set(&snapshot.config, slot, all)?;
+        let mut state = self.lock();
+        let mut candidate = state.config.clone();
+        if all || slot == "asr" {
+            candidate.asr.api_key.clear();
+        }
+        if all || slot == "llm" {
+            candidate.llm.api_key.clear();
+        }
+        if all {
+            candidate.key_refs.clear();
+        }
+        let revision = state.revision.saturating_add(1);
+        let stored = StoredFile::from_config(&candidate, revision);
+        self.persist(&stored)?;
+        state.config = candidate;
+        state.revision = revision;
+        Ok(references)
+    }
+
+    /// One-time migration: copy legacy keyring secrets into the JSON file and
+    /// delete the keyring entries only after the config write succeeds.
+    pub fn migrate_keyring(
+        &self,
+        keys: &crate::services::meeting::keys::KeyService,
+    ) -> Result<(), AppError> {
+        let mut state = self.lock();
+        let mut candidate = state.config.clone();
+        let mut changed = false;
+        let asr_reference = candidate.asr_key_ref();
+        let llm_reference = candidate.llm_key_ref();
+        for (key, reference) in [
+            (&mut candidate.asr.api_key, asr_reference.as_str()),
+            (&mut candidate.llm.api_key, llm_reference.as_str()),
+        ] {
+            if !key.is_empty() {
+                continue;
+            }
+            if let Some(value) = keys.get(reference) {
+                *key = normalize_api_key(&value);
+                changed |= !key.is_empty();
+            }
+        }
+        let references = [candidate.asr_key_ref(), candidate.llm_key_ref()];
+        if !changed {
+            for reference in references {
+                keys.clear(&reference);
+            }
+            return Ok(());
+        }
+        let revision = state.revision.saturating_add(1);
+        let stored = StoredFile::from_config(&candidate, revision);
+        self.persist(&stored)?;
+        state.config = candidate;
+        state.revision = revision;
+        for reference in references {
+            keys.clear(&reference);
+        }
+        Ok(())
+    }
+
     fn persist_current(&self) -> Result<(), AppError> {
         let mut state = self.lock();
         let revision = state.revision.saturating_add(1);
@@ -453,6 +549,25 @@ fn normalize_local_model(value: String) -> Option<String> {
 
 fn normalize_model_name(value: String) -> String {
     value.trim().chars().take(MAX_MODEL_NAME).collect()
+}
+
+fn normalize_api_key(value: &str) -> String {
+    value.trim().chars().take(MAX_API_KEY).collect()
+}
+
+fn set_slot_key(config: &mut MeetingConfig, slot: &str, value: String) -> Result<(), AppError> {
+    match slot {
+        "asr" => config.asr.api_key = value,
+        "llm" => config.llm.api_key = value,
+        _ => {
+            return Err(AppError::new(
+                AppErrorCode::InvalidConfig,
+                format!("unknown key slot: {slot}"),
+            )
+            .with_details(serde_json::json!({ "field": "slot" })))
+        }
+    }
+    Ok(())
 }
 
 fn normalize_base_url_field(value: &str) -> Result<String, AppError> {
@@ -592,6 +707,8 @@ struct RawAsr {
     local_model: Option<Option<String>>,
     provider: Option<RemoteProvider>,
     model: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
     api_key_ref: Option<String>,
 }
 
@@ -602,6 +719,8 @@ struct RawLlm {
     local_model: Option<Option<String>>,
     base_url: Option<String>,
     model: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
     api_key_ref: Option<String>,
 }
 
@@ -624,6 +743,7 @@ fn normalize_raw(raw: RawFile, catalog: &dyn ModelCatalog) -> (MeetingConfig, bo
             config.asr.local_model =
                 sanitize_local(asr.local_model, ModelKind::Asr, catalog, &mut changed);
             config.asr.model = normalize_model_name(asr.model.unwrap_or_default());
+            config.asr.api_key = normalize_api_key(&asr.api_key.unwrap_or_default());
             if let Some(reference) = asr.api_key_ref {
                 let reference = reference.trim().to_owned();
                 if reference.is_empty() || valid_slug(&reference) {
@@ -650,6 +770,7 @@ fn normalize_raw(raw: RawFile, catalog: &dyn ModelCatalog) -> (MeetingConfig, bo
                 Err(_) => changed = true,
             }
             config.llm.model = normalize_model_name(llm.model.unwrap_or_default());
+            config.llm.api_key = normalize_api_key(&llm.api_key.unwrap_or_default());
             if let Some(reference) = llm.api_key_ref {
                 let reference = reference.trim().to_owned();
                 if reference.is_empty() || valid_slug(&reference) {

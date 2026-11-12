@@ -104,7 +104,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | R-ID | 目标 | 验收方式 | 状态 |
 |---|---|---|---|
 | R-001 | 从本地音频文件（m4a/mp3/wav/mp4/flac）生成一篇 Markdown 会议纪要，含摘要、决议、待办、风险、带时间戳的转录 | E2E-001：导入 60 s 中英混合 fixture，断言五个必需小节且时间戳单调 | done |
-| R-002 | 音频路径不作命令参数（仅只读 asset URL 供播放）；密钥只经 IPC 写 keyring、读取不回传明文、不入 localStorage；默认不外传 | 契约测试：`commands.ts` 无音频路径参数；CSP 不变；`asr.mode=local` 时 wiremock 计数为 0 | done |
+| R-002 | 音频路径不作命令参数（仅只读 asset URL 供播放）；密钥只经 IPC 写入本机 `config.json`、读取不回传明文、不入 localStorage；默认不外传 | 契约测试：`commands.ts` 无音频路径参数；CSP 不变；`asr.mode=local` 时 wiremock 计数为 0 | done |
 | R-003 | 断网可用：ASR 全本地，摘要可在无 LLM 时降级为抽取式 | E2E-003：断网 + 未配置 LLM，仍产出转录与抽取要点，且标注「未生成抽象摘要」 | done |
 | R-004 | 转录必须可追溯到时间戳，结论必须带原文引句 | 单测：`render` 对每个卡片强制输出 `[hh:mm:ss]` 与引句；缺引句降级为「无依据」 | done |
 | R-005 | 长音频分块有界：默认 180 分钟（硬上限 600）/ 500 MiB，超限在选文件阶段拒绝 | 单测：边界值与超限错误码 | done |
@@ -268,7 +268,7 @@ struct MeetingJob {
 
 ### 6.2 配置项
 
-以下 13 项为**新增配置项**（Q-004 的 14 项口径已由 R26 修订，Q-011 已批准）；真源是 Rust `meeting/config.json`，默认值见 `04-设计方案.md §11`。设置窗只有「通用」「AI」两项，AI 分区只保留「转写模型」「摘要模型」「范围与产物」。会议开关、语言、说话人分离固定开启。
+以下 15 项为配置项（Q-011 批准 13 项，v1.42 新增两个 `apiKey`；Q-004 的 14 项口径已由 R26 修订）；真源是 Rust `meeting/config.json`，默认值见 `04-设计方案.md §11`。设置窗只有「通用」「AI」两项，AI 分区只保留「转写模型」「摘要模型」「范围与产物」。会议开关、语言、说话人分离固定开启。
 
 | 配置项 | 存储 | 默认值 | 行为 |
 |---|---|---|---|
@@ -277,12 +277,14 @@ struct MeetingJob {
 | `meeting.asr.localModel` | `meeting/config.json` | `null`（自动） | `null` 按分层；显式值只接受 `Asr` manifest id |
 | `meeting.asr.provider` | `meeting/config.json` | `openai` | `openai` / `groq` / `deepgram` |
 | `meeting.asr.model` | `meeting/config.json` | 空 | 远程模型名，空用 provider 默认 |
-| `meeting.asr.apiKeyRef` | `meeting/config.json` | 空（派生 `asr.<provider>`） | keyring 账户名 |
+| `meeting.asr.apiKey` | `meeting/config.json` | 空 | 远程转写密钥（明文，文件 0600） |
+| `meeting.asr.apiKeyRef` | `meeting/config.json` | 空（派生 `asr.<provider>`） | 旧 keyring 账户，仅迁移用 |
 | `meeting.llm.mode` | `meeting/config.json` | `local` | `local`（llama.cpp）/ `remote`（OpenAI 兼容） |
 | `meeting.llm.localModel` | `meeting/config.json` | `null`（自动） | `null` 按分层；显式值只接受 `Llm` manifest id |
 | `meeting.llm.baseUrl` | `meeting/config.json` | 空 | 远程端点；空则只出抽取式 |
 | `meeting.llm.model` | `meeting/config.json` | 空 | 远程模型名；空则只出抽取式 |
-| `meeting.llm.apiKeyRef` | `meeting/config.json` | 空（派生 `llm.<sha8(baseUrl)>`） | keyring 账户名 |
+| `meeting.llm.apiKey` | `meeting/config.json` | 空 | 远程摘要密钥（明文，文件 0600） |
+| `meeting.llm.apiKeyRef` | `meeting/config.json` | 空（派生 `llm.<sha8(baseUrl)>`） | 旧 keyring 账户，仅迁移用 |
 | `meeting.keepTranscript` | `meeting/config.json` | `true` | 关则只保留摘要与引句 |
 | `meeting.maxMinutes` | `meeting/config.json` | `180`（5..=600） | 超过即拒绝 |
 
@@ -308,7 +310,7 @@ ASR 清单不变（Paraformer 默认、small、SenseVoice、Zipformer、FireRed�
 | `meeting_retry` | `requestId` → `{ requestId, attempt }`；仅 Failed 终态、同 id 复用 source/audio_url | `doc-*` / `main` | 窗口测试 |
 | `meeting_take_result` | 新增 | 可重复取，窗口销毁后释放 | 同上 |
 | `meeting_config_get` | 新增 `MeetingConfigView` + `RuntimePreview` + `revision` | settings、`doc-*`、`main`（只读）；`config_set` 补丁 + `expectedRevision` 仅 settings | capability 负例、冲突重取 |
-| `meeting_key_status` / `meeting_key_set` / `meeting_key_clear` | 新增；`slot`，status 返回 `present/absent/keyring_unavailable`，clear 带 `all?` | 仅 settings，明文不回传 | `meeting_key` 单测 |
+| `meeting_key_status` / `meeting_key_set` / `meeting_key_clear` | 新增；`slot`，set 写 `apiKey`，status 返回 `present/absent/keyring_unavailable`，clear 带 `all?` | 仅 settings，明文不回传 | `meeting_key` 单测 |
 | `meeting_models_list` | 新增 | settings、`doc-*`、`main`；返回 manifest + 下载态 + 本地字节 | 契约负例、UI 测试 |
 | `meeting_model_download` / `meeting_model_download_cancel` / `meeting_model_remove` | 新增 | settings、`doc-*`、`main`；单下载槽 | `meeting_models` 测试 |
 | `app_settings_open` | 新增；`section?: "ai"` | `doc-*`、`main`、settings；错误页跳设置 | 契约负例 |

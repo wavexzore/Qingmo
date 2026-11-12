@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use qingmo_lib::error::AppErrorCode;
 use qingmo_lib::services::meeting::asr_route::AsrMode;
+use qingmo_lib::services::meeting::keys::{KeyService, MemoryKeyStore};
 use qingmo_lib::services::meeting::models::ManifestCatalog;
 use qingmo_lib::services::meeting::remote_asr::RemoteProvider;
 use qingmo_lib::services::meeting::summarize::LlmMode;
@@ -353,6 +354,90 @@ fn derived_llm_ref_uses_the_base_url_hash() {
     assert!(reference.starts_with("llm."));
     assert_eq!(reference.len(), 12);
     assert!(config.key_refs.contains(&reference));
+}
+
+#[test]
+fn api_keys_are_written_to_json_and_cleared() {
+    let (store, path) = store("keys");
+    store.set_key("asr", "sk-asr").unwrap();
+    store.set_key("llm", "  sk-llm  ").unwrap();
+    let stored: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(stored["meeting"]["asr"]["apiKey"], "sk-asr");
+    assert_eq!(stored["meeting"]["llm"]["apiKey"], "sk-llm");
+
+    let refs = store.clear_key("llm", false).unwrap();
+    assert_eq!(refs, [store.get().config.llm_key_ref()]);
+    let stored: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(stored["meeting"]["llm"]["apiKey"], "");
+    assert_eq!(stored["meeting"]["asr"]["apiKey"], "sk-asr");
+
+    store.clear_key("", true).unwrap();
+    let stored: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(stored["meeting"]["asr"]["apiKey"], "");
+    assert_eq!(stored["meeting"]["llm"]["apiKey"], "");
+    assert_eq!(stored["keyRefs"], serde_json::json!([]));
+}
+
+#[cfg(unix)]
+#[test]
+fn config_file_is_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let (store, path) = store("keys-mode");
+    store.set_key("llm", "sk").unwrap();
+    let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
+#[test]
+fn empty_key_and_unknown_slot_are_rejected() {
+    let (store, _) = store("keys-invalid");
+    assert_eq!(
+        store.set_key("asr", "   ").unwrap_err().code,
+        AppErrorCode::InvalidConfig
+    );
+    assert_eq!(
+        store.set_key("other", "sk").unwrap_err().code,
+        AppErrorCode::InvalidConfig
+    );
+    assert_eq!(
+        store.clear_key("other", false).unwrap_err().code,
+        AppErrorCode::InvalidConfig
+    );
+}
+
+#[test]
+fn keyring_migration_moves_keys_into_json() {
+    let (store, path) = store("keys-migrate");
+    let keys = KeyService::new(Arc::new(MemoryKeyStore::default()));
+    keys.set("asr.openai", "sk-legacy-asr").unwrap();
+    keys.set("llm.default", "sk-legacy-llm").unwrap();
+    store.migrate_keyring(&keys).unwrap();
+    let stored: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(stored["meeting"]["asr"]["apiKey"], "sk-legacy-asr");
+    assert_eq!(stored["meeting"]["llm"]["apiKey"], "sk-legacy-llm");
+    assert!(keys.get("asr.openai").is_none());
+    assert!(keys.get("llm.default").is_none());
+}
+
+#[test]
+fn keyring_migration_keeps_an_existing_json_key() {
+    let (store, _) = store("keys-migrate-existing");
+    let keys = KeyService::new(Arc::new(MemoryKeyStore::default()));
+    store.set_key("asr", "sk-json").unwrap();
+    keys.set("asr.openai", "sk-legacy-asr").unwrap();
+    store.migrate_keyring(&keys).unwrap();
+    assert_eq!(store.get().config.asr.api_key, "sk-json");
+    assert!(keys.get("asr.openai").is_none());
+}
+
+#[test]
+fn legacy_json_without_api_key_loads_empty() {
+    let (store, _) = raw(
+        "keys-legacy",
+        r#"{"schemaVersion":1,"revision":1,"meeting":{"llm":{"mode":"remote","baseUrl":"https://api.test/v1","model":"m"}},"keyRefs":[]}"#,
+    );
+    assert_eq!(store.get().config.llm.api_key, "");
+    assert!(store.get().revision >= 1);
 }
 
 #[test]

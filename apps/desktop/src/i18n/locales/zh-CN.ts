@@ -521,7 +521,7 @@ export const settings = {
   hint: "更改会立即应用到所有窗口。",
   ai: {
     heading: "AI 设置",
-    description: "选择转写与摘要的本地模型或远程端点。模型按需下载，密钥只进系统钥匙串。",
+    description: "选择转写与摘要的本地模型或远程端点。模型按需下载，密钥随配置保存在本机 JSON。",
     loading: "正在读取会议设置…",
     loadError: "会议设置读取失败。",
     retry: "重试",
@@ -607,7 +607,7 @@ export const settings = {
     },
     keys: {
       label: "API Key",
-      placeholder: "粘贴密钥，保存后不回显",
+      placeholder: "粘贴密钥；保存后写入本机 config.json",
       saved: "密钥已保存。",
       saveFailed: "密钥保存失败。",
       save: "保存",
@@ -615,9 +615,9 @@ export const settings = {
       status: {
         present: "已保存",
         absent: "未配置",
-        keyring_unavailable: "钥匙串不可用 · 仅本次会话",
+        keyring_unavailable: "旧密钥读取失败 · 仅本次会话",
       },
-      unavailable: "系统钥匙串不可用，密钥只保留在本次进程内，重启后需重填。",
+      unavailable: "旧钥匙串密钥读取失败；重新保存后会写入本机 config.json。",
     },
     banner: {
       firstUse: "首次使用",

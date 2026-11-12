@@ -1061,11 +1061,15 @@ pub fn run() {
                     state::MeetingConfigStore::disabled(Arc::clone(&meeting_catalog))
                 }
             };
+            let meeting_keys = services::meeting::keys::KeyService::system();
+            if let Err(error) = meeting_config.migrate_keyring(&meeting_keys) {
+                tracing::warn!(%error, "meeting keys could not be migrated into config.json");
+            }
             app.manage(meeting_config);
             app.manage(Arc::clone(&meeting_catalog));
             app.manage(state::MeetingRegistry::new(app.handle().clone()));
             app.manage(Arc::new(state::meeting::ModelDownloads::new()));
-            app.manage(Arc::new(services::meeting::keys::KeyService::system()));
+            app.manage(Arc::new(meeting_keys));
             app.manage(Arc::new(
                 services::meeting::download::SystemDiskProbe,
             ) as Arc<dyn services::meeting::download::DiskProbe>);

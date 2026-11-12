@@ -532,7 +532,7 @@ export const settings = {
   ai: {
     heading: "AI settings",
     description:
-      "Pick local models or remote endpoints for transcription and summaries. Models download on demand; keys live in the system keychain.",
+      "Pick local models or remote endpoints for transcription and summaries. Models download on demand; keys are stored in the local JSON config.",
     loading: "Reading meeting settings…",
     loadError: "Could not read the meeting settings.",
     retry: "Retry",
@@ -621,7 +621,7 @@ export const settings = {
     },
     keys: {
       label: "API key",
-      placeholder: "Paste the key; it is never echoed back",
+      placeholder: "Paste the key; it is saved to the local config.json",
       saved: "Key saved.",
       saveFailed: "Could not save the key.",
       save: "Save",
@@ -629,10 +629,10 @@ export const settings = {
       status: {
         present: "Saved",
         absent: "Not configured",
-        keyring_unavailable: "Keychain unavailable · this session only",
+        keyring_unavailable: "Legacy key unreadable · this session only",
       },
       unavailable:
-        "The system keychain is unavailable. The key stays in this process and must be re-entered after a restart.",
+        "The legacy keychain read failed. Saving the key again writes it to the local config.json.",
     },
     banner: {
       firstUse: "First use",
