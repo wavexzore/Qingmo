@@ -629,6 +629,9 @@ export const settings = {
       llmPrimary: "下载摘要模型（{{size}}）",
       asrSecondary: "仅下载识别模型",
       continuePrimary: "继续下载剩余 {{count}} 项（{{size}}）",
+      downloading: "正在下载",
+      verifying: "校验中",
+      cancel: "取消",
       asrReady: "识别模型已就绪",
     },
     notes: {

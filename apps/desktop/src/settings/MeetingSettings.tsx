@@ -90,6 +90,10 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
   const [llmRequired, setLlmRequired] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, ModelProgressState>>({});
+  const [activeDownload, setActiveDownload] = useState<{
+    modelId: string;
+    downloadId: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [asrKeyDraft, setAsrKeyDraft] = useState("");
   const [llmKeyDraft, setLlmKeyDraft] = useState("");
@@ -155,6 +159,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
       );
       if (update.state === "done" || update.state === "failed" || update.state === "cancelled") {
         activeDownloads.current.delete(key);
+        setActiveDownload((current) => (current?.modelId === key ? null : current));
         waiters.current.get(key)?.();
         waiters.current.delete(key);
         if (update.state !== "done") {
@@ -209,6 +214,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
           try {
             const { downloadId } = await settings.meetingModelDownload(id);
             activeDownloads.current.set(id, downloadId);
+            setActiveDownload({ modelId: id, downloadId });
             await new Promise<void>((resolve) => {
               waiters.current.set(id, resolve);
             });
@@ -228,6 +234,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
       } finally {
         queueRunning.current = false;
         setBusy(false);
+        setActiveDownload(null);
         await refreshModels();
       }
     },
@@ -364,6 +371,34 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
 
   const selectedAsr = config?.asr.localModel ?? preview?.defaults.asrModel ?? "";
   const selectedAsrReady = models.find((model) => model.id === selectedAsr)?.state === "ready";
+
+  const cancelActive = useCallback(async () => {
+    const downloadId = activeDownload?.downloadId;
+    if (!downloadId) {
+      return;
+    }
+    try {
+      await settings.meetingModelDownloadCancel(downloadId);
+    } catch {
+      // The worker may already have settled.
+    }
+  }, [activeDownload, settings]);
+
+  const activeFor = (ids: string[]) => {
+    const model = activeDownload
+      ? models.find((candidate) => candidate.id === activeDownload.modelId)
+      : undefined;
+    if (!model || !ids.includes(model.id)) {
+      return null;
+    }
+    const state = progress[model.id];
+    return {
+      label: model.display,
+      doneBytes: state?.doneBytes ?? 0,
+      totalBytes: state?.totalBytes ?? model.downloadBytes,
+      verifying: model.state === "verifying",
+    };
+  };
 
   const modeRow = (
     label: string,
@@ -542,6 +577,8 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
               requiredBytes={asrRequired}
               busy={busy}
               firstUse={firstUse}
+              active={activeFor(asrGapIds)}
+              onCancel={() => void cancelActive()}
               onDownload={() => void runDownloads(asrGapIds)}
               secondaryLabel={
                 selectedAsrReady ? t("ai.banner.asrReady") : t("ai.banner.asrSecondary")
@@ -663,6 +700,8 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
               firstUse={llmGapIds.every(
                 (id) => models.find((model) => model.id === id)?.state === "not_downloaded",
               )}
+              active={activeFor(llmGapIds)}
+              onCancel={() => void cancelActive()}
               onDownload={() => void runDownloads(llmGapIds)}
             />
             {preview.defaults.notes.map((note) => (

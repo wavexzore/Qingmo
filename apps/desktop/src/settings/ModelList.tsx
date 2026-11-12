@@ -46,9 +46,12 @@ export function ModelList({
       {rows.map((row) => {
         const canDownload = downloadableMembers(row).length > 0;
         const canRemove = removableMembers(row).length > 0;
-        const downloading = row.state === "downloading";
-        const busy = downloading || row.state === "verifying";
-        const rowProgress = progress[row.key];
+        const busy = row.state === "downloading" || row.state === "verifying";
+        const activeMember = row.members.find(
+          (member) => member.state === "downloading" || member.state === "verifying",
+        );
+        const rowProgress =
+          progress[row.key] ?? (activeMember ? progress[activeMember.id] : undefined);
         const readyMembers = row.members.filter((member) => member.state === "ready").length;
         const label =
           row.state === "partial" && row.group
@@ -100,13 +103,13 @@ export function ModelList({
                 >
                   {label}
                 </span>
-                {downloading ? (
+                {busy ? (
                   <span className="meeting-model-progress" aria-hidden="true">
                     <span style={{ width: `${percent(rowProgress)}%` }} />
                   </span>
                 ) : null}
                 <div className="meeting-model-actions">
-                  {downloading ? (
+                  {busy ? (
                     <button
                       className="meeting-button is-quiet"
                       type="button"

@@ -645,6 +645,9 @@ export const settings = {
       llmPrimary: "Download summary model ({{size}})",
       asrSecondary: "Recognition model only",
       continuePrimary: "Continue remaining {{count}} items ({{size}})",
+      downloading: "Downloading",
+      verifying: "Verifying",
+      cancel: "Cancel",
       asrReady: "Recognition model is ready",
     },
     notes: {

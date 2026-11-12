@@ -1182,6 +1182,31 @@ kbd {
   align-items: stretch;
 }
 
+.meeting-banner-progress-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--qm-ink-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.meeting-banner-progress {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--qm-surface-muted);
+}
+
+.meeting-banner-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--qm-accent);
+  transition: width 180ms linear;
+}
+
 .meeting-button {
   padding: 7px 13px;
   border: 1px solid var(--qm-line);

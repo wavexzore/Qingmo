@@ -69,6 +69,31 @@ describe("MeetingSettings", () => {
     );
   });
 
+  it("shows inline progress and cancels from the banner", async () => {
+    const { settings } = renderMeeting();
+    await screen.findByTestId("download-primary-asr");
+    fireEvent.click(screen.getByTestId("download-primary-asr"));
+    await waitFor(() => expect(settings.activeModelId).toBe("paraformer-zh-en-int8"));
+
+    settings.progressActiveDownload(50, 100);
+    const banner = screen.getByTestId("download-banner-asr");
+    await waitFor(() => expect(banner).toHaveTextContent("正在下载"));
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+    expect(banner).toHaveTextContent("Paraformer zh-en · int8");
+
+    fireEvent.click(screen.getByTestId("download-cancel-asr"));
+    await waitFor(() => expect(settings.activeModelId).toBeNull());
+  });
+
+  it("keeps a cancel action and progress visible while verifying", async () => {
+    const settings = new FakeSettings();
+    settings.setModelState("paraformer-zh-en-int8", "verifying");
+    renderMeeting(settings);
+    await screen.findByTestId("model-row-paraformer-zh-en-int8");
+    expect(screen.getByTestId("model-cancel-paraformer-zh-en-int8")).toBeInTheDocument();
+    expect(screen.getByTestId("model-state-paraformer-zh-en-int8")).toHaveTextContent("校验中");
+  });
+
   it("shows 994 MB when FireRed joins the default set", async () => {
     renderMeeting();
     await screen.findByTestId("asr-model-select");

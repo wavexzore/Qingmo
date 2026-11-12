@@ -410,6 +410,19 @@ export class FakeSettings implements SettingsPort {
     });
   }
 
+  progressActiveDownload(doneBytes: number, totalBytes: number): void {
+    if (!this.active) {
+      return;
+    }
+    this.emit({
+      downloadId: this.active.downloadId,
+      modelId: this.active.modelId,
+      doneBytes,
+      totalBytes,
+      state: "downloading",
+    });
+  }
+
   finishActiveDownload(): void {
     if (!this.active) {
       return;
