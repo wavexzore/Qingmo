@@ -1,3 +1,4 @@
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -41,6 +42,19 @@ export const EMPTY_STATUS_SNAPSHOT: StatusBarSnapshot = {
   readOnly: false,
   readOnlyReason: null,
 };
+
+function formatPlaybackTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "0:00";
+  }
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
+    : `${minutes}:${String(rest).padStart(2, "0")}`;
+}
 
 const saveStateTone: Record<SaveState, string> = {
   clean: "bg-success",
@@ -101,6 +115,62 @@ export function StatusBar({
   meetingPartial = false,
 }: StatusBarProps) {
   const { t, i18n } = useTranslation(["common", "editor", "meeting"]);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    const syncTime = () => setCurrentTime(audio.currentTime);
+    const syncDuration = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onEnded = () => setPlaying(false);
+    setCurrentTime(0);
+    setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+    setPlaying(!audio.paused);
+    audio.addEventListener("timeupdate", syncTime);
+    audio.addEventListener("loadedmetadata", syncDuration);
+    audio.addEventListener("durationchange", syncDuration);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("ended", onEnded);
+    return () => {
+      audio.removeEventListener("timeupdate", syncTime);
+      audio.removeEventListener("loadedmetadata", syncDuration);
+      audio.removeEventListener("durationchange", syncDuration);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("ended", onEnded);
+    };
+  }, [meetingAudioUrl]);
+
+  const togglePlayback = () => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    if (audio.paused) {
+      void audio.play().catch(() => setPlaying(false));
+    } else {
+      audio.pause();
+    }
+  };
+
+  const seekPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+
+  const seekTo = (seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.currentTime = seconds;
+    setCurrentTime(seconds);
+  };
 
   const fileName = snapshot.fileName ?? t("common:status.noFile");
   const saveLabel = t(`common:saveState.${snapshot.saveState}`);
@@ -212,13 +282,53 @@ export function StatusBar({
             {meetingAudioUrl ? (
               // The audio URL is a per-window asset URL; it stays valid for
               // the window's lifetime and is released on Destroyed.
-              <audio
-                data-testid="meeting-audio"
-                src={meetingAudioUrl}
-                controls
-                preload="metadata"
-                className="h-6 max-w-48 shrink-0"
-              />
+              <span
+                className="flex w-40 min-w-0 shrink-0 items-center gap-1.5 @lg:w-52"
+                data-testid="meeting-audio-player"
+              >
+                <audio
+                  ref={audioRef}
+                  data-testid="meeting-audio"
+                  src={meetingAudioUrl}
+                  preload="metadata"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  data-testid="meeting-audio-toggle"
+                  aria-label={t(playing ? "meeting:playback.pause" : "meeting:playback.play")}
+                  onClick={togglePlayback}
+                  className="grid size-5 shrink-0 place-items-center rounded border border-line text-ink transition-colors hover:border-line-strong hover:bg-accent-soft"
+                >
+                  {playing ? (
+                    <svg viewBox="0 0 12 12" aria-hidden="true" className="size-3 fill-current">
+                      <rect x="2.5" y="2" width="2.5" height="8" rx="0.5" />
+                      <rect x="7" y="2" width="2.5" height="8" rx="0.5" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 12 12" aria-hidden="true" className="size-3 fill-current">
+                      <path d="M3.2 1.8v8.4a.6.6 0 0 0 .92.5l6.3-4.2a.6.6 0 0 0 0-1L4.12 1.3a.6.6 0 0 0-.92.5Z" />
+                    </svg>
+                  )}
+                </button>
+                <span className="shrink-0 tabular-nums text-[10px] text-ink-faint">
+                  {formatPlaybackTime(currentTime)} / {formatPlaybackTime(duration)}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 0}
+                  step={0.1}
+                  value={Math.min(currentTime, duration || 0)}
+                  disabled={duration <= 0}
+                  data-testid="meeting-audio-seek"
+                  aria-label={t("meeting:playback.seek")}
+                  aria-valuetext={`${formatPlaybackTime(currentTime)} / ${formatPlaybackTime(duration)}`}
+                  onChange={(event) => seekTo(Number(event.currentTarget.value))}
+                  style={{ "--audio-progress": `${seekPercent}%` } as CSSProperties}
+                  className="meeting-audio-range min-w-10 flex-1 disabled:cursor-default"
+                />
+              </span>
             ) : null}
           </>
         ) : null}

@@ -60,3 +60,26 @@
     }
   }
 }
+
+/* Status-bar playback: a slim draggable track with an accent fill. */
+.meeting-audio-range {
+  height: 4px;
+  cursor: pointer;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--qm-accent) var(--audio-progress, 0%),
+    var(--qm-line) var(--audio-progress, 0%)
+  );
+}
+
+.meeting-audio-range::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  appearance: none;
+  border: 1px solid var(--qm-surface);
+  border-radius: 999px;
+  background: var(--qm-accent);
+  box-shadow: 0 0 0 1px var(--qm-accent);
+}

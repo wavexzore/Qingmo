@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { MeetingProgress } from "@qingmo/shared";
@@ -94,6 +94,22 @@ describe("StatusBar formatting", () => {
     expect(screen.getByTestId("status-meeting-stage")).toBeInTheDocument();
     expect(screen.getByText("转写中")).toBeInTheDocument();
     expect(screen.getByTestId("status-meeting-speakers")).toHaveTextContent("3");
-    expect(screen.getByTestId("meeting-audio")).toHaveAttribute("src", "asset://voice.wav");
+    const audio = screen.getByTestId("meeting-audio") as HTMLAudioElement;
+    expect(audio).toHaveAttribute("src", "asset://voice.wav");
+    Object.defineProperty(audio, "duration", { configurable: true, value: 65 });
+    fireEvent.loadedMetadata(audio);
+    expect(screen.getByTestId("meeting-audio-player")).toHaveTextContent("0:00 / 1:05");
+
+    const toggle = screen.getByTestId("meeting-audio-toggle");
+    fireEvent.play(audio);
+    expect(toggle).toHaveAttribute("aria-label", "暂停");
+    fireEvent.pause(audio);
+    expect(toggle).toHaveAttribute("aria-label", "播放");
+
+    audio.currentTime = 30;
+    fireEvent.timeUpdate(audio);
+    expect(screen.getByTestId("meeting-audio-player")).toHaveTextContent("0:30 / 1:05");
+    fireEvent.change(screen.getByTestId("meeting-audio-seek"), { target: { value: "42" } });
+    expect(audio.currentTime).toBe(42);
   });
 });

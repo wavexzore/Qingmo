@@ -29,6 +29,11 @@ const meeting = {
   },
   backend: { local: "本地", remote: "远程 · {{provider}}" },
   accel: { cpu: "CPU", metal: "Metal" },
+  playback: {
+    play: "播放",
+    pause: "暂停",
+    seek: "播放进度",
+  },
   window: "第 {{index}} / {{total}} 个片段",
   failedTitle: "会议处理失败",
   modelHint: "下载模型后可在同一窗口重试，无需重选文件。",

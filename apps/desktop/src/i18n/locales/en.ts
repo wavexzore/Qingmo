@@ -29,6 +29,11 @@ const meeting = {
   },
   backend: { local: "Local", remote: "Remote · {{provider}}" },
   accel: { cpu: "CPU", metal: "Metal" },
+  playback: {
+    play: "Play",
+    pause: "Pause",
+    seek: "Playback position",
+  },
   window: "Segment {{index}} / {{total}}",
   failedTitle: "Meeting processing failed",
   modelHint: "Download the model, then retry in this window without picking the file again.",
