@@ -247,9 +247,6 @@ impl RemoteLlm {
             temperature: TEMPERATURE,
             top_p: TOP_P,
             stream: false,
-            response_format: ResponseFormat {
-                kind: "json_object",
-            },
         };
         let timeout = remaining.map_or(self.total_timeout, |remaining| {
             remaining.min(self.total_timeout)
@@ -351,13 +348,6 @@ struct ChatRequest<'a> {
     temperature: f32,
     top_p: f32,
     stream: bool,
-    response_format: ResponseFormat,
-}
-
-#[derive(Serialize)]
-struct ResponseFormat {
-    #[serde(rename = "type")]
-    kind: &'static str,
 }
 
 #[derive(Serialize)]

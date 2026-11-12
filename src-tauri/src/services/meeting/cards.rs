@@ -277,10 +277,56 @@ pub fn strip_think(raw: &str) -> String {
     output
 }
 
+/// Locate the outermost JSON value. Arrays are preferred; json_object mode
+/// on OpenAI-compatible endpoints returns a bare object instead.
 fn json_slice(raw: &str) -> Option<&str> {
-    let start = raw.find('[')?;
-    let end = raw.rfind(']')?;
+    let array = raw.find('[').zip(raw.rfind(']'));
+    let object = raw.find('{').zip(raw.rfind('}'));
+    let (start, end) = match (array, object) {
+        (Some((start, _end)), Some((object_start, _))) if object_start < start => {
+            (object_start, raw.rfind('}')?)
+        }
+        (Some((start, end)), _) => (start, end),
+        (None, Some(pair)) => pair,
+        (None, None) => return None,
+    };
     (end >= start).then(|| &raw[start..=end])
+}
+
+/// Accept an array, one card object, or `{ cards | items: [...] }`.
+fn parse_entries(json: &str) -> Result<Vec<RawCard>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|error| format!("invalid card JSON: {error}"))?;
+    let entries = match value {
+        serde_json::Value::Array(entries) => entries,
+        serde_json::Value::Object(mut map) => {
+            let inner = map.remove("cards").or_else(|| map.remove("items"));
+            match inner {
+                Some(serde_json::Value::Array(entries)) => entries,
+                Some(other) => vec![other],
+                None => vec![serde_json::Value::Object(map)],
+            }
+        }
+        other => vec![other],
+    };
+    entries
+        .into_iter()
+        .map(|entry| {
+            serde_json::from_value(entry).map_err(|error| format!("invalid card JSON: {error}"))
+        })
+        .collect()
+}
+
+fn speaker<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| match value {
+        serde_json::Value::Number(number) => number.as_u64().map(|number| number as u8),
+        serde_json::Value::String(text) => text.trim().parse().ok(),
+        _ => None,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -292,16 +338,15 @@ struct RawCard {
     t0: u64,
     #[serde(default, alias = "t1Ms", alias = "t1_ms")]
     t1: Option<u64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "speaker")]
     speaker: Option<u8>,
 }
 
 /// Parse one LLM answer and clamp every time to its window.
 pub fn parse_cards(raw: &str, window_start: u64, window_end: u64) -> Result<Vec<Card>, String> {
     let raw = strip_think(raw);
-    let json = json_slice(&raw).ok_or_else(|| "response has no JSON array".to_owned())?;
-    let parsed: Vec<RawCard> =
-        serde_json::from_str(json).map_err(|error| format!("invalid card JSON: {error}"))?;
+    let json = json_slice(&raw).ok_or_else(|| "response has no JSON value".to_owned())?;
+    let parsed = parse_entries(json)?;
     let upper = window_end.max(window_start + 1);
     let mut cards = Vec::with_capacity(parsed.len().min(MAX_CARDS_PER_WINDOW));
     for entry in parsed.into_iter().take(MAX_CARDS_PER_WINDOW) {
@@ -617,6 +662,29 @@ mod tests {
         assert_eq!(cards[0].t0_ms, 1999);
         assert_eq!(cards[0].t1_ms, 2000);
         assert_eq!(cards[0].speaker, None);
+    }
+
+    #[test]
+    fn parse_accepts_a_single_object_and_string_speaker() {
+        let raw =
+            "{\"kind\":\"summary\",\"text\":\"x\",\"quote\":\"q\",\"t0\":500,\"speaker\":\"2\"}";
+        let cards = parse_cards(raw, 0, 1000).unwrap();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].speaker, Some(2));
+    }
+
+    #[test]
+    fn parse_accepts_wrapped_cards() {
+        let raw = "{\"cards\":[{\"kind\":\"action\",\"text\":\"x\",\"quote\":\"q\",\"t0\":1}]}";
+        let cards = parse_cards(raw, 0, 1000).unwrap();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].speaker, None);
+    }
+
+    #[test]
+    fn parse_rejects_json_without_cards() {
+        assert!(parse_cards("{\"note\":\"x\"}", 0, 1000).is_err());
+        assert!(parse_cards("no json here", 0, 1000).is_err());
     }
 
     #[test]

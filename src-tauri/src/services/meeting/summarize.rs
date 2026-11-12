@@ -199,6 +199,10 @@ pub fn summarize(
             }
             Err(GenerateError::Parse(error)) => {
                 tracing::warn!(%error, start_ms = window.start_ms, "card parse failed");
+                outcome.last_error = Some(LlmError::new(
+                    super::llm::LlmErrorCode::Protocol,
+                    error.clone(),
+                ));
                 push_extractive(window, segments, lang, &mut outcome);
                 consecutive_parse_failures += 1;
                 if consecutive_parse_failures >= MAX_CONSECUTIVE_PARSE_FAILURES {
