@@ -422,7 +422,7 @@ fn transcribe<R: Runtime>(
         .then(|| SherpaAsr::open(asr_id, &asr_dir, defaults.threads))
         .transpose()?;
     let vad_model = (catalog.state("silero-vad") == ModelState::Ready)
-        .then(|| catalog.path("silero-vad"))
+        .then(|| catalog.model_file("silero-vad"))
         .flatten();
 
     let deadline = Instant::now()
@@ -561,7 +561,7 @@ fn transcribe<R: Runtime>(
     let local_model = (llm_mode == summarize::LlmMode::Local).then_some(resolved.llm);
     let local_ready = local_model.is_some_and(|id| catalog.state(id) == ModelState::Ready);
     let local_path = local_model
-        .and_then(|id| catalog.path(id))
+        .and_then(|id| catalog.model_file(id))
         .filter(|_| local_ready);
     let keys = app.state::<Arc<KeyService>>();
     let remote = (llm_mode == summarize::LlmMode::Remote).then(|| RemoteLlmSpec {

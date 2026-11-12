@@ -54,6 +54,7 @@ export const common = {
     openEditor: "View editor",
     backToWelcome: "Back to welcome",
     retry: "Retry",
+    cancel: "Cancel",
   },
   welcome: {
     kicker: "Local-first · files never leave this device",

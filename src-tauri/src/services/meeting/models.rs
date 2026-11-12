@@ -162,6 +162,18 @@ pub trait ModelCatalog: Send + Sync {
     fn state(&self, id: &str) -> ModelState;
     fn path(&self, id: &str) -> Option<PathBuf>;
     fn root(&self) -> &Path;
+
+    /// File a runtime loads directly (VAD/LLM). ASR drivers still take the
+    /// pack directory because they read several files by name.
+    fn model_file(&self, id: &str) -> Option<PathBuf> {
+        let pack = self.pack(id)?;
+        let role = match pack.kind {
+            ModelKind::Vad => FileRole::Vad,
+            _ => FileRole::Model,
+        };
+        let file = pack.files.iter().find(|file| file.role == role)?;
+        self.path(id).map(|dir| dir.join(file.name))
+    }
 }
 
 const ASR_LANGS: &[Lang] = &[Lang::Zh, Lang::En];
@@ -867,6 +879,18 @@ mod tests {
         assert!(root.join("pack.bin").is_file());
         assert!(!dir.join("meeting-models").exists());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn model_file_joins_the_runtime_file_for_vad_and_llm() {
+        let root = temp_root();
+        let catalog = ManifestCatalog::new(root.clone());
+        let vad = catalog.model_file("silero-vad").unwrap();
+        assert_eq!(vad.file_name().unwrap(), "silero_vad.onnx");
+        let llm = catalog.model_file("qwen3-4b-instruct-q4km").unwrap();
+        assert_eq!(llm.file_name().unwrap(), "Qwen3-4B-Q4_K_M.gguf");
+        assert_eq!(catalog.model_file("unknown-pack"), None);
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

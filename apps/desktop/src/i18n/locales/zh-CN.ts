@@ -54,6 +54,7 @@ export const common = {
     openEditor: "查看编辑器",
     backToWelcome: "返回欢迎页",
     retry: "重试",
+    cancel: "取消",
   },
   welcome: {
     kicker: "本地优先 · 文件不离开设备",

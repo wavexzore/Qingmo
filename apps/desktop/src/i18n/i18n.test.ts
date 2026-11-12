@@ -72,6 +72,13 @@ function placeholders(value: string): string[] {
     .sort();
 }
 
+async function assertCancelLabel(): Promise<void> {
+  await i18n.changeLanguage("zh-CN");
+  expect(i18n.t("common:actions.cancel")).toBe("取消");
+  await i18n.changeLanguage("en");
+  expect(i18n.t("common:actions.cancel")).toBe("Cancel");
+}
+
 describe("i18n resources", () => {
   it("keeps zh-CN and en key sets aligned in every namespace", () => {
     const namespaces = Object.keys(resources["zh-CN"]).sort();
@@ -99,6 +106,8 @@ describe("i18n resources", () => {
     expect(zh.get("menu.about")).toContain("{{appName}}");
     expect(en.get("menu.about")).toContain("{{appName}}");
   });
+
+  it("resolves the shared cancel label in both languages", assertCancelLabel);
 
   it("uses zh-CN by default and switches to en", async () => {
     await i18n.changeLanguage("zh-CN");
