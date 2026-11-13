@@ -257,24 +257,44 @@ fn user_prompt(window: &CardWindow, segments: &[Segment], lang: Lang) -> String 
     prompt
 }
 
-/// Remove ` thinking` blocks, including an unterminated trailing block.
+/// Remove complete reasoning blocks. Only the two known tag pairs are
+/// stripped, and an unterminated opening tag is left untouched so ordinary
+/// prose containing the word "thinking" can never truncate the JSON.
 pub fn strip_think(raw: &str) -> String {
+    let without_tags = strip_pair(raw, "<thinking>", "</thinking>");
+    strip_qwen_prefix(&without_tags)
+}
+
+fn strip_pair(raw: &str, open: &str, close: &str) -> String {
     let mut output = String::with_capacity(raw.len());
     let mut rest = raw;
-    while let Some(index) = rest.find("thinking") {
-        let start = if index > 0 && rest.as_bytes()[index - 1] == b' ' {
-            index - 1
-        } else {
-            index
+    while let Some(start) = rest.find(open) {
+        let Some(relative_end) = rest[start + open.len()..].find(close) else {
+            break;
         };
         output.push_str(&rest[..start]);
-        let Some(end) = rest[start..].find("</think>") else {
-            return output;
-        };
-        rest = &rest[start + end + "</think>".len()..];
+        rest = &rest[start + open.len() + relative_end + close.len()..];
     }
     output.push_str(rest);
     output
+}
+
+/// Qwen3 may emit `think` ... `response` without angle brackets. Only a block
+/// at the very start counts, so "I'm thinking ..." is never treated as a tag.
+fn strip_qwen_prefix(raw: &str) -> String {
+    let trimmed = raw.trim_start();
+    let Some(rest) = trimmed.strip_prefix("think") else {
+        return raw.to_owned();
+    };
+    if !rest.starts_with(|ch: char| ch.is_whitespace() || ch == '>') {
+        return raw.to_owned();
+    }
+    let Some(end) = rest.find("response") else {
+        return raw.to_owned();
+    };
+    rest[end + "response".len()..]
+        .trim_start_matches(|ch: char| ch == '>' || ch.is_whitespace())
+        .to_owned()
 }
 
 /// Locate the outermost JSON value. Arrays are preferred; json_object mode
@@ -694,9 +714,39 @@ mod tests {
     }
 
     #[test]
-    fn think_blocks_are_removed() {
-        assert_eq!(strip_think("a thinking b </think>c"), "ac");
-        assert_eq!(strip_think("athinking b"), "a");
+    fn complete_tagged_blocks_are_removed() {
+        assert_eq!(
+            strip_think("a <thinking>hidden</thinking>c"),
+            "a c",
+            "complete thinking blocks are stripped"
+        );
+        assert_eq!(
+            strip_think("<thinking>x</thinking> <thinking>y</thinking> tail"),
+            "  tail"
+        );
+    }
+
+    #[test]
+    fn qwen_prefix_is_removed_only_at_the_start() {
+        assert_eq!(strip_think("think 先想想\nresponse[1]"), "[1]");
+        assert_eq!(strip_think("  think\nplan\nresponse  ok"), "ok");
+        assert_eq!(
+            strip_think("I'm thinking about it"),
+            "I'm thinking about it",
+            "prose containing the word thinking is preserved"
+        );
+        assert_eq!(
+            strip_think("[{\"text\":\"thinking out loud\"}]"),
+            "[{\"text\":\"thinking out loud\"}]"
+        );
+    }
+
+    #[test]
+    fn unterminated_tag_is_preserved() {
+        assert_eq!(
+            strip_think("<thinking>never closed"),
+            "<thinking>never closed"
+        );
     }
 
     #[test]

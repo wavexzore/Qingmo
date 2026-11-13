@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::asr::{repeat_ratio, AsrEngine, Segment, SegmentStatus, REPEAT_LIMIT};
 use super::decode::{decode_windows, DecodeWindow};
+use super::ms_to_samples;
 use super::remote_asr::RemoteAsr;
 use super::runtime::ReasonCode;
 use super::speaker::{join, DiarizationEngine, DiarizeError, SpeakerTurn, MAX_SPEAKERS};
@@ -191,6 +192,7 @@ fn run_local_inner(
     let mut segments = Vec::new();
     let mut total = 0usize;
     let mut failed = 0usize;
+    let mut empty = 0usize;
     let mut reason = StopReason::Completed;
     let mut speaker_degraded = diarizer.is_none();
     let mut speaker_partial = false;
@@ -299,10 +301,11 @@ fn run_local_inner(
             });
             match recognized {
                 Ok(segment) => {
-                    if segment.text.is_empty()
-                        && segment.end_ms.saturating_sub(segment.start_ms) > 2_000
-                    {
-                        continue;
+                    if segment.text.is_empty() {
+                        empty += 1;
+                        if segment.end_ms.saturating_sub(segment.start_ms) > 2_000 {
+                            continue;
+                        }
                     }
                     window_segments.push(segment);
                 }
@@ -329,14 +332,21 @@ fn run_local_inner(
         .filter(|segment| segment.status == SegmentStatus::Ok && !segment.text.is_empty())
         .count();
     if reason == StopReason::Completed {
-        if total > 0 && available == 0 {
-            reason = StopReason::AllFailed;
-        } else if total == 0 {
+        if total == 0 {
             reason = StopReason::Silent;
+        } else if available == 0 {
+            // Silence and failed decoding both leave no text; only the latter
+            // should surface ASR_FAILED.
+            reason = if failed > 0 {
+                StopReason::AllFailed
+            } else {
+                StopReason::Silent
+            };
         }
     }
 
-    let (exit, mut partial) = exit_for(reason, total, available);
+    let speech_total = total.saturating_sub(empty);
+    let (exit, mut partial) = exit_for(reason, speech_total, available);
     let mut partial_decode = false;
     let mut partial_until_ms = None;
     if matches!(reason, StopReason::DecodeFailed | StopReason::Deadline) && available > 0 {
@@ -347,7 +357,7 @@ fn run_local_inner(
             .map(|segment| segment.end_ms)
             .max();
     }
-    if total > 0 && failed as f32 / total as f32 > MAX_FAILED_SHARE {
+    if speech_total > 0 && failed as f32 / speech_total as f32 > MAX_FAILED_SHARE {
         partial = true;
     }
 
@@ -472,6 +482,7 @@ pub fn run_remote(
         .iter()
         .filter(|segment| segment.status == SegmentStatus::Ok && !segment.text.is_empty())
         .count();
+    let speaker_count = segments.iter().filter_map(|segment| segment.speaker).max();
     if reason == StopReason::Completed && available == 0 {
         reason = StopReason::Silent;
     }
@@ -502,7 +513,7 @@ pub fn run_remote(
         remote_last_error: None,
         speaker_degraded: false,
         speaker_partial: false,
-        speaker_count: None,
+        speaker_count,
     })
 }
 
@@ -578,16 +589,16 @@ fn transcribe(
     let raw = asr.recognize(slice, speech.start_ms, speech.end_ms, cancel)?;
     let mut segment = Segment::from_raw(raw, speech.start_ms, speech.end_ms);
     if repeat_ratio(&segment.text) > REPEAT_LIMIT {
-        let retry = asr.recognize(slice, speech.start_ms, speech.end_ms, cancel);
-        if let Ok(raw) = retry {
-            segment = Segment::from_raw(raw, speech.start_ms, speech.end_ms);
+        if let Some(raw) = asr.recognize_biased(slice, speech.start_ms, speech.end_ms, cancel)? {
+            let retried = Segment::from_raw(raw, speech.start_ms, speech.end_ms);
+            if !retried.text.is_empty()
+                && repeat_ratio(&retried.text) <= repeat_ratio(&segment.text)
+            {
+                segment = retried;
+            }
         }
     }
     Ok(segment)
-}
-
-fn ms_to_samples(ms: u64) -> usize {
-    (ms.saturating_mul(u64::from(super::TARGET_SAMPLE_RATE)) / 1000) as usize
 }
 
 #[cfg(test)]
@@ -634,10 +645,7 @@ mod tests {
         };
         let mut asr = Capture { seen: Vec::new() };
         let segment = transcribe(&mut asr, &window, 600_000, speech, &cancel).expect("recognize");
-        assert_eq!(
-            asr.seen,
-            vec![(8_000, 601_000, 601_500), (8_000, 601_000, 601_500)]
-        );
+        assert_eq!(asr.seen, vec![(8_000, 601_000, 601_500)]);
         assert_eq!(segment.start_ms, 601_000);
         assert_eq!(segment.end_ms, 601_001);
     }
@@ -677,8 +685,66 @@ mod tests {
         transcribe(&mut asr, &window, 600_000, speech, &cancel).expect("recognize");
         assert_eq!(
             asr.seen,
-            vec![crate::services::meeting::TARGET_SAMPLE_RATE as usize - 14_400; 2]
+            vec![crate::services::meeting::TARGET_SAMPLE_RATE as usize - 14_400]
         );
+    }
+
+    #[test]
+    fn a_repeated_segment_retries_through_the_biased_hook() {
+        use crate::services::meeting::asr::RawAsr;
+
+        struct LoopThenClean {
+            primary: usize,
+            biased: usize,
+        }
+        impl AsrEngine for LoopThenClean {
+            fn recognize(
+                &mut self,
+                _samples: &[f32],
+                _start_ms: u64,
+                _end_ms: u64,
+                _cancel: &CancellationToken,
+            ) -> Result<RawAsr, AppError> {
+                self.primary += 1;
+                Ok(RawAsr {
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    text: "我们今天开会我们今天开会我们今天开会我们今天开会".into(),
+                    tokens: Vec::new(),
+                })
+            }
+
+            fn recognize_biased(
+                &mut self,
+                _samples: &[f32],
+                _start_ms: u64,
+                _end_ms: u64,
+                _cancel: &CancellationToken,
+            ) -> Result<Option<RawAsr>, AppError> {
+                self.biased += 1;
+                Ok(Some(RawAsr {
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    text: "我们今天开会讨论发布计划".into(),
+                    tokens: Vec::new(),
+                }))
+            }
+        }
+
+        let cancel = CancellationToken::new();
+        let window = vec![0.25f32; crate::services::meeting::TARGET_SAMPLE_RATE as usize];
+        let speech = SpeechSegment {
+            start_ms: 0,
+            end_ms: 1_000,
+        };
+        let mut asr = LoopThenClean {
+            primary: 0,
+            biased: 0,
+        };
+        let segment = transcribe(&mut asr, &window, 0, speech, &cancel).expect("recognize");
+        assert_eq!(asr.primary, 1);
+        assert_eq!(asr.biased, 1);
+        assert_eq!(segment.text, "我们今天开会讨论发布计划");
     }
 
     fn spoken(index: u8, speaker: u8) -> Segment {

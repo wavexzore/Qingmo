@@ -1,12 +1,11 @@
 {
   "schemaVersion": 1,
   "generatedAt": "2026-11-11T02:24:04.176505+00:00",
-  "host": "redacted-host",
   "platform": "Darwin-25.1.0-arm64-arm-64bit-Mach-O",
   "build": "debug",
-  "sampleSource": "/redacted/sample-speaker_20261110221637.mp3",
+  "sampleSource": "sample.mp3",
   "sampleSourceSha256": "84affacd3194514863b24625d5ca5a65d91da17fdde2723248f85f9a22a34012",
-  "reference": "/redacted/sample-speaker 周二 22点16分.md",
+  "reference": "reference.md",
   "referenceSha256": "bdc8f5f344c3bf4460ad8ff1d1c2ea466476a9578f5b85b59596c8c211dbe42f",
   "profile": "16g-mac",
   "models": {
@@ -16,8 +15,8 @@
   },
   "thresholds": {
     "asrLowConfidence": 0.35,
-    "diarizeCluster": 0.5,
-    "diarizeMatch": 0.65,
+    "diarizeCluster": 0.65,
+    "diarizeMatch": 0.5,
     "asrMaxMeanCer": 0.35,
     "asrMaxP95Cer": 0.85,
     "asrMaxSampleCer": 1.0

@@ -18,6 +18,42 @@ pub const MAX_OPEN_BYTES: u64 = MAX_DOCUMENT_BYTES;
 pub const MAX_WRITE_BYTES: u64 = MAX_DOCUMENT_BYTES;
 pub const MAX_FILE_BYTES: u64 = MAX_DOCUMENT_BYTES;
 
+/// Markdown containers accepted by `document_open`.
+pub fn ensure_supported_extension(path: &Path) -> Result<(), AppError> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+
+    match extension.as_deref() {
+        Some("md" | "markdown" | "mdx") => Ok(()),
+        _ => Err(AppError::new(
+            AppErrorCode::UnsupportedExtension,
+            format!("unsupported file extension: {}", path.display()),
+        )),
+    }
+}
+
+/// Audio containers accepted by the meeting pipeline.
+///
+/// This is deliberately separate from [`ensure_supported_extension`]: audio
+/// files must still be rejected by `document_open`, while `meeting_start`
+/// accepts them without touching the document registry.
+pub fn ensure_supported_audio(path: &Path) -> Result<(), AppError> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+
+    match extension.as_deref() {
+        Some("m4a" | "mp4" | "wav" | "mp3" | "flac") => Ok(()),
+        _ => Err(AppError::new(
+            AppErrorCode::AudioUnsupported,
+            format!("unsupported audio extension: {}", path.display()),
+        )),
+    }
+}
+
 #[derive(Debug)]
 pub struct ParsedFile {
     pub text: String,

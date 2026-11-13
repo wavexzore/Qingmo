@@ -557,10 +557,35 @@ fn one_window_timeout_falls_back_and_the_next_still_uses_the_llm() {
     .unwrap();
     assert_eq!(outcome.llm_windows, 2);
     assert_eq!(outcome.extractive_windows, 1);
+    assert_eq!(
+        outcome.last_error.as_ref().map(|error| error.code),
+        Some(LlmErrorCode::Timeout)
+    );
     assert!(outcome
         .cards
         .iter()
         .any(|card| card.kind == CardKind::Decision));
+}
+
+#[test]
+fn one_transient_http_error_does_not_disable_later_windows() {
+    let ok = r#"[{"kind":"decision","text":"明天发布","quote":"决定明天发布","t0":100}]"#;
+    let factory = ScriptFactory::new(vec![
+        Err(LlmError::new(LlmErrorCode::HttpStatus(500), "boom")),
+        Ok(ok.into()),
+        Ok(ok.into()),
+    ]);
+    let outcome = summarize(
+        &windows_of_three(),
+        Lang::Zh,
+        &remote_plan("http://localhost:1"),
+        factory.as_ref(),
+        &CancellationToken::new(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(outcome.llm_windows, 2);
+    assert_eq!(outcome.extractive_windows, 1);
 }
 
 #[test]

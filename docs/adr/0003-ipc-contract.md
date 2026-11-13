@@ -11,7 +11,7 @@ Tauri 2 的 invoke 是动态字符串边界：命令名、事件名、DTO 字段
 
 ## 决策
 
-1. **命令/事件单一源：** `src-tauri/src/ipc/contract.rs` 定义全部命令与事件；前端镜像、capability 与契约测试都从同一常量集合校验。当前为 30 条命令（文档、窗口会话、更新、日志、设置、About 等）与 6 个事件（`app://close-requested`、`app://menu-action`、`app://update-state`、`app://update-progress`、`app://document-changed`、`app://document-new-failed`）。
+1. **命令/事件单一源：** `src-tauri/src/ipc/contract.rs` 定义全部命令与事件；前端镜像、capability 与契约测试都从同一常量集合校验。当前为 62 条命令（文档、窗口会话、更新、日志、设置、About、会议采集与模型管理等）与 13 个事件（窗口关闭、更新、菜单、文档/工作区变化、会议进度与模型下载进度等）。
 2. **权限映射：** `command_permission("document_new") -> "allow-document-new"`；`build.rs` 与 capability 都从同一命名规则校验，不手写第二套。
 3. **DTO 单一源：** Rust `serde` 类型 + `ts-rs` 生成 `packages/shared/src/generated/`；生成文件提交仓库，CI 重跑并要求 `git status --porcelain` 为空。
 4. **前端镜像：** `apps/desktop/src/lib/ipc/contract.ts`/`commands.ts` 保留命令名与权限映射；契约测试同时检查 Rust 常量、TS 镜像、capability、build.rs 与生成 DTO。

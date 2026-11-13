@@ -11,7 +11,14 @@ const pending = new Map<string, Promise<MeetingResult | null>>();
 export function takeMeetingResult(ipc: IpcPort, requestId: string): Promise<MeetingResult | null> {
   let promise = pending.get(requestId);
   if (!promise) {
-    promise = ipc.meetingTakeResult(requestId);
+    const created = ipc.meetingTakeResult(requestId);
+    // Never cache a rejected read: a retry must be able to call the IPC again.
+    created.catch(() => {
+      if (pending.get(requestId) === created) {
+        pending.delete(requestId);
+      }
+    });
+    promise = created;
     pending.set(requestId, promise);
   }
   return promise;

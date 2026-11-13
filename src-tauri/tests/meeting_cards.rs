@@ -200,10 +200,21 @@ fn system_prompt_carries_no_think_and_prompt_has_timestamps() {
 
 #[test]
 fn think_blocks_are_stripped_before_parsing() {
-    let raw =
-        " thinking先想想</think>[{\"kind\":\"risk\",\"text\":\"x\",\"quote\":\"q\",\"t0\":1}]";
-    assert_eq!(parse_cards(raw, 0, 10).unwrap().len(), 1);
-    assert!(parse_cards("thinking 未闭合", 0, 10).is_err());
+    let tagged =
+        "<thinking>先想想</thinking>[{\"kind\":\"risk\",\"text\":\"x\",\"quote\":\"q\",\"t0\":1}]";
+    assert_eq!(parse_cards(tagged, 0, 10).unwrap().len(), 1);
+
+    let qwen =
+        "think 先想想\nresponse[{\"kind\":\"risk\",\"text\":\"x\",\"quote\":\"q\",\"t0\":1}]";
+    assert_eq!(parse_cards(qwen, 0, 10).unwrap().len(), 1);
+
+    let prose = "[{\"kind\":\"risk\",\"text\":\"thinking out loud\",\"quote\":\"q\",\"t0\":1}]";
+    assert_eq!(
+        parse_cards(prose, 0, 10).unwrap()[0].text,
+        "thinking out loud"
+    );
+
+    assert!(parse_cards("<thinking>未闭合", 0, 10).is_err());
 }
 
 #[test]

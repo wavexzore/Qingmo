@@ -7,12 +7,25 @@ import type {
   ModelProgress,
   ModelState,
   ModelView,
+  RuntimeNote,
   RuntimePreview,
 } from "@qingmo/shared";
 
 import { AppError, normalizeError } from "../lib/ipc/errors";
 import type { KeySlot, SettingsPort } from "../lib/settings/port";
 import { ModelDownloadBanner } from "./ModelDownloadBanner";
+import {
+  activeDownloadId,
+  beginModelDownload,
+  dropWaiter,
+  ensureModelProgressBridge,
+  isQueueRunning,
+  setQueueRunning,
+  setStopQueue,
+  shouldStopQueue,
+  subscribeModelProgress,
+  waitForModel,
+} from "./modelDownloadQueue";
 import { buildRows, downloadableMembers, type ModelRow } from "./modelGroups";
 import { ModelList, type ModelProgressState } from "./ModelList";
 
@@ -22,6 +35,13 @@ const PROVIDER_TERMS: Record<string, string> = {
   openai: "https://openai.com/policies/terms-of-use/",
   groq: "https://groq.com/terms-of-service/",
   deepgram: "https://deepgram.com/terms",
+};
+
+/** The wire enum is snake_case; locale keys are camelCase. */
+const RUNTIME_NOTE_KEYS: Record<RuntimeNote, string> = {
+  fire_red_high_memory: "ai.notes.fireRedHighMemory",
+  llm_eight_b_requires32_gi_b: "ai.notes.llmEightBRequires32GiB",
+  windows_slow_llm: "ai.notes.windowsSlowLlm",
 };
 
 export interface MeetingSettingsProps {
@@ -43,6 +63,92 @@ function stateFromProgress(progress: ModelProgress): ModelState {
     default:
       return "not_downloaded";
   }
+}
+
+/**
+ * Text field that only commits on blur/Enter. Every keystroke must not write
+ * the config file (and must not rotate the remote key by changing the host).
+ */
+function CommitInput({
+  value,
+  onCommit,
+  testId,
+  placeholder,
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  testId?: string;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      value={draft}
+      data-testid={testId}
+      placeholder={placeholder}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={() => {
+        if (draft !== value) {
+          onCommit(draft);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          setDraft(value);
+        }
+      }}
+    />
+  );
+}
+
+/** Bounded number field that tolerates intermediate input and clamps on blur. */
+function NumberField({
+  value,
+  min,
+  max,
+  step,
+  testId,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  testId: string;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  return (
+    <input
+      className="meeting-number"
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      value={draft}
+      data-testid={testId}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={() => {
+        const next = Number(draft);
+        if (Number.isInteger(next) && next >= min && next <= max && next !== value) {
+          onCommit(next);
+        } else {
+          setDraft(String(value));
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          setDraft(String(value));
+        }
+      }}
+    />
+  );
 }
 
 function patchConfig(
@@ -98,11 +204,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
   const [asrKeyDraft, setAsrKeyDraft] = useState("");
   const [llmKeyDraft, setLlmKeyDraft] = useState("");
   const revisionRef = useRef(0);
-  const waiters = useRef(new Map<string, () => void>());
-  const activeDownloads = useRef(new Map<string, string>());
   const writeChain = useRef(Promise.resolve());
-  const queueRunning = useRef(false);
-  const stopQueue = useRef(false);
 
   const refreshModels = useCallback(async () => {
     setModels(await settings.meetingModelsList());
@@ -132,9 +234,10 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
   }, [load]);
 
   useEffect(() => {
-    return settings.onModelProgress((update) => {
+    ensureModelProgressBridge(settings);
+    return subscribeModelProgress((update) => {
       const key = update.modelId;
-      activeDownloads.current.set(key, update.downloadId);
+      beginModelDownload(key, update.downloadId);
       setProgress((current) => ({
         ...current,
         [key]: { doneBytes: update.doneBytes, totalBytes: update.totalBytes },
@@ -158,12 +261,9 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
         }),
       );
       if (update.state === "done" || update.state === "failed" || update.state === "cancelled") {
-        activeDownloads.current.delete(key);
         setActiveDownload((current) => (current?.modelId === key ? null : current));
-        waiters.current.get(key)?.();
-        waiters.current.delete(key);
         if (update.state !== "done") {
-          stopQueue.current = true;
+          setStopQueue(true);
         }
       }
     });
@@ -200,26 +300,30 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
 
   const runDownloads = useCallback(
     async (ids: string[]) => {
-      if (queueRunning.current || ids.length === 0) {
+      if (isQueueRunning() || ids.length === 0) {
         return;
       }
-      queueRunning.current = true;
-      stopQueue.current = false;
+      setQueueRunning(true);
+      setStopQueue(false);
       setBusy(true);
       try {
         for (const id of ids) {
-          if (stopQueue.current) {
+          if (shouldStopQueue()) {
             break;
           }
+          // Register before invoking: a tiny model can finish inside the IPC
+          // round trip, and the terminal event must still settle the queue.
+          const completion = waitForModel(id);
           try {
             const { downloadId } = await settings.meetingModelDownload(id);
-            activeDownloads.current.set(id, downloadId);
-            setActiveDownload({ modelId: id, downloadId });
-            await new Promise<void>((resolve) => {
-              waiters.current.set(id, resolve);
-            });
+            beginModelDownload(id, downloadId);
+            if (activeDownloadId(id) === downloadId) {
+              setActiveDownload({ modelId: id, downloadId });
+            }
+            await completion;
             await refreshModels();
           } catch (error) {
+            dropWaiter(id);
             const code = normalizeError(error).code;
             onToast(
               code === "MODEL_BUSY"
@@ -232,7 +336,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
           }
         }
       } finally {
-        queueRunning.current = false;
+        setQueueRunning(false);
         setBusy(false);
         setActiveDownload(null);
         await refreshModels();
@@ -243,9 +347,9 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
 
   const cancelRow = useCallback(
     async (row: ModelRow) => {
-      stopQueue.current = true;
+      setStopQueue(true);
       for (const member of row.members) {
-        const downloadId = activeDownloads.current.get(member.id);
+        const downloadId = activeDownloadId(member.id);
         if (downloadId) {
           try {
             await settings.meetingModelDownloadCancel(downloadId);
@@ -347,10 +451,12 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
   );
 
   const llmGapIds = useMemo(() => {
-    const resolved = preview?.resolved?.llm ?? preview?.defaults.llmModel;
-    if (!resolved) return [];
-    return models.find((model) => model.id === resolved)?.state === "ready" ? [] : [resolved];
-  }, [models, preview]);
+    // A manually selected model wins over the startup preview; otherwise the
+    // user would download the resolved default instead of the chosen pack.
+    const selected = config?.llm.localModel || preview?.resolved?.llm || preview?.defaults.llmModel;
+    if (!selected) return [];
+    return models.find((model) => model.id === selected)?.state === "ready" ? [] : [selected];
+  }, [config, models, preview]);
 
   const llmSetBytes = useMemo(
     () =>
@@ -371,6 +477,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
 
   const selectedAsr = config?.asr.localModel ?? preview?.defaults.asrModel ?? "";
   const selectedAsrReady = models.find((model) => model.id === selectedAsr)?.state === "ready";
+  const lowMemory = preview?.defaults.notes.includes("llm_eight_b_requires32_gi_b") ?? false;
 
   const cancelActive = useCallback(async () => {
     const downloadId = activeDownload?.downloadId;
@@ -588,7 +695,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
             />
             {preview.defaults.notes.map((note) => (
               <p className="meeting-warn" key={note}>
-                {t(`ai.notes.${note}`)}
+                {t(RUNTIME_NOTE_KEYS[note])}
               </p>
             ))}
             {renderLocalModels([...asrRows, ...groupRows])}
@@ -617,11 +724,11 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
             </div>
             <label className="meeting-field">
               <span>{t("ai.asr.remoteModel")}</span>
-              <input
+              <CommitInput
                 value={config.asr.model}
-                data-testid="asr-model"
+                testId="asr-model"
                 placeholder={t("ai.asr.remoteModelPlaceholder")}
-                onChange={(event) => void apply({ asrModel: event.currentTarget.value })}
+                onCommit={(value) => void apply({ asrModel: value })}
               />
             </label>
             {keyControl("asr", config.asr.keyStatus, asrKeyDraft, setAsrKeyDraft)}
@@ -683,7 +790,14 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
                   {t("ai.models.auto", { model: preview.defaults.llmModel })}
                 </option>
                 {llmRows.map((row) => (
-                  <option key={row.key} value={row.members[0]?.id ?? ""}>
+                  <option
+                    key={row.key}
+                    value={row.members[0]?.id ?? ""}
+                    disabled={
+                      lowMemory &&
+                      row.members.some((member) => /\b8b\b/i.test(`${member.id} ${member.display}`))
+                    }
+                  >
                     {row.display}
                     {row.state === "ready" ? ` · ${t("ai.models.readySuffix")}` : ""}
                   </option>
@@ -706,7 +820,7 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
             />
             {preview.defaults.notes.map((note) => (
               <p className="meeting-warn" key={note}>
-                {t(`ai.notes.${note}`)}
+                {t(RUNTIME_NOTE_KEYS[note])}
               </p>
             ))}
             {renderLocalModels(llmRows)}
@@ -715,21 +829,21 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
           <div className="meeting-panel" data-testid="llm-remote-panel">
             <label className="meeting-field">
               <span>{t("ai.llm.baseUrl")}</span>
-              <input
+              <CommitInput
                 value={config.llm.baseUrl}
-                data-testid="llm-base-url"
+                testId="llm-base-url"
                 placeholder="https://api.example.com/v1"
-                onChange={(event) => void apply({ llmBaseUrl: event.currentTarget.value })}
+                onCommit={(value) => void apply({ llmBaseUrl: value })}
               />
             </label>
             <p className="settings-hint">{t("ai.llm.baseUrlHint")}</p>
             <label className="meeting-field">
               <span>{t("ai.llm.remoteModel")}</span>
-              <input
+              <CommitInput
                 value={config.llm.model}
-                data-testid="llm-model"
+                testId="llm-model"
                 placeholder={t("ai.llm.remoteModelPlaceholder")}
-                onChange={(event) => void apply({ llmModel: event.currentTarget.value })}
+                onCommit={(value) => void apply({ llmModel: value })}
               />
             </label>
             {keyControl("llm", config.llm.keyStatus, llmKeyDraft, setLlmKeyDraft)}
@@ -764,20 +878,13 @@ export function MeetingSettings({ settings, onToast }: MeetingSettingsProps) {
             <h3>{t("ai.scope.maxMinutes")}</h3>
             <p>{t("ai.scope.maxMinutesHint")}</p>
           </div>
-          <input
-            className="meeting-number"
-            type="number"
+          <NumberField
+            value={config.maxMinutes}
             min={5}
             max={600}
             step={5}
-            value={config.maxMinutes}
-            data-testid="max-minutes"
-            onChange={(event) => {
-              const value = Number(event.currentTarget.value);
-              if (Number.isFinite(value) && value >= 5 && value <= 600) {
-                void apply({ maxMinutes: value });
-              }
-            }}
+            testId="max-minutes"
+            onCommit={(value) => void apply({ maxMinutes: value })}
           />
         </div>
       </section>

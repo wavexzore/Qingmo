@@ -6,9 +6,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use qingmo_lib::error::AppErrorCode;
+use qingmo_lib::services::file_service::ensure_supported_audio;
 use qingmo_lib::services::meeting::decode::{decode_windows, ensure_duration, probe_audio};
 use qingmo_lib::services::meeting::{MAX_AUDIO_BYTES, TARGET_SAMPLE_RATE};
-use qingmo_lib::state::document_registry::ensure_supported_audio;
 use tokio_util::sync::CancellationToken;
 
 const WINDOW_SAMPLES: usize = TARGET_SAMPLE_RATE as usize * 600;

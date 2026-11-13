@@ -6,8 +6,8 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{AppError, AppErrorCode};
 use crate::ipc::dto::{FilePayload, HistoryEntry, HistoryRecord, ImageSaveResult, SaveResult};
+use crate::services::file_service::ensure_supported_extension;
 use crate::services::{image_assets, HistoryStore, SearchIndexService};
-use crate::state::document_registry::ensure_supported_extension;
 use crate::state::{
     DocumentRegistry, DocumentWatcher, FocusTracker, StartupWindow, WindowSessions,
     WorkspaceRegistry, WorkspaceToken,

@@ -20,8 +20,8 @@ use symphonia::core::meta::MetadataOptions;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{AppError, AppErrorCode};
+use crate::services::file_service::ensure_supported_audio;
 use crate::services::meeting::{DECODE_WINDOW_MS, MAX_AUDIO_BYTES, TARGET_SAMPLE_RATE};
-use crate::state::document_registry::ensure_supported_audio;
 
 const WINDOW_SAMPLES: usize = (TARGET_SAMPLE_RATE as u64 * DECODE_WINDOW_MS / 1000) as usize;
 const RESAMPLE_CHUNK: usize = 1024;

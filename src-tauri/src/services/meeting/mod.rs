@@ -59,3 +59,8 @@ pub const MAX_AUDIO_BYTES: u64 = 500 * 1024 * 1024;
 pub const DECODE_WINDOW_MS: u64 = 10 * 60 * 1000;
 /// ASR models and diarization both expect 16 kHz mono.
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
+
+/// Milliseconds to samples at the pipeline's fixed 16 kHz rate.
+pub(crate) fn ms_to_samples(ms: u64) -> usize {
+    (ms.saturating_mul(u64::from(TARGET_SAMPLE_RATE)) / 1000) as usize
+}

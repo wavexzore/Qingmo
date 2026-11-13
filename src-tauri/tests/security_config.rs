@@ -91,9 +91,6 @@ fn capability_contains_only_expected_permissions() {
             "allow-meeting-take-result",
             "allow-meeting-config-get",
             "allow-meeting-models-list",
-            "allow-meeting-model-download",
-            "allow-meeting-model-download-cancel",
-            "allow-meeting-model-remove",
             "allow-app-settings-open",
         ]
     );

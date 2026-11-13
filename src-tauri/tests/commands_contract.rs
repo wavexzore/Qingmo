@@ -651,7 +651,15 @@ fn invoke_handler_registers_every_contract_command() {
     let models =
         invoke(&settings, "meeting_models_list", json!({})).expect("settings may list models");
     assert_eq!(models.as_array().map(Vec::len), Some(11));
-    let error = invoke(&webview, "meeting_model_remove", json!({"id": "x"}))
+    let denied = invoke(&webview, "meeting_model_remove", json!({"id": "x"}))
+        .expect_err("document/main windows must not remove models");
+    assert!(
+        denied
+            .as_str()
+            .is_some_and(|text| text.contains("not allowed")),
+        "capability must reject the call: {denied:?}"
+    );
+    let error = invoke(&settings, "meeting_model_remove", json!({"id": "x"}))
         .expect_err("an unknown model cannot be removed");
     assert_eq!(error["code"], "MODEL_NOT_READY");
 

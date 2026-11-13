@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
 
+import { formatMb } from "./modelGroups";
+
 export interface BannerActiveDownload {
   label: string;
   doneBytes: number;
@@ -21,10 +23,6 @@ export interface ModelDownloadBannerProps {
   secondaryLabel?: string;
   secondaryDisabled?: boolean;
   onSecondary?(): void;
-}
-
-function formatMb(bytes: number): string {
-  return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
 /** First-use download strip; the primary action always reflects the gap set. */

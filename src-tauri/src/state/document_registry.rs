@@ -13,7 +13,7 @@ use crate::services::document_identity::{
 };
 use crate::services::file_identity::{observe_path, same_identity, FileIdentity, FileObservation};
 use crate::services::file_lock::FileLockStore;
-use crate::services::file_service::{FileService, MAX_DOCUMENT_BYTES};
+use crate::services::file_service::{ensure_supported_extension, FileService, MAX_DOCUMENT_BYTES};
 use crate::services::history_store::HistoryStore;
 use crate::services::workspace_service::resolve_document_verified;
 
@@ -1116,41 +1116,6 @@ fn resolve_save_target(path: &Path) -> Result<PathBuf, AppError> {
             Ok(canonical_parent.join(file_name))
         }
         Err(error) => Err(AppError::from_io(&error)),
-    }
-}
-
-pub fn ensure_supported_extension(path: &Path) -> Result<(), AppError> {
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase());
-
-    match extension.as_deref() {
-        Some("md" | "markdown" | "mdx") => Ok(()),
-        _ => Err(AppError::new(
-            AppErrorCode::UnsupportedExtension,
-            format!("unsupported file extension: {}", path.display()),
-        )),
-    }
-}
-
-/// Audio containers accepted by the meeting pipeline.
-///
-/// This is deliberately separate from [`ensure_supported_extension`]: audio
-/// files must still be rejected by `document_open`, while `meeting_start`
-/// accepts them without touching the document registry.
-pub fn ensure_supported_audio(path: &Path) -> Result<(), AppError> {
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase());
-
-    match extension.as_deref() {
-        Some("m4a" | "mp4" | "wav" | "mp3" | "flac") => Ok(()),
-        _ => Err(AppError::new(
-            AppErrorCode::AudioUnsupported,
-            format!("unsupported audio extension: {}", path.display()),
-        )),
     }
 }
 

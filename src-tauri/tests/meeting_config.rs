@@ -189,6 +189,57 @@ fn provider_change_clears_the_old_model_before_the_same_patch() {
 }
 
 #[test]
+fn provider_change_clears_the_old_api_key() {
+    let (store, _) = store("provider-key");
+    store.set_key("asr", "sk-openai").unwrap();
+    store
+        .set(
+            MeetingConfigPatch {
+                asr_provider: Some(RemoteProvider::Groq),
+                ..MeetingConfigPatch::default()
+            },
+            1,
+        )
+        .unwrap();
+    assert!(store.get().config.asr.api_key.is_empty());
+}
+
+#[test]
+fn llm_host_change_clears_the_key_but_a_path_change_keeps_it() {
+    let (store, _) = store("llm-host-key");
+    store
+        .set(
+            MeetingConfigPatch {
+                llm_base_url: Some("https://api.example.com/v1".into()),
+                ..MeetingConfigPatch::default()
+            },
+            store.revision(),
+        )
+        .unwrap();
+    store.set_key("llm", "sk-example").unwrap();
+    store
+        .set(
+            MeetingConfigPatch {
+                llm_base_url: Some("https://api.example.com/v1/chat/completions".into()),
+                ..MeetingConfigPatch::default()
+            },
+            store.revision(),
+        )
+        .unwrap();
+    assert_eq!(store.get().config.llm.api_key, "sk-example");
+    store
+        .set(
+            MeetingConfigPatch {
+                llm_base_url: Some("https://other.example.com/v1".into()),
+                ..MeetingConfigPatch::default()
+            },
+            store.revision(),
+        )
+        .unwrap();
+    assert!(store.get().config.llm.api_key.is_empty());
+}
+
+#[test]
 fn empty_local_model_resets_to_automatic() {
     let (store, _) = store("reset");
     store

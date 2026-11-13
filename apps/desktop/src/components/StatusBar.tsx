@@ -263,9 +263,9 @@ export function StatusBar({
             value={t("meeting:stage.partialDone")}
           />
         ) : null}
-        {meeting ? (
+        {meeting || meetingAudioUrl ? (
           <>
-            {!meetingPartial ? (
+            {meeting && !meetingPartial ? (
               <Item
                 testId="status-meeting-stage"
                 className="hidden @md:inline-flex"
@@ -273,12 +273,14 @@ export function StatusBar({
                 value={meetingStage ?? meeting.stage}
               />
             ) : null}
-            <Item
-              testId="status-meeting-speakers"
-              className="hidden @xl:inline-flex"
-              label={t("meeting:field.speakers")}
-              value={meeting.speakerCount == null ? "—" : String(meeting.speakerCount)}
-            />
+            {meeting ? (
+              <Item
+                testId="status-meeting-speakers"
+                className="hidden @xl:inline-flex"
+                label={t("meeting:field.speakers")}
+                value={meeting.speakerCount == null ? "—" : String(meeting.speakerCount)}
+              />
+            ) : null}
             {meetingAudioUrl ? (
               // The audio URL is a per-window asset URL; it stays valid for
               // the window's lifetime and is released on Destroyed.

@@ -13,6 +13,7 @@ use sherpa_onnx::{
 };
 use tokio_util::sync::CancellationToken;
 
+use super::lang::is_cjk;
 use super::models::{find, AsrFamily, FileRole, ModelPack};
 use crate::error::{AppError, AppErrorCode};
 
@@ -130,13 +131,26 @@ pub trait AsrEngine: Send {
         end_ms: u64,
         cancel: &CancellationToken,
     ) -> Result<RawAsr, AppError>;
+
+    /// One retry with a higher blank penalty after a repeated segment.
+    /// Engines that cannot change their decoding return `None`.
+    fn recognize_biased(
+        &mut self,
+        _samples: &[f32],
+        _start_ms: u64,
+        _end_ms: u64,
+        _cancel: &CancellationToken,
+    ) -> Result<Option<RawAsr>, AppError> {
+        Ok(None)
+    }
 }
 
 pub struct SherpaAsr {
-    recognizer: OfflineRecognizer,
+    recognizer: Option<OfflineRecognizer>,
     pack: &'static ModelPack,
     dir: std::path::PathBuf,
     threads: i32,
+    blank_penalty: f32,
 }
 
 impl SherpaAsr {
@@ -155,10 +169,11 @@ impl SherpaAsr {
             )
         })?;
         Ok(Self {
-            recognizer,
+            recognizer: Some(recognizer),
             pack,
             dir: dir.to_path_buf(),
             threads,
+            blank_penalty: 0.0,
         })
     }
 
@@ -175,11 +190,22 @@ impl SherpaAsr {
             )
         })?;
         Ok(Self {
-            recognizer,
+            recognizer: Some(recognizer),
             pack: self.pack,
             dir: self.dir.clone(),
             threads: self.threads,
+            blank_penalty,
         })
+    }
+
+    fn install(&mut self, blank_penalty: f32) -> bool {
+        match self.with_blank_penalty(blank_penalty) {
+            Ok(mut engine) => {
+                self.recognizer = engine.recognizer.take();
+                true
+            }
+            Err(_) => false,
+        }
     }
 }
 
@@ -202,9 +228,15 @@ impl AsrEngine for SherpaAsr {
                 tokens: Vec::new(),
             });
         }
-        let stream = self.recognizer.create_stream();
+        let Some(recognizer) = self.recognizer.as_ref() else {
+            return Err(AppError::new(
+                AppErrorCode::AsrUnavailable,
+                "ASR recognizer is not loaded",
+            ));
+        };
+        let stream = recognizer.create_stream();
         stream.accept_waveform(super::TARGET_SAMPLE_RATE as i32, samples);
-        self.recognizer.decode(&stream);
+        recognizer.decode(&stream);
         let result = stream
             .get_result()
             .ok_or_else(|| AppError::new(AppErrorCode::AsrFailed, "ASR returned no result"))?;
@@ -212,6 +244,33 @@ impl AsrEngine for SherpaAsr {
             return Err(AppError::new(AppErrorCode::Cancelled, "asr cancelled"));
         }
         Ok(parse_result(&result, start_ms, end_ms))
+    }
+
+    fn recognize_biased(
+        &mut self,
+        samples: &[f32],
+        start_ms: u64,
+        end_ms: u64,
+        cancel: &CancellationToken,
+    ) -> Result<Option<RawAsr>, AppError> {
+        let normal = self.blank_penalty;
+        // Drop the normal recognizer before allocating the biased one so a
+        // retry never doubles the model's resident memory.
+        self.recognizer = None;
+        if !self.install(normal + 0.5) {
+            let _ = self.install(normal);
+            return Ok(None);
+        }
+        let retried = self.recognize(samples, start_ms, end_ms, cancel);
+        self.recognizer = None;
+        if !self.install(normal) {
+            tracing::warn!("failed to restore the normal ASR blank penalty");
+        }
+        match retried {
+            Ok(raw) => Ok(Some(raw)),
+            Err(error) if error.code == AppErrorCode::Cancelled => Err(error),
+            Err(_) => Ok(None),
+        }
     }
 }
 
@@ -330,21 +389,39 @@ pub fn parse_result(result: &OfflineRecognizerResult, _start_ms: u64, _end_ms: u
     }
 }
 
-/// 5-gram repeat share; `1.0` when the text is shorter than six tokens.
+/// 5-gram repeat share over words and CJK characters; `0.0` for short text.
 pub fn repeat_ratio(text: &str) -> f32 {
-    let words = text.split_whitespace().collect::<Vec<_>>();
-    if words.len() < 6 {
-        return 1.0;
+    let units = repeat_units(text);
+    if units.len() < 6 {
+        return 0.0;
     }
-    let mut seen = std::collections::HashSet::new();
-    let total = words.len() - 4;
-    let mut repeated = 0usize;
-    for gram in words.windows(5) {
-        if !seen.insert(gram) {
-            repeated += 1;
+    let mut seen = std::collections::HashSet::with_capacity(units.len());
+    let total = units.len() - 4;
+    let repeated = units.windows(5).filter(|gram| !seen.insert(*gram)).count();
+    repeated as f32 / total as f32
+}
+
+/// Split into Latin word runs and single CJK characters so that languages
+/// without spaces still produce enough n-grams to detect a decoding loop.
+fn repeat_units(text: &str) -> Vec<&str> {
+    let mut units = Vec::new();
+    let mut word_start = None;
+    for (index, ch) in text.char_indices() {
+        if ch.is_ascii_alphanumeric() {
+            word_start.get_or_insert(index);
+            continue;
+        }
+        if let Some(start) = word_start.take() {
+            units.push(&text[start..index]);
+        }
+        if is_cjk(ch) {
+            units.push(&text[index..index + ch.len_utf8()]);
         }
     }
-    repeated as f32 / total as f32
+    if let Some(start) = word_start {
+        units.push(&text[start..]);
+    }
+    units
 }
 
 #[cfg(test)]
@@ -412,10 +489,29 @@ mod tests {
 
     #[test]
     fn repeat_ratio_detects_loops() {
-        assert_eq!(repeat_ratio("a b c"), 1.0);
+        assert_eq!(repeat_ratio("a b c"), 0.0);
+        assert_eq!(repeat_ratio("你好世界"), 0.0);
         let looped = "w1 w2 w3 w4 w5 w1 w2 w3 w4 w5 w1 w2 w3 w4 w5 w1 w2 w3 w4 w5";
         assert!(repeat_ratio(looped) > REPEAT_LIMIT);
         let prose = "a b c d e f g h i j k l m n o p";
         assert!(repeat_ratio(prose) < REPEAT_LIMIT);
+    }
+
+    #[test]
+    fn repeat_ratio_handles_chinese_without_spaces() {
+        let looped = "我们今天开会我们今天开会我们今天开会我们今天开会";
+        assert!(
+            repeat_ratio(looped) > REPEAT_LIMIT,
+            "looped Chinese text must be detected: {}",
+            repeat_ratio(looped)
+        );
+        let prose = "今天的会议主要讨论发布计划和风险";
+        assert!(
+            repeat_ratio(prose) < REPEAT_LIMIT,
+            "ordinary Chinese prose must not trigger a retry: {}",
+            repeat_ratio(prose)
+        );
+        let mixed = "我们用 Redis 缓存 session 然后下周 review";
+        assert!(repeat_ratio(mixed) < REPEAT_LIMIT);
     }
 }

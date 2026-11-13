@@ -36,7 +36,7 @@ use crate::services::meeting::keys::KeyService;
 use crate::services::meeting::lang::detect_language;
 use crate::services::meeting::models::{find, manifest, ModelCatalog, ModelPack, ModelState};
 use crate::services::meeting::pipeline::{
-    exit_for, run_local_with_progress, run_remote, run_remote_with_fallback_diarized, StopExit,
+    run_local_with_progress, run_remote, run_remote_with_fallback_diarized, StopExit,
 };
 use crate::services::meeting::remote_asr::{HttpRemoteAsr, RemoteAsrConfig};
 use crate::services::meeting::render::{self, RenderInput};
@@ -501,13 +501,10 @@ fn transcribe<R: Runtime>(
         },
     );
 
-    let available = outcome.available();
-    let total = outcome.segments.len();
-    let (exit, partial) = exit_for(outcome.stop_reason, total, available);
     let _ = registry.set_failed_segments(id, outcome.failed_segments as u32);
     let _ = registry.set_stop_reason(id, outcome.stop_reason);
-    let _ = registry.set_exit(id, exit);
-    if partial {
+    let _ = registry.set_exit(id, outcome.exit);
+    if outcome.partial {
         let _ = registry.set_partial(id, true);
     }
     if outcome.partial_decode
@@ -531,7 +528,7 @@ fn transcribe<R: Runtime>(
     }
     registry.advance_checked(id, MeetingStage::Releasing)?;
 
-    if exit == StopExit::Failed {
+    if outcome.exit == StopExit::Failed {
         return Err(AppError::new(
             AppErrorCode::AsrFailed,
             "all speech segments failed",
@@ -648,7 +645,7 @@ fn transcribe<R: Runtime>(
         title: String::new(),
         duration_ms: source.duration_ms,
         stats,
-        partial,
+        partial: outcome.partial,
     })
 }
 
@@ -1125,7 +1122,7 @@ pub fn meeting_model_download<R: Runtime>(
     disk: State<'_, Arc<dyn DiskProbe>>,
     id: String,
 ) -> Result<ModelDownloadResponse, AppError> {
-    ensure_reading_window(&window)?;
+    ensure_settings_window(&window)?;
     let pack = crate::services::meeting::models::find(&id)
         .ok_or_else(|| AppError::new(AppErrorCode::ModelNotReady, "unknown model id"))?;
     download::ensure_space(disk.inner().as_ref(), catalog.root(), pack)?;
@@ -1190,7 +1187,7 @@ pub fn meeting_model_download_cancel<R: Runtime>(
     downloads: State<'_, Arc<ModelDownloads>>,
     download_id: String,
 ) -> Result<(), AppError> {
-    ensure_reading_window(&window)?;
+    ensure_settings_window(&window)?;
     let id = Uuid::parse_str(&download_id).map_err(|_| {
         AppError::new(AppErrorCode::InvalidConfig, "downloadId must be a UUID")
             .with_details(serde_json::json!({ "field": "download_id" }))
@@ -1206,7 +1203,7 @@ pub fn meeting_model_remove<R: Runtime>(
     config: State<'_, MeetingConfigStore>,
     id: String,
 ) -> Result<(), AppError> {
-    ensure_reading_window(&window)?;
+    ensure_settings_window(&window)?;
     let Some(path) = catalog.path(&id) else {
         return Err(AppError::new(
             AppErrorCode::ModelNotReady,
@@ -1217,10 +1214,18 @@ pub fn meeting_model_remove<R: Runtime>(
         AppError::new(AppErrorCode::ModelNotReady, "model is not downloaded")
             .with_details(serde_json::json!({ "model_id": id }))
     };
+    // Stop a download before touching the directory; deleting under a running
+    // worker lets commit recreate the model after removal returns.
+    downloads.cancel_and_wait(&id, Duration::from_secs(5));
+    if downloads.is_active(&id) {
+        return Err(AppError::new(
+            AppErrorCode::ModelBusy,
+            "the model download did not stop in time",
+        ));
+    }
     if !path.is_dir() {
         return Err(not_downloaded());
     }
-    downloads.cancel_and_wait(&id, Duration::from_secs(5));
     std::fs::remove_dir_all(&path).map_err(|error| AppError::from_io(&error))?;
     download::remove_staging(catalog.root(), &id);
     config.clear_local_model(&id)?;

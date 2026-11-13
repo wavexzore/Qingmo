@@ -311,7 +311,10 @@ impl MeetingConfigStore {
         let mut candidate = state.config.clone();
         if let Some(provider) = patch.asr_provider {
             if provider != candidate.asr.provider {
+                // A key belongs to one provider. Keeping it across a provider
+                // switch would send the old credential to the new endpoint.
                 candidate.asr.model.clear();
+                candidate.asr.api_key.clear();
             }
             candidate.asr.provider = provider;
         }
@@ -337,7 +340,18 @@ impl MeetingConfigStore {
             candidate.llm.local_model = normalize_local_model(model);
         }
         if let Some(base_url) = patch.llm_base_url {
-            candidate.llm.base_url = normalize_base_url_field(base_url.trim())?;
+            let next = normalize_base_url_field(base_url.trim())?;
+            let old_host = normalize_base_url(&candidate.llm.base_url)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_owned));
+            let new_host = normalize_base_url(&next)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_owned));
+            if old_host != new_host {
+                // Like the ASR side, never forward a key to a different host.
+                candidate.llm.api_key.clear();
+            }
+            candidate.llm.base_url = next;
         }
         if let Some(model) = patch.llm_model {
             candidate.llm.model = normalize_model_name(model);

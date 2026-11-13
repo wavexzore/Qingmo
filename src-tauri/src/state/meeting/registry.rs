@@ -381,8 +381,13 @@ impl MeetingRegistry {
     /// Success terminal; returns the only snapshot that may be emitted.
     pub fn finish(&self, id: Uuid, mut result: MeetingResult) -> Option<MeetingProgress> {
         let mut state = self.lock();
+        // Check the id before taking: a stale terminal from an old attempt
+        // must not evict the job that is currently running.
+        if state.running.as_ref().is_none_or(|job| job.id != id) {
+            return None;
+        }
         let job = state.running.take()?;
-        if job.id != id || state.released.contains(&job.window_label) {
+        if state.released.contains(&job.window_label) {
             return None;
         }
         if job.stage != MeetingStage::Rendering {
@@ -419,8 +424,11 @@ impl MeetingRegistry {
     /// error must arrive after `Releasing` (or directly from `Preparing`).
     pub fn fail(&self, id: Uuid, error: AppError) -> Option<MeetingProgress> {
         let mut state = self.lock();
+        if state.running.as_ref().is_none_or(|job| job.id != id) {
+            return None;
+        }
         let job = state.running.take()?;
-        if job.id != id || state.released.contains(&job.window_label) {
+        if state.released.contains(&job.window_label) {
             return None;
         }
         let cancelled = error.code == AppErrorCode::Cancelled;

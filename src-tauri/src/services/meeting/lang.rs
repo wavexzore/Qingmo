@@ -37,7 +37,7 @@ pub fn detect_language(text: &str) -> Lang {
     }
 }
 
-fn is_cjk(ch: char) -> bool {
+pub(super) fn is_cjk(ch: char) -> bool {
     matches!(
         ch as u32,
         0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x2FA1F

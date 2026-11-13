@@ -106,6 +106,12 @@ impl SpeakerStitcher {
         Self::default()
     }
 
+    /// Forget per-window numbering; call before the first chunk of a window.
+    pub fn reset(&mut self) {
+        self.next = 0;
+        self.map.clear();
+    }
+
     fn assign(&mut self, local: u8) -> u8 {
         if let Some(global) = self.map.get(&local) {
             return *global;
@@ -190,6 +196,24 @@ mod tests {
         stitcher.stitch(&first, &mut second, 300_000);
         assert_eq!(second[0].speaker, Some(1));
         assert_eq!(second[1].speaker, Some(2));
+    }
+
+    #[test]
+    fn reset_restarts_local_numbering_per_window() {
+        let mut stitcher = SpeakerStitcher::new();
+        let mut first = vec![word(0, Some(0)), word(1000, Some(1))];
+        stitcher.stitch(&[], &mut first, 0);
+        assert_eq!(first[0].speaker, Some(1));
+        assert_eq!(first[1].speaker, Some(2));
+
+        stitcher.reset();
+        let mut second = vec![word(0, Some(1))];
+        stitcher.stitch(&[], &mut second, 0);
+        assert_eq!(
+            second[0].speaker,
+            Some(1),
+            "a new window must not inherit the previous local-to-global map"
+        );
     }
 
     #[test]

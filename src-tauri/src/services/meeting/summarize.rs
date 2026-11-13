@@ -194,6 +194,13 @@ pub fn summarize(
             }
             Err(GenerateError::Timeout) => {
                 tracing::warn!(start_ms = window.start_ms, "summary window timed out");
+                // A timeout is a visible degradation, not a silent fallback:
+                // without this flag the document would claim a complete
+                // summary while every window is extractive.
+                outcome.last_error = Some(LlmError::new(
+                    super::llm::LlmErrorCode::Timeout,
+                    "summary window timed out",
+                ));
                 push_extractive(window, segments, lang, &mut outcome);
                 consecutive_parse_failures = 0;
             }
@@ -212,9 +219,24 @@ pub fn summarize(
             }
             Err(GenerateError::Llm(error)) => {
                 tracing::warn!(%error, start_ms = window.start_ms, "llm failed");
+                let fatal = matches!(
+                    error.code,
+                    super::llm::LlmErrorCode::NotConfigured
+                        | super::llm::LlmErrorCode::InvalidBaseUrl
+                        | super::llm::LlmErrorCode::Unauthorized
+                        | super::llm::LlmErrorCode::ModelMissing
+                        | super::llm::LlmErrorCode::ModelInvalid
+                        | super::llm::LlmErrorCode::LoadFailed
+                        | super::llm::LlmErrorCode::TemplateMissing
+                );
                 outcome.last_error = Some(error);
                 push_extractive(window, segments, lang, &mut outcome);
-                availability = Availability::Disabled;
+                // One transient 5xx or empty completion must not discard the
+                // remaining windows; only a configuration/credential failure
+                // is hopeless for the rest of the job.
+                if fatal {
+                    availability = Availability::Disabled;
+                }
             }
         }
     }

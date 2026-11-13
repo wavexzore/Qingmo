@@ -467,20 +467,13 @@ impl TrashStore {
                                 Err(_) => report.orphaned += 1,
                             }
                         }
-                        if entry_dir.exists() {
-                            retained.push((stored.deleted_at_ms, stored.size_bytes, entry_dir));
-                        }
+                        // Never capacity-evict Pending/Orphaned payloads: they
+                        // are the only remaining copy of the document.
                         continue;
                     }
                     StoredState::Orphaned => {
                         if trusted {
                             let _ = self.try_recover_locked(roots, &entry_dir, &stored, locks);
-                        }
-                        if entry_dir.exists() {
-                            // An orphaned payload may still be the only copy;
-                            // like Pending it is capacity-governed, not
-                            // silently expired.
-                            retained.push((stored.deleted_at_ms, stored.size_bytes, entry_dir));
                         }
                         continue;
                     }

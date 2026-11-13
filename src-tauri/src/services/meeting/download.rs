@@ -533,6 +533,7 @@ pub fn run(
     }
     // Archive spec bytes may differ slightly from the file sum; report exact.
     progress(pack.download_bytes.max(done), DownloadState::Verifying);
+    checked_cancel(cancel)?;
     commit(root, &staging, pack.id, &staging_root)?;
     let target = root.join(pack.id);
     write_ready(&target, pack, super::models::unix_now_public())?;

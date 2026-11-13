@@ -7,9 +7,9 @@
 > **功能分支：** `feat/meeting-minutes`（建议；当前工作树在 `feat/p0-p1-closure`，未新建）
 > **优先级：** P2（新增能力，不改变既有保存/打开不变量）
 > **负责人：** Qingmo 维护者
-> **最新代码校准日期：** 2026-11-10
-> **代码基线：** `feat/p0-p1-closure@c4b0e75`（T-001~T-014 完成；`docs/` 按仓库惯例不入库）
-> **GitNexus 索引：** `Qingmo`，`lastCommit = c4b0e75`，`status = current`
+> **最新代码校准日期：** 2026-11-13
+> **代码基线：** `feat/p0-p1-closure`（T-001~T-014 完成 + 收尾审查修复；`docs/` 按仓库惯例不入库）
+> **GitNexus 索引：** `Qingmo`，`lastCommit = 6b80a62 + 审查修复工作区`，`status = current`
 > **设计文档：** [`04-设计方案.md`](04-设计方案.md)
 > **高保真原型：** [`prototype.html`](prototype.html)
 
@@ -148,7 +148,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | GitHub 开源实现调研 | pass | `01-实施计划.md §2.4.2` | whisper.cpp / whisperX / Meetily / sherpa-onnx 的流水线与打包方式已对比，均需改造 |
 | 论文调研 | pass | `01-实施计划.md §2.4.3` | 两级 map-reduce、VAD 门控、结构卡片、引句校验、忠实度验收均有出处 |
 | subagent/GitNexus 调用链分析 | pass | `01-实施计划.md §3` | 现有打开/窗口/保存/契约/设置链路已逐符号定位，`take_pending` 为 CRITICAL、`menu_layout` 为 HIGH |
-| 当前代码实时校准 | pass | `02-实施状态与验证.md §8` | 所有引用行号对齐 `e3b5697`，索引 `current` |
+| 当前代码实时校准 | pass | `02-实施状态与验证.md §8` | 引用行号对齐 `feat/p0-p1-closure` 分支 HEAD，索引 `current` |
 
 ### 3.2 当前运行时链路
 

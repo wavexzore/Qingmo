@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { downloadableMembers, removableMembers, rowLabelKey, type ModelRow } from "./modelGroups";
+import {
+  downloadableMembers,
+  formatMb,
+  removableMembers,
+  rowLabelKey,
+  type ModelRow,
+} from "./modelGroups";
 
 export interface ModelProgressState {
   doneBytes: number;
@@ -15,11 +21,6 @@ export interface ModelListProps {
   onCancel(row: ModelRow): void;
   onRemove(row: ModelRow): void;
   onLicense(href: string): void;
-}
-
-function formatMb(bytes: number): string {
-  const mb = bytes / (1024 * 1024);
-  return mb >= 100 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
 }
 
 function percent(progress: ModelProgressState | undefined): number {

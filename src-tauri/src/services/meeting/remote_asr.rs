@@ -17,6 +17,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::asr::{ProbSource, Segment, SegmentStatus};
+use super::ms_to_samples;
 use super::runtime::ReasonCode;
 use super::speaker::{SpeakerStitcher, Word, OVERLAP_MS};
 use super::TARGET_SAMPLE_RATE;
@@ -35,6 +36,12 @@ pub const ATTEMPTS: u8 = 3;
 pub const DEFAULT_OPENAI_MODEL: &str = "whisper-1";
 pub const DEFAULT_GROQ_MODEL: &str = "whisper-large-v3-turbo";
 pub const DEFAULT_DEEPGRAM_MODEL: &str = "nova-3";
+
+/// Words returned for one uploaded chunk plus whether they carry timestamps.
+struct FetchedWords {
+    words: Vec<Word>,
+    timed: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -222,9 +229,15 @@ impl HttpRemoteAsr {
         }
         let chunk_start_ms =
             window_start_ms + (start as u64 * 1000 / u64::from(TARGET_SAMPLE_RATE));
-        match self.fetch_with_retry(&wav, chunk_start_ms, cancel) {
-            Ok(words) => {
-                self.emit_words(words, chunk_start_ms, end, window_start_ms);
+        match self.fetch_with_retry(&wav, chunk_start_ms, duration_ms, cancel) {
+            Ok(fetched) => {
+                self.emit_words(
+                    fetched.words,
+                    chunk_start_ms,
+                    end,
+                    window_start_ms,
+                    fetched.timed,
+                );
                 Ok(())
             }
             Err(error) if error.too_large && allow_split && duration_ms > DOWNGRADE_MS => {
@@ -271,11 +284,14 @@ impl HttpRemoteAsr {
         chunk_start_ms: u64,
         end: usize,
         window_start_ms: u64,
+        timed: bool,
     ) {
         let first = !self.started;
         self.stitcher
             .stitch(&self.previous_tail, &mut words, chunk_start_ms);
-        if !first {
+        // A response without word timestamps cannot be aligned with the chunk
+        // overlap; dropping its head would delete every later chunk's text.
+        if !first && timed {
             words.retain(|word| word.start_ms >= chunk_start_ms + OVERLAP_MS);
         }
         self.started = true;
@@ -293,8 +309,9 @@ impl HttpRemoteAsr {
         &self,
         wav: &[u8],
         offset_ms: u64,
+        duration_ms: u64,
         cancel: &CancellationToken,
-    ) -> Result<Vec<Word>, ChunkError> {
+    ) -> Result<FetchedWords, ChunkError> {
         let mut last = None;
         for attempt in 0..ATTEMPTS {
             if cancel.is_cancelled() {
@@ -305,7 +322,7 @@ impl HttpRemoteAsr {
                     "cancelled",
                 ));
             }
-            match self.fetch_once(wav, offset_ms) {
+            match self.fetch_once(wav, offset_ms, duration_ms) {
                 Ok(words) => return Ok(words),
                 Err(error) => {
                     let retryable = !error.too_large && is_retryable(&error.error);
@@ -324,7 +341,12 @@ impl HttpRemoteAsr {
         }))
     }
 
-    fn fetch_once(&self, wav: &[u8], offset_ms: u64) -> Result<Vec<Word>, ChunkError> {
+    fn fetch_once(
+        &self,
+        wav: &[u8],
+        offset_ms: u64,
+        duration_ms: u64,
+    ) -> Result<FetchedWords, ChunkError> {
         let response = match self.config.provider {
             RemoteProvider::OpenAi | RemoteProvider::Groq => {
                 let opening = self.config.model.starts_with("whisper");
@@ -430,7 +452,9 @@ impl HttpRemoteAsr {
             ));
         }
         match self.config.provider {
-            RemoteProvider::OpenAi | RemoteProvider::Groq => parse_openai(&body, offset_ms),
+            RemoteProvider::OpenAi | RemoteProvider::Groq => {
+                parse_openai(&body, offset_ms, duration_ms)
+            }
             RemoteProvider::Deepgram => parse_deepgram(&body, offset_ms),
         }
         .map_err(|message| chunk_fail(AppErrorCode::AsrFailed, None, false, message))
@@ -455,6 +479,9 @@ impl RemoteAsr for HttpRemoteAsr {
             return Ok(Vec::new());
         }
         self.window_words = Vec::new();
+        self.previous_tail.clear();
+        self.started = false;
+        self.stitcher.reset();
         let chunk_samples = ms_to_samples(CHUNK_MS);
         let step_samples = ms_to_samples(STEP_MS);
         let mut start = 0usize;
@@ -479,10 +506,6 @@ impl RemoteAsr for HttpRemoteAsr {
         let words = std::mem::take(&mut self.window_words);
         Ok(words_to_segments(words, window_start_ms))
     }
-}
-
-fn ms_to_samples(ms: u64) -> usize {
-    (ms.saturating_mul(u64::from(TARGET_SAMPLE_RATE)) / 1000) as usize
 }
 
 /// 44-byte PCM16 mono WAV; 300 s at 16 kHz is about 9.6 MB.
@@ -589,7 +612,7 @@ fn clamp_word(mut word: Word, offset_ms: u64) -> Word {
     word
 }
 
-fn parse_openai(body: &[u8], offset_ms: u64) -> Result<Vec<Word>, String> {
+fn parse_openai(body: &[u8], offset_ms: u64, duration_ms: u64) -> Result<FetchedWords, String> {
     let parsed: OpenAiResponse =
         serde_json::from_slice(body).map_err(|error| format!("invalid JSON: {error}"))?;
     let mut words = Vec::new();
@@ -635,8 +658,9 @@ fn parse_openai(body: &[u8], offset_ms: u64) -> Result<Vec<Word>, String> {
             ));
         }
     }
+    let timed = !words.is_empty();
     if words.is_empty() && !parsed.text.trim().is_empty() {
-        let end = (body.len() as u64).max(1);
+        let end = duration_ms.max(1);
         words.push(clamp_word(
             Word {
                 start_ms: 0,
@@ -648,10 +672,10 @@ fn parse_openai(body: &[u8], offset_ms: u64) -> Result<Vec<Word>, String> {
             offset_ms,
         ));
     }
-    Ok(words)
+    Ok(FetchedWords { words, timed })
 }
 
-fn parse_deepgram(body: &[u8], offset_ms: u64) -> Result<Vec<Word>, String> {
+fn parse_deepgram(body: &[u8], offset_ms: u64) -> Result<FetchedWords, String> {
     let parsed: DeepgramResponse =
         serde_json::from_slice(body).map_err(|error| format!("invalid JSON: {error}"))?;
     let mut words = Vec::new();
@@ -681,7 +705,7 @@ fn parse_deepgram(body: &[u8], offset_ms: u64) -> Result<Vec<Word>, String> {
             ));
         }
     }
-    Ok(words)
+    Ok(FetchedWords { words, timed: true })
 }
 
 fn ends_sentence(text: &str) -> bool {
@@ -800,18 +824,75 @@ mod tests {
         let body = br#"{"results":{"channels":[{"alternatives":[{"words":[
             {"word":"hello","start":0.0,"end":0.5,"confidence":0.9,"speaker":0}
         ]}]}]}}"#;
-        let words = parse_deepgram(body, 10_000).unwrap();
-        assert_eq!(words[0].speaker, Some(1));
-        assert_eq!(words[0].start_ms, 10_000);
+        let fetched = parse_deepgram(body, 10_000).unwrap();
+        assert!(fetched.timed);
+        assert_eq!(fetched.words[0].speaker, Some(1));
+        assert_eq!(fetched.words[0].start_ms, 10_000);
     }
 
     #[test]
     fn no_timestamp_response_becomes_one_chunk_segment() {
-        let words = parse_openai(br#"{"text":"hello world"}"#, 5000).unwrap();
-        assert_eq!(words.len(), 1);
-        assert_eq!(words[0].prob, Some(1.0));
-        let segments = words_to_segments(words, 0);
+        let fetched = parse_openai(br#"{"text":"hello world"}"#, 5000, 3000).unwrap();
+        assert!(!fetched.timed, "text-only responses have no timestamps");
+        assert_eq!(fetched.words.len(), 1);
+        assert_eq!(fetched.words[0].prob, Some(1.0));
+        assert_eq!(fetched.words[0].start_ms, 5_000);
+        assert_eq!(
+            fetched.words[0].end_ms, 8_000,
+            "the fallback spans the chunk duration, not the body byte length"
+        );
+        let segments = words_to_segments(fetched.words, 0);
         assert_eq!(segments[0].prob_source, ProbSource::Provider);
+    }
+
+    #[test]
+    fn text_only_chunks_keep_their_head_after_the_first_chunk() {
+        let mut asr = remote_for_test();
+        asr.started = true;
+        let words = vec![Word {
+            start_ms: 300_000,
+            end_ms: 303_000,
+            text: "second chunk".into(),
+            prob: Some(1.0),
+            speaker: None,
+        }];
+        asr.emit_words(words, 300_000, ms_to_samples(303_000), 0, false);
+        assert_eq!(
+            asr.window_words.len(),
+            1,
+            "without timestamps the head cannot be aligned and must be kept"
+        );
+    }
+
+    #[test]
+    fn timed_chunks_still_drop_the_overlap_head() {
+        let mut asr = remote_for_test();
+        asr.started = true;
+        let words = vec![
+            Word {
+                start_ms: 300_000,
+                end_ms: 301_000,
+                text: "duplicate".into(),
+                prob: Some(0.9),
+                speaker: None,
+            },
+            Word {
+                start_ms: 302_500,
+                end_ms: 303_000,
+                text: "fresh".into(),
+                prob: Some(0.9),
+                speaker: None,
+            },
+        ];
+        asr.emit_words(words, 300_000, ms_to_samples(303_000), 0, true);
+        assert_eq!(asr.window_words.len(), 1);
+        assert_eq!(asr.window_words[0].text, "fresh");
+    }
+
+    fn remote_for_test() -> HttpRemoteAsr {
+        let mut config = RemoteAsrConfig::new(RemoteProvider::OpenAi, "whisper-1", "test-key");
+        config.base = Url::parse("https://example.invalid/v1/audio/transcriptions").unwrap();
+        HttpRemoteAsr::new(config).expect("client")
     }
 
     #[test]

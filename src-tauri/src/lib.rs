@@ -1159,6 +1159,23 @@ pub fn run() {
             let gc_trash = trash.clone();
             let gc_index = search_index.clone();
             let gc_locks = locks.clone();
+            let gc_identity = identity.clone();
+            // Restored windows are not live yet; keep their ids from GC so a
+            // restart does not orphan the documents it is about to reopen.
+            let mut gc_live = services::document_identity::LiveDocuments::default();
+            for intent in session_store.windows_get() {
+                let Some(id) = intent
+                    .document_id
+                    .as_deref()
+                    .and_then(services::document_identity::DocumentId::parse)
+                else {
+                    continue;
+                };
+                let Some(path) = intent.document_path.as_deref() else {
+                    continue;
+                };
+                gc_live.insert(std::path::Path::new(path), id);
+            }
             tauri::async_runtime::spawn_blocking(move || {
                 let report = services::storage_gc::run(
                     &gc_session,
@@ -1177,6 +1194,18 @@ pub fn run() {
                     errors = report.errors.len(),
                     "storage garbage-collected"
                 );
+                if let Some(identity) = gc_identity {
+                    let identity_report = identity.gc_now(&gc_live);
+                    if let Err(error) = identity.flush() {
+                        tracing::warn!(%error, "failed to flush document identity after GC");
+                    }
+                    tracing::info!(
+                        removed = identity_report.removed,
+                        tombstoned = identity_report.tombstoned,
+                        retained = identity_report.retained,
+                        "document identity garbage-collected"
+                    );
+                }
             });
 
             // Restore window intent before the 300ms blank-window timer can
@@ -1297,6 +1326,11 @@ pub fn run() {
             // (for example a crashed webview); release the document, workspace
             // and their watchers so no registry outlives the window.
             commands::close::release_window_state(app_handle, &label);
+            if let Some(identity) = app_handle.try_state::<services::DocumentIdentityStore>() {
+                if let Err(error) = identity.flush() {
+                    tracing::warn!(%error, "failed to flush document identity on window close");
+                }
+            }
         }
         RunEvent::WindowEvent {
             label,
@@ -1385,6 +1419,11 @@ pub fn run() {
         RunEvent::Exit => {
             if let Some(watcher) = app_handle.try_state::<state::WorkspaceWatcher>() {
                 watcher.shutdown();
+            }
+            if let Some(identity) = app_handle.try_state::<services::DocumentIdentityStore>() {
+                if let Err(error) = identity.flush() {
+                    tracing::warn!(%error, "failed to flush document identity on exit");
+                }
             }
         }
         _ => {}

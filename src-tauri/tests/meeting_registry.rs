@@ -286,6 +286,30 @@ fn retry_requires_the_matching_label_and_an_empty_slot() {
 }
 
 #[test]
+fn stale_finish_and_fail_do_not_evict_the_running_job() {
+    let (registry, _) = registry();
+    let (id, _) = begin(&registry, "doc-a");
+    to_rendering(&registry, id);
+    let stale = uuid::Uuid::new_v4();
+
+    assert!(registry.finish(stale, result()).is_none());
+    assert!(matches!(
+        registry.status(id),
+        qingmo_lib::ipc::dto::MeetingOutcome::Running(_)
+    ));
+    assert!(registry
+        .fail(stale, AppError::new(AppErrorCode::AsrFailed, "stale"))
+        .is_none());
+    assert!(matches!(
+        registry.status(id),
+        qingmo_lib::ipc::dto::MeetingOutcome::Running(_)
+    ));
+
+    let snapshot = registry.finish(id, result()).expect("current job finishes");
+    assert_eq!(snapshot.stage, MeetingStage::Done);
+}
+
+#[test]
 fn duplicate_finish_does_not_replace_the_terminal() {
     let (registry, _) = registry();
     let (id, _) = begin(&registry, "doc-a");

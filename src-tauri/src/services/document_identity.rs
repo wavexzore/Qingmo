@@ -548,9 +548,16 @@ impl DocumentIdentityStore {
             candidate.dirty_mapping = true;
             self.persist_state(&candidate)?;
         } else {
-            self.defer_file_write(&mut candidate);
+            self.mark_file_identity_dirty(&mut candidate, *id);
         }
         *state = candidate;
+        drop(state);
+        // Coalesce several bindings from one save, then persist immediately so
+        // an external rename survives a crash instead of waiting for exit.
+        // A full/oversized identity store must never block the document save.
+        if let Err(error) = self.flush() {
+            tracing::warn!(%error, "failed to persist the document file identity");
+        }
         Ok(())
     }
 
@@ -669,6 +676,11 @@ impl DocumentIdentityStore {
         Ok(())
     }
 
+    /// Startup/maintenance entry point that uses the current clock.
+    pub fn gc_now(&self, live: &LiveDocuments) -> IdentityGcReport {
+        self.gc(now_ms(), live)
+    }
+
     pub fn gc(&self, now_ms: i64, live: &LiveDocuments) -> IdentityGcReport {
         if self.inner.status != IdentityStatus::Enabled {
             return IdentityGcReport::default();
@@ -759,11 +771,9 @@ impl DocumentIdentityStore {
             .map_err(|_| AppError::new(AppErrorCode::Io, "identity lock poisoned"))
     }
 
-    fn defer_file_write(&self, state: &mut IdentityState) {
-        // Only file identities changed; the mapping is already durable. The
-        // write is deferred and coalesced until `flush`/GC, keeping a save
-        // from rewriting a multi-megabyte JSON file.
-        state.dirty_mapping = true;
+    fn mark_file_identity_dirty(&self, state: &mut IdentityState, id: DocumentId) {
+        // Only this entry's file identity changed; the mapping is untouched.
+        state.dirty_file_identity.insert(id);
         if now_ms().saturating_sub(state.last_flush_ms) >= IDENTITY_FILE_DEBOUNCE_MS {
             state.last_flush_ms = now_ms();
         }
@@ -850,7 +860,10 @@ fn resolve_open_locked(
                 .unwrap_or_default();
 
             if let Some(path_id) = path_hit {
-                if file_hits.iter().any(|other| *other != path_id) {
+                // Hard links share one file identity. A path that is already
+                // registered stays owned by its document; only a path whose
+                // file now matches a *different* document is a conflict.
+                if !file_hits.is_empty() && !file_hits.contains(&path_id) {
                     return Err(conflict(
                         path,
                         "the path and file identity belong to different documents",

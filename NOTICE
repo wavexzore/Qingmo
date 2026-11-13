@@ -57,6 +57,7 @@ verified by SHA-256 before installation:
   https://huggingface.co/unsloth/Qwen3-4B-GGUF
   https://huggingface.co/unsloth/Qwen3-8B-GGUF
 
-Full MIT texts for llama.cpp, pyannote and Silero are in `THIRD_PARTY_LICENSES`,
-shipped next to this file. See the respective package metadata and model cards
-for the remaining full license texts.
+Full MIT texts for llama.cpp, pyannote and Silero, the MPL-2.0 text for
+symphonia, and the FunASR Model License 1.1 text for SenseVoice are in
+`THIRD_PARTY_LICENSES`, shipped next to this file. See the respective package
+metadata and model cards for the remaining full license texts.

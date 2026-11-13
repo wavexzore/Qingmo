@@ -5,10 +5,11 @@
 //! found in that quote or its source segment. `confidence` is copied from the
 //! quoted segment and never invented.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use super::asr::{Segment, SegmentStatus};
 use super::cards::Card;
+use super::lang::is_cjk;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ValidationStats {
@@ -39,13 +40,6 @@ fn normalize(text: &str) -> String {
         .collect()
 }
 
-fn is_cjk(ch: char) -> bool {
-    matches!(
-        ch as u32,
-        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x2FA1F
-    )
-}
-
 fn is_cjk_numeral(ch: char) -> bool {
     matches!(
         ch,
@@ -68,41 +62,42 @@ fn is_cjk_numeral(ch: char) -> bool {
     )
 }
 
-/// Digits (with commas/dots/percent) and Chinese numeral runs.
-fn numbers(text: &str) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut digits = String::new();
+/// Numeric tokens. ASCII digits keep their decimal point and drop thousands
+/// separators; CJK numeral runs stay whole. Membership is exact, so "5" never
+/// matches "50" and "1.5" never matches "15".
+fn numeric_tokens(text: &str) -> HashSet<String> {
+    let mut result = HashSet::new();
+    let mut ascii = String::new();
     let mut han = String::new();
     for ch in text.chars() {
-        if ch.is_ascii_digit() || (matches!(ch, ',' | '.' | '%') && !digits.is_empty()) {
-            digits.push(ch);
-        } else if !digits.is_empty() {
-            result.push(normalize_number(&digits));
-            digits.clear();
-        }
-
-        if is_cjk_numeral(ch) {
-            han.push(ch);
-        } else if !han.is_empty() {
-            result.push(han.clone());
-            han.clear();
+        if ch.is_ascii_digit() {
+            if !han.is_empty() {
+                result.insert(std::mem::take(&mut han));
+            }
+            ascii.push(ch);
+        } else if ch == ',' && !ascii.is_empty() {
+            // Thousands separator: 1,000 and 1000 are the same token.
+        } else if ch == '.' && !ascii.is_empty() && !ascii.ends_with('.') {
+            ascii.push('.');
+        } else {
+            if !ascii.is_empty() {
+                result.insert(std::mem::take(&mut ascii));
+            }
+            if is_cjk_numeral(ch) {
+                han.push(ch);
+            } else if !han.is_empty() {
+                result.insert(std::mem::take(&mut han));
+            }
         }
     }
-    if !digits.is_empty() {
-        result.push(normalize_number(&digits));
+    if !ascii.is_empty() {
+        result.insert(ascii);
     }
     if !han.is_empty() {
-        result.push(han);
+        result.insert(han);
     }
-    result.retain(|number| !number.is_empty());
+    result.retain(|token| !token.is_empty());
     result
-}
-
-fn normalize_number(number: &str) -> String {
-    number
-        .chars()
-        .filter(|ch| ch.is_ascii_digit() || is_cjk_numeral(*ch))
-        .collect()
 }
 
 fn locate<'a>(card: &Card, views: &[View<'a>]) -> Option<Vec<usize>> {
@@ -110,11 +105,28 @@ fn locate<'a>(card: &Card, views: &[View<'a>]) -> Option<Vec<usize>> {
     if quote.is_empty() {
         return None;
     }
-    if let Some(index) = views
+    // A short quote can occur several times. Prefer a segment that overlaps
+    // the card's own time range, then the nearest start, instead of always
+    // snapping to the first occurrence in the transcript.
+    let candidates = views
         .iter()
-        .position(|view| view.normalized.contains(&quote))
-    {
-        return Some(vec![index]);
+        .enumerate()
+        .filter(|(_, view)| view.normalized.contains(&quote))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if !candidates.is_empty() {
+        let best = candidates
+            .into_iter()
+            .min_by_key(|index| {
+                let segment = views[*index].segment;
+                if segment.start_ms <= card.t0_ms && card.t0_ms < segment.end_ms {
+                    0
+                } else {
+                    segment.start_ms.abs_diff(card.t0_ms)
+                }
+            })
+            .expect("candidates is non-empty");
+        return Some(vec![best]);
     }
 
     // A quote may straddle two adjacent segments inside the card time range.
@@ -137,15 +149,15 @@ fn locate<'a>(card: &Card, views: &[View<'a>]) -> Option<Vec<usize>> {
 }
 
 fn numbers_backed(card: &Card, indices: &[usize], views: &[View<'_>]) -> bool {
-    let wanted = numbers(&card.text);
+    let wanted = numeric_tokens(&card.text);
     if wanted.is_empty() {
         return true;
     }
-    let mut haystack = normalize(&card.quote);
+    let mut haystack = numeric_tokens(&card.quote);
     for index in indices {
-        haystack.push_str(&views[*index].normalized);
+        haystack.extend(numeric_tokens(&views[*index].segment.text));
     }
-    wanted.iter().all(|number| haystack.contains(number))
+    wanted.is_subset(&haystack)
 }
 
 /// Return the new unverified count; card order is preserved.
@@ -174,13 +186,15 @@ pub fn validate_cards(cards: &mut [Card], segments: &[Segment]) -> ValidationSta
         card.t0_ms = card.t0_ms.max(first.start_ms);
         card.t1_ms = card.t1_ms.min(first.end_ms).max(card.t0_ms + 1);
         if card.speaker.is_none() {
-            card.speaker = indices
+            let speakers = indices
                 .iter()
                 .map(|index| views[*index].segment.speaker)
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .next()
-                .flatten();
+                .collect::<BTreeSet<_>>();
+            card.speaker = if speakers.len() == 1 {
+                speakers.into_iter().next().flatten()
+            } else {
+                None
+            };
         }
 
         let confidence = indices
@@ -282,6 +296,80 @@ mod tests {
         let stats = validate_cards(&mut cards, &segments);
         assert!(cards[0].verified);
         assert_eq!(stats.numeric_mismatch, 0);
+    }
+
+    #[test]
+    fn numbers_must_match_exactly_not_as_substrings() {
+        let segments = vec![segment("增长 50%，预算 13 万", Some(0.8))];
+        let mut substring = vec![Card::new(
+            CardKind::Risk,
+            "增长 5%，预算 3 万",
+            "增长 50%，预算 13 万",
+            0,
+            1000,
+        )];
+        let stats = validate_cards(&mut substring, &segments);
+        assert!(!substring[0].verified);
+        assert_eq!(stats.numeric_mismatch, 1);
+
+        let mut decimal = vec![Card::new(
+            CardKind::Risk,
+            "增长 1.5%，预算 13 万",
+            "增长 50%，预算 13 万",
+            0,
+            1000,
+        )];
+        let stats = validate_cards(&mut decimal, &segments);
+        assert!(!decimal[0].verified);
+        assert_eq!(stats.numeric_mismatch, 1);
+    }
+
+    #[test]
+    fn duplicate_quotes_prefer_the_card_time_range() {
+        let mut first = segment("没问题", Some(0.9));
+        first.start_ms = 0;
+        first.end_ms = 5000;
+        first.speaker = Some(2);
+        let mut second = segment("没问题", Some(0.9));
+        second.start_ms = 60_000;
+        second.end_ms = 65_000;
+        second.speaker = Some(3);
+        let segments = vec![first, second];
+        let mut cards = vec![Card::new(
+            CardKind::Decision,
+            "没问题",
+            "没问题",
+            61_000,
+            62_000,
+        )];
+        validate_cards(&mut cards, &segments);
+        assert_eq!(
+            cards[0].t0_ms, 61_000,
+            "a timestamp inside the matched segment is kept"
+        );
+        assert_eq!(cards[0].speaker, Some(3));
+    }
+
+    #[test]
+    fn mixed_speakers_across_a_spanning_quote_are_none() {
+        let mut first = segment("前半句", Some(0.9));
+        first.start_ms = 0;
+        first.end_ms = 1000;
+        first.speaker = Some(2);
+        let mut second = segment("后半句", Some(0.9));
+        second.start_ms = 1000;
+        second.end_ms = 2000;
+        second.speaker = Some(3);
+        let segments = vec![first, second];
+        let mut cards = vec![Card::new(
+            CardKind::Decision,
+            "跨段",
+            "前半句后半句",
+            0,
+            2000,
+        )];
+        validate_cards(&mut cards, &segments);
+        assert_eq!(cards[0].speaker, None);
     }
 
     #[test]

@@ -157,6 +157,37 @@ fn gc_expires_active_entries_but_keeps_orphaned_payloads() {
 }
 
 #[test]
+fn gc_never_capacity_evicts_a_pending_entry() {
+    let workspace = TempDir::new().expect("workspace");
+    let root = canonical(&workspace);
+    let trash_dir = workspace.path().join("trash");
+    let store = TrashStore::open(trash_dir.clone()).expect("store");
+
+    // Pending payloads are often the only copy left after a crash.
+    let pending_id = uuid::Uuid::new_v4().to_string();
+    let pending_dir = write_entry(
+        &trash_dir,
+        &pending_id,
+        b"body",
+        entry_json(&pending_id, &root, "only-copy.md", "pending", 0),
+    );
+
+    let extra = 3;
+    for index in 0..(TRASH_MAX_ENTRIES + extra) {
+        let path = root.join(format!("note-{index}.md"));
+        fs::write(&path, "body").expect("fixture");
+        store.delete(&root, &path, None, |_| false).expect("delete");
+    }
+
+    let report = store.gc(&[], None);
+    assert!(
+        pending_dir.exists(),
+        "a pending entry must never be evicted by the capacity cap"
+    );
+    assert_eq!(report.removed, extra);
+}
+
+#[test]
 fn gc_caps_the_number_of_active_entries() {
     let workspace = TempDir::new().expect("workspace");
     let root = canonical(&workspace);

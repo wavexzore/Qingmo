@@ -6,7 +6,7 @@ use crate::ipc::dto::{
 };
 use crate::services::file_identity::{observe_path, FileIdentity, FileObservation};
 use crate::services::file_service::MAX_DOCUMENT_BYTES;
-use crate::state::document_registry::{ensure_supported_audio, ensure_supported_extension};
+use crate::services::file_service::{ensure_supported_audio, ensure_supported_extension};
 
 /// Deepest directory chain accepted from the webview.
 pub const MAX_SEGMENTS: usize = 64;

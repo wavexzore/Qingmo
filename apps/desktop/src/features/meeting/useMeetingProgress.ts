@@ -95,11 +95,19 @@ export function useMeetingProgress(requestId: string): UseMeetingProgress {
               }
             : previous,
         );
-        void takeMeetingResult(ipc, requestId).then((taken) => {
-          const next = taken ?? outcome.ready;
-          result.current = next;
-          insert(next);
-        });
+        void takeMeetingResult(ipc, requestId)
+          .then((taken) => {
+            const next = taken ?? outcome.ready;
+            result.current = next;
+            insert(next);
+          })
+          .catch((cause: unknown) => {
+            // The status snapshot already carries the document, so a failed
+            // take must not leave the window stuck before insertion.
+            console.warn("failed to take the meeting result", normalizeError(cause));
+            result.current = outcome.ready;
+            insert(outcome.ready);
+          });
         return;
       }
       if (outcome.failed.attempt !== attempt.current) {

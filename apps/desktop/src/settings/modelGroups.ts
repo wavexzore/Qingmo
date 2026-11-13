@@ -12,6 +12,11 @@ export type GroupState =
   | "corrupt"
   | "failed";
 
+/** Whole megabytes; one shared format for every model surface. */
+export function formatMb(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
 export interface ModelRow {
   key: string;
   group: boolean;

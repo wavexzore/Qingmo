@@ -58,9 +58,10 @@ function DocumentEditor({ meetingId }: { meetingId: string | null }) {
       className="flex h-full flex-col bg-paper text-ink"
     >
       {/* A named session cannot adopt a draft in place, so only untitled
-          windows advertise the recovery entry. */}
+          windows advertise the recovery entry. A meeting window owns its
+          draft content and must never offer to replace it. */}
       <RecoveryBanner
-        drafts={untitled ? drafts : []}
+        drafts={untitled && !meetingId ? drafts : []}
         onOpen={() => {
           setRecoveryOpen(true);
           void refreshDrafts();
@@ -68,7 +69,7 @@ function DocumentEditor({ meetingId }: { meetingId: string | null }) {
       />
       <RecoveryDialog
         drafts={drafts}
-        open={recoveryOpen}
+        open={recoveryOpen && !meetingId}
         canRestore={canRestoreDraft}
         onClose={() => setRecoveryOpen(false)}
         onRestore={async (id) => {

@@ -156,6 +156,50 @@ fn hard_link_does_not_reuse_the_id_while_the_old_path_exists() {
             .expect("second"),
     );
     assert_ne!(first_id, second_id);
+
+    let reopened = store
+        .resolve_open(&first, present(&first), &LiveDocuments::default())
+        .expect("a registered hard-linked path must reopen, not conflict");
+    assert_eq!(
+        reopened,
+        ResolveOutcome::Existing {
+            id: first_id,
+            path_changed: false
+        }
+    );
+}
+
+#[test]
+fn bind_save_persists_the_new_file_identity_without_an_explicit_flush() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let doc = dir.path().join("a.md");
+    let renamed = dir.path().join("renamed.md");
+    write(&doc, "hello");
+    let store = open_store(dir.path());
+    let id = id_of(
+        store
+            .resolve_open(&doc, present(&doc), &LiveDocuments::default())
+            .expect("resolve"),
+    );
+
+    fs::rename(&doc, &renamed).expect("external rename");
+    store
+        .bind_save(&id, &doc, present(&renamed))
+        .expect("bind the identity after the external rename");
+    drop(store);
+
+    let reopened = open_store(dir.path());
+    let outcome = reopened
+        .resolve_open(&renamed, present(&renamed), &LiveDocuments::default())
+        .expect("resolve after restart");
+    assert_eq!(
+        outcome,
+        ResolveOutcome::Existing {
+            id,
+            path_changed: true
+        },
+        "a save must write the file identity immediately"
+    );
 }
 
 #[test]

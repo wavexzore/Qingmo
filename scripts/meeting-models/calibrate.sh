@@ -163,6 +163,7 @@ import datetime
 import json
 import platform
 import sys
+from pathlib import Path
 
 report_path, out_path, audio, reference, meta_path, profile = sys.argv[1:7]
 report = json.loads(open(report_path, encoding="utf-8").read())
@@ -186,12 +187,11 @@ diar_ok = (
 payload = {
     "schemaVersion": 1,
     "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    "host": platform.node(),
     "platform": platform.platform(),
     "build": "release" if __import__("os").environ.get("CALIBRATE_RELEASE") == "1" else "debug",
-    "sampleSource": audio,
+    "sampleSource": "sample" + Path(audio).suffix.lower(),
     "sampleSourceSha256": meta["audioSha256"],
-    "reference": reference,
+    "reference": "reference.md",
     "referenceSha256": meta["referenceSha256"],
     "profile": profile,
     "models": {
@@ -201,8 +201,8 @@ payload = {
     },
     "thresholds": {
         "asrLowConfidence": 0.35,
-        "diarizeCluster": 0.5,
-        "diarizeMatch": 0.65,
+        "diarizeCluster": 0.65,
+        "diarizeMatch": 0.5,
         "asrMaxMeanCer": 0.35,
         "asrMaxP95Cer": 0.85,
         "asrMaxSampleCer": 1.0,
