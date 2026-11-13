@@ -42,8 +42,9 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "license": "Apache-2.0",
-    "licenseFile": "../LICENSE",
     "resources": {
+      "../LICENSE": "LICENSE",
+      "assets/dmg/background.tiff": "dmg-background.tiff",
       "../NOTICE": "NOTICE",
       "../THIRD_PARTY_LICENSES": "THIRD_PARTY_LICENSES"
     },
@@ -64,7 +65,12 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "windowSize": { "width": 660, "height": 440 },
+        "appPosition": { "x": 180, "y": 180 },
+        "applicationFolderPosition": { "x": 480, "y": 180 }
+      }
     }
   },
   "plugins": {

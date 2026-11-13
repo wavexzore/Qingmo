@@ -222,6 +222,9 @@ if [[ ! -f "$dmg" ]]; then
 fi
 [[ -f "$dmg" ]] || die "dmg for $product_name $version not found under: $dmg_dir"
 
+info "preparing the DMG install-window layout"
+bash "$root/scripts/release/pretty-dmg.sh" "$dmg" "$product_name" "${APPLE_SIGNING_IDENTITY:-}"
+
 info "verifying app signature, Gatekeeper assessment and notarization ticket"
 codesign --verify --deep --strict --verbose=2 "$app"
 spctl --assess --type execute --verbose=4 "$app"

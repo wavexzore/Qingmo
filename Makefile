@@ -54,6 +54,8 @@ build-win:
 build-arch:
 	pnpm tauri build --target $(MAC_ARCH)-apple-darwin --bundles dmg \
 		--config '{"bundle":{"createUpdaterArtifacts":false}}'
+	dmg="$$(ls -t src-tauri/target/$(MAC_ARCH)-apple-darwin/release/bundle/dmg/*.dmg | head -1)"; \
+		bash scripts/release/pretty-dmg.sh "$$dmg" "青墨" "$${APPLE_SIGNING_IDENTITY:-}"
 
 # Deprecated aliases kept for existing scripts and docs.
 build-mac-arch: build-arch
