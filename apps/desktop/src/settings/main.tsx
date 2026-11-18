@@ -30,11 +30,9 @@ if (!container) {
 }
 
 const services = createSettingsServices();
-const initialSection =
-  new URLSearchParams(window.location.search).get("section") === "ai" ? "ai" : "general";
 
 createRoot(container).render(
   <StrictMode>
-    <SettingsWindow settings={services.settings} initialSection={initialSection} />
+    <SettingsWindow settings={services.settings} />
   </StrictMode>,
 );

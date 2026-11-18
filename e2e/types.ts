@@ -84,10 +84,6 @@ export interface E2eLocaleCall {
   labels: Record<string, string>;
 }
 
-import type { MeetingScenario } from "../apps/desktop/src/e2e/meetingFake";
-
-export type { MeetingScenario };
-
 export interface E2eBridge {
   setDiskText(path: string, text: string): void;
   deleteDiskFile(path: string): void;
@@ -119,9 +115,6 @@ export interface E2eBridge {
   setWorkspaceFolder(path: string | null): void;
   emitWorkspaceChanged(): void;
   getWorkspaceCalls(): Array<{ command: string; args: Record<string, unknown> }>;
-  startMeeting(scenario?: MeetingScenario): string;
-  advanceMeeting(): void;
-  failMeeting(code?: string): void;
 }
 
 export type E2eAboutLink = "docs" | "github" | "changelog" | "license";
@@ -139,9 +132,6 @@ export interface E2eAboutBridge {
 export interface E2eSettingsBridge {
   settings: {
     closed: boolean;
-    setModelState(id: string, state: string): void;
-    setDisk(freeBytes: number): void;
-    finishActiveDownload(): void;
   };
 }
 

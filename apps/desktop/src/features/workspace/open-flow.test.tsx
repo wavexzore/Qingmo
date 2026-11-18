@@ -208,23 +208,7 @@ describe("openFile", () => {
       sessionDraftList: vi.fn(),
       sessionDraftRead: vi.fn(),
       sessionDraftDiscard: vi.fn(),
-      meetingStart: vi.fn(),
-      meetingRetry: vi.fn(),
-      meetingCancel: vi.fn(),
-      meetingStatus: vi.fn(),
-      meetingTakeResult: vi.fn(),
-      meetingConfigGet: vi.fn(),
-      meetingConfigSet: vi.fn(),
-      meetingKeyStatus: vi.fn(),
-      meetingKeySet: vi.fn(),
-      meetingKeyClear: vi.fn(),
-      meetingModelsList: vi.fn(),
-      meetingModelDownload: vi.fn(),
-      meetingModelDownloadCancel: vi.fn(),
-      meetingModelRemove: vi.fn(),
       appSettingsOpen: vi.fn(),
-      onMeetingProgress: vi.fn(() => () => undefined),
-      onMeetingModelProgress: vi.fn(() => () => undefined),
     };
     const brokenResult = await openFile(broken);
     expect(brokenResult.ok).toBe(false);
@@ -562,14 +546,13 @@ describe("blank editor -> editor open flow", () => {
 
     expect(await screen.findByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(11);
+    expect(options).toHaveLength(10);
     expect(options.map((option) => option.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("新建文件"),
         expect.stringContaining("打开文件"),
         expect.stringContaining("打开文件夹"),
         expect.stringContaining("保存文件"),
-        expect.stringContaining("会议纪要"),
         expect.stringContaining("切换大纲"),
         expect.stringContaining("切换实时预览"),
         expect.stringContaining("切换主题"),

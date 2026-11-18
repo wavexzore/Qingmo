@@ -14,7 +14,6 @@ import { AppError as AppErrorClass } from "../lib/ipc/errors";
 import { FakeIpc, type FakeFileSnapshot, type FakeWorkspaceCall } from "../lib/ipc/fake";
 import { FakeLogPort } from "../lib/log/fake";
 import type { CloseConfirmRequest } from "../lib/ipc/port";
-import { installMeetingFake, type MeetingScenario } from "./meetingFake";
 import type { WorkspaceInfo } from "@qingmo/shared";
 import { FakePlatform } from "../lib/platform/fake";
 import { FakeUpdatePort, type FakeUpdateCalls } from "../lib/update/fake";
@@ -83,10 +82,6 @@ export interface E2eBridge {
   emitWorkspaceChanged(): void;
   /** Workspace-related command calls, for asserting scoped refreshes. */
   getWorkspaceCalls(): FakeWorkspaceCall[];
-  /** Starts a fake meeting and returns its request id. */
-  startMeeting(scenario?: MeetingScenario): string;
-  advanceMeeting(): void;
-  failMeeting(code?: AppErrorCode): void;
 }
 
 declare global {
@@ -136,7 +131,6 @@ export function createE2eServices(): {
   const platform = new FakePlatform();
   const updates = new FakeUpdatePort();
   const logs = new FakeLogPort();
-  const meetings = installMeetingFake(ipc);
 
   window.__QINGMO_E2E__ = {
     setDiskText: (path, text) => {
@@ -220,18 +214,6 @@ export function createE2eServices(): {
       ipc.emitWorkspaceChanged();
     },
     getWorkspaceCalls: () => ipc.getWorkspaceCalls(),
-    startMeeting: (scenario) => {
-      if (scenario) {
-        meetings.setScenario(scenario);
-      }
-      return meetings.start();
-    },
-    advanceMeeting: () => {
-      meetings.advance();
-    },
-    failMeeting: (code = "ASR_FAILED") => {
-      meetings.fail(code);
-    },
   };
 
   return { ipc, platform, updates, logs };

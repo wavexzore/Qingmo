@@ -34,11 +34,10 @@ pub fn ensure_supported_extension(path: &Path) -> Result<(), AppError> {
     }
 }
 
-/// Audio containers accepted by the meeting pipeline.
+/// Audio containers shown in the workspace tree but not opened as documents.
 ///
 /// This is deliberately separate from [`ensure_supported_extension`]: audio
-/// files must still be rejected by `document_open`, while `meeting_start`
-/// accepts them without touching the document registry.
+/// files must still be rejected by `document_open`.
 pub fn ensure_supported_audio(path: &Path) -> Result<(), AppError> {
     let extension = path
         .extension()

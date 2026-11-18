@@ -5,21 +5,18 @@ import { StatusBar } from "../../components/StatusBar";
 import { ConflictBanner } from "./ConflictBanner";
 import { RecoveryBanner } from "./recovery/RecoveryBanner";
 import { RecoveryDialog } from "./recovery/RecoveryDialog";
-import { MeetingBoot } from "../meeting/MeetingBoot";
-import { useMeetingProgress } from "../meeting/useMeetingProgress";
 import { EditorHost } from "./EditorHost";
-import { meetingRequestId, useDocumentSession } from "./DocumentSessionContext";
+import { useDocumentSession } from "./DocumentSessionContext";
 import { useEditor } from "./useEditor";
 import { useEditorStatus } from "./useEditorStatus";
 import { useExternalDocumentChanges } from "./useExternalDocumentChanges";
 import { useSaveCoordinator } from "./useSaveCoordinator";
 
-function DocumentEditor({ meetingId }: { meetingId: string | null }) {
+function DocumentEditor() {
   const { t } = useTranslation(["common", "editor"]);
   const { session } = useEditor();
   const { coordinator, drafts, recorder, viewState, refreshDrafts, restoreDraft, discardDraft } =
     useDocumentSession();
-  const meeting = useMeetingProgress(meetingId ?? "");
   const status = useEditorStatus(session);
   const save = useSaveCoordinator(coordinator);
   useExternalDocumentChanges(session, coordinator);
@@ -30,7 +27,7 @@ function DocumentEditor({ meetingId }: { meetingId: string | null }) {
   const untitled = session.isUntitled;
   const conflict = save.state === "conflict" ? save.conflict : null;
   const showConflict = !untitled && conflict !== null && conflict.currentHash !== dismissedConflict;
-  const showStatusBar = meetingId !== null || !untitled || status.saveState !== "clean";
+  const showStatusBar = !untitled || status.saveState !== "clean";
   const canRestoreDraft =
     untitled && session.getSnapshot().saveState === "clean" && session.readText().length === 0;
 
@@ -58,10 +55,9 @@ function DocumentEditor({ meetingId }: { meetingId: string | null }) {
       className="flex h-full flex-col bg-paper text-ink"
     >
       {/* A named session cannot adopt a draft in place, so only untitled
-          windows advertise the recovery entry. A meeting window owns its
-          draft content and must never offer to replace it. */}
+          windows advertise the recovery entry. */}
       <RecoveryBanner
-        drafts={untitled && !meetingId ? drafts : []}
+        drafts={untitled ? drafts : []}
         onOpen={() => {
           setRecoveryOpen(true);
           void refreshDrafts();
@@ -69,7 +65,7 @@ function DocumentEditor({ meetingId }: { meetingId: string | null }) {
       />
       <RecoveryDialog
         drafts={drafts}
-        open={recoveryOpen && !meetingId}
+        open={recoveryOpen}
         canRestore={canRestoreDraft}
         onClose={() => setRecoveryOpen(false)}
         onRestore={async (id) => {
@@ -111,34 +107,21 @@ function DocumentEditor({ meetingId }: { meetingId: string | null }) {
 
       <div className="flex min-h-0 w-full flex-1">
         <div className="min-h-0 min-w-0 flex-1">
-          {meetingId && meeting.phase !== "inserted" ? (
-            <MeetingBoot meeting={meeting} />
-          ) : (
-            <EditorHost
-              session={session}
-              autoFocus={untitled}
-              viewState={viewState}
-              recorder={recorder}
-            />
-          )}
+          <EditorHost
+            session={session}
+            autoFocus={untitled}
+            viewState={viewState}
+            recorder={recorder}
+          />
         </div>
       </div>
 
-      {showStatusBar ? (
-        <StatusBar
-          snapshot={status}
-          onRetry={retrySave}
-          meeting={meetingId ? meeting.progress : null}
-          meetingAudioUrl={meeting.audioUrl}
-          meetingPartial={meeting.partial}
-        />
-      ) : null}
+      {showStatusBar ? <StatusBar snapshot={status} onRetry={retrySave} /> : null}
     </main>
   );
 }
 
 export function EditorPage() {
   const { session } = useDocumentSession();
-  const meetingId = meetingRequestId();
-  return session ? <DocumentEditor meetingId={meetingId} /> : null;
+  return session ? <DocumentEditor /> : null;
 }

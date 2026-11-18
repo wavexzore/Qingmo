@@ -11,18 +11,6 @@ import type {
   HistoryEntry,
   HistoryRecord,
   ImageSaveResult,
-  KeyStatus,
-  MeetingConfigGetResponse,
-  MeetingConfigPatch,
-  MeetingConfigSetResponse,
-  MeetingOutcome,
-  MeetingProgress,
-  MeetingResult,
-  MeetingRetryResponse,
-  MeetingStartResponse,
-  ModelDownloadResponse,
-  ModelProgress,
-  ModelView,
   SaveRequest,
   SaveResult,
   SearchResponse,
@@ -172,30 +160,6 @@ export interface IpcPort {
   sessionDraftRead(id: string): Promise<DraftRecord>;
   /** Deletes the draft; `false` means it was already gone. */
   sessionDraftDiscard(id: string): Promise<boolean>;
-  /** Starts a meeting for this window; Rust owns the native audio dialog. */
-  meetingStart(): Promise<MeetingStartResponse>;
-  /** Retries a retryable Failed terminal with the same request id. */
-  meetingRetry(requestId: string): Promise<MeetingRetryResponse>;
-  meetingCancel(requestId: string): Promise<void>;
-  meetingStatus(requestId: string): Promise<MeetingOutcome>;
-  /** Repeatedly readable meeting result; `null` until the job is Ready. */
-  meetingTakeResult(requestId: string): Promise<MeetingResult | null>;
-  meetingConfigGet(): Promise<MeetingConfigGetResponse>;
-  meetingConfigSet(
-    patch: MeetingConfigPatch,
-    expectedRevision: number,
-  ): Promise<MeetingConfigSetResponse>;
-  meetingKeyStatus(slot: string): Promise<KeyStatus>;
-  meetingKeySet(slot: string, value: string): Promise<void>;
-  meetingKeyClear(slot: string, all?: boolean): Promise<void>;
-  meetingModelsList(): Promise<ModelView[]>;
-  meetingModelDownload(id: string): Promise<ModelDownloadResponse>;
-  meetingModelDownloadCancel(downloadId: string): Promise<void>;
-  meetingModelRemove(id: string): Promise<void>;
-  /** Opens Settings (optionally on the AI section) from an error page. */
-  appSettingsOpen(section?: string): Promise<void>;
-  /** Targeted progress for this window's meeting; returns an unsubscribe. */
-  onMeetingProgress(callback: (progress: MeetingProgress) => void): () => void;
-  /** Broadcast model download progress. */
-  onMeetingModelProgress(callback: (progress: ModelProgress) => void): () => void;
+  /** Opens the Settings window. */
+  appSettingsOpen(): Promise<void>;
 }

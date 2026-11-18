@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { AppServicesProvider } from "../../app/AppServices";
 import { routes } from "../../app/routes";
@@ -10,7 +10,6 @@ import { FakeIpc } from "../../lib/ipc/fake";
 import { FakePlatform } from "../../lib/platform/fake";
 import { FakeLogPort } from "../../lib/log/fake";
 import { FakeUpdatePort } from "../../lib/update/fake";
-import { AppError } from "../../lib/ipc/errors";
 import { LANGUAGE_STORAGE_KEY, THEME_STORAGE_KEY, uiStore } from "../../stores/uiStore";
 import { commandRegistry } from "../commands/CommandRegistry";
 import { DocumentSessionProvider } from "../editor/DocumentSessionContext";
@@ -41,7 +40,6 @@ function renderApp() {
 
 afterEach(() => {
   commandRegistry.unregister("file.new");
-  commandRegistry.unregister("file.meeting");
   commandRegistry.unregister("file.open");
   commandRegistry.unregister("file.save");
   commandRegistry.unregister("view.toggleLivePreview");
@@ -123,23 +121,5 @@ describe("native menu actions", () => {
 
     platform.emitMenuAction("file.save");
     await waitFor(() => expect(ipc.getFile("/docs/note.md")?.text).toBe("# Note\n"));
-  });
-
-  it("starts a meeting from the native menu without a picker", async () => {
-    const { ipc, platform } = renderApp();
-    const start = vi.spyOn(ipc, "meetingStart");
-
-    platform.emitMenuAction("file.meeting");
-    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
-  });
-
-  it("treats a cancelled audio dialog as a normal CANCELLED result", async () => {
-    const { ipc, platform } = renderApp();
-    vi.spyOn(ipc, "meetingStart").mockRejectedValueOnce(
-      new AppError("CANCELLED", "audio dialog was cancelled"),
-    );
-
-    platform.emitMenuAction("file.meeting");
-    await waitFor(() => expect(screen.getByLabelText("通知").childElementCount).toBe(0));
   });
 });

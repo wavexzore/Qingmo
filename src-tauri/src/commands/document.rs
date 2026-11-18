@@ -253,8 +253,7 @@ pub async fn create_untitled_window_with_workspace<R: tauri::Runtime>(
 /// Creates an untitled window, optionally with a fixed label and query.
 ///
 /// Session restore uses `main` for its first saved window and must bypass the
-/// boot-window reuse rules: there is no `main` window yet. Meeting windows pass
-/// a fixed `doc-<uuid>` label plus the meeting query and need the window back.
+/// boot-window reuse rules: there is no `main` window yet.
 pub(crate) async fn create_untitled_window_with_label<R: tauri::Runtime>(
     app: AppHandle<R>,
     parent_workspace: Option<WorkspaceToken>,
@@ -883,25 +882,22 @@ pub fn document_activate<R: tauri::Runtime>(
     Ok(())
 }
 
-/// Derives the Save As default from a meeting window title.
-///
-/// The native title is `<stem> — <app>`, where `<stem>` already lost any
-/// `.md`/`.markdown` suffix when the meeting window was built. Ordinary
-/// untitled windows keep the projected untitled name.
-pub fn meeting_save_as_name(title: &str, app_name: &str, fallback: &str) -> String {
-    let suffix = format!(" — {app_name}");
-    let title = title.strip_suffix(&suffix).unwrap_or(title).trim();
-    let stem = title
-        .strip_suffix(".markdown")
-        .or_else(|| title.strip_suffix(".md"))
-        .unwrap_or(title)
-        .trim_end_matches(['.', ' '])
-        .trim();
-    if stem.is_empty() {
-        fallback.to_string()
-    } else {
-        format!("{stem}.md")
+/// Debug-only E2E override. The embedded WebDriver provider does not restart
+/// the app between specs, so per-spec values come from the `QINGMO_E2E_ENV`
+/// JSON file when it declares the key, and from the process environment
+/// otherwise.
+#[cfg(feature = "e2e-webdriver")]
+fn e2e_var(key: &str) -> Option<String> {
+    if let Ok(path) = std::env::var("QINGMO_E2E_ENV") {
+        if let Ok(bytes) = std::fs::read(path) {
+            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                if let Some(value) = value.get(key).and_then(serde_json::Value::as_str) {
+                    return Some(value.to_owned());
+                }
+            }
+        }
     }
+    std::env::var(key).ok()
 }
 
 /// Opens the native save dialog, or uses the E2E path when the build enables
@@ -912,13 +908,13 @@ async fn pick_save_path<R: tauri::Runtime>(
 ) -> Result<PathBuf, AppError> {
     #[cfg(feature = "e2e-webdriver")]
     {
-        if crate::services::meeting::e2e::var("MEETING_E2E_SAVE_CANCEL").is_some() {
+        if e2e_var("MEETING_E2E_SAVE_CANCEL").is_some() {
             return Err(AppError::new(
                 AppErrorCode::Cancelled,
                 "save dialog was cancelled",
             ));
         }
-        if let Some(path) = crate::services::meeting::e2e::var("MEETING_E2E_SAVE_AS") {
+        if let Some(path) = e2e_var("MEETING_E2E_SAVE_AS") {
             return Ok(PathBuf::from(path));
         }
     }
@@ -964,20 +960,7 @@ pub async fn document_save_as<R: tauri::Runtime>(
         .labels()
         .map(|labels| labels.app_name)
         .unwrap_or_else(|| "青墨".to_string());
-    let meeting_window = window
-        .url()
-        .ok()
-        .is_some_and(|url| url.query_pairs().any(|(key, _)| key == "meeting"));
-    let default_name = if meeting_window {
-        meeting_save_as_name(
-            &window.title().unwrap_or_default(),
-            &app_name,
-            &untitled_file_name,
-        )
-    } else {
-        untitled_file_name.clone()
-    };
-    let path = pick_save_path(&window, &default_name).await?;
+    let path = pick_save_path(&window, &untitled_file_name).await?;
 
     let payload = tauri::async_runtime::spawn_blocking(move || registry.save_as(path, &text))
         .await

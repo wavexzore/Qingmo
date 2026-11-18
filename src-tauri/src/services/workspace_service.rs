@@ -494,8 +494,8 @@ fn symlink_audio(root: &Path, path: &Path) -> bool {
 
 /// Lists one directory level below a canonical workspace root.
 ///
-/// Only regular directories, supported Markdown files and supported meeting
-/// audio containers are returned. Audio rows carry `audio: true` and are never
+/// Only regular directories, supported Markdown files and supported audio
+/// containers are returned. Audio rows carry `audio: true` and are never
 /// openable. Hidden entries, `node_modules` directories, non-UTF-8 names,
 /// control/bidi names and names containing separators are skipped. Symlinks are
 /// never expandable; they are openable only for supported Markdown inside the

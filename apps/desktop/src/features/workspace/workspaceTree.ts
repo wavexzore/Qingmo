@@ -12,7 +12,7 @@ export interface FlatRow {
   depth: number;
   expandable: boolean;
   openable: boolean;
-  /** Supported meeting audio; shown but not opened as a document. */
+  /** Supported audio; shown but not opened as a document. */
   audio: boolean;
   expanded: boolean;
   posInSet: number;

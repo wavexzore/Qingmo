@@ -1,7 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-
-import type { MeetingProgress } from "@qingmo/shared";
 
 import i18n from "../i18n";
 import { EMPTY_STATUS_SNAPSHOT, StatusBar, type StatusBarSnapshot } from "./StatusBar";
@@ -56,60 +54,5 @@ describe("StatusBar formatting", () => {
     expect(screen.getByTestId("status-cursor")).toHaveClass("hidden", "@md:inline-flex");
     expect(screen.getByTestId("status-eol")).toHaveClass("hidden", "@xl:inline-flex");
     expect(screen.getByTestId("status-size")).toHaveClass("hidden", "@2xl:inline-flex");
-  });
-
-  it("shows meeting stage, speakers and the audio player", () => {
-    const meeting: MeetingProgress = {
-      requestId: "11111111-2222-4333-8444-555555555555",
-      attempt: 1,
-      stage: "transcribing",
-      audioUrl: "asset://voice.wav",
-      elapsedMs: 1000,
-      sourceName: "访谈.m4a",
-      durationMs: 65_000,
-      bytes: 4096,
-      actualBackend: { kind: "local" },
-      localModel: "paraformer-zh-en-int8",
-      llmMode: "local",
-      llmModel: "",
-      accel: "cpu",
-      speakerCount: 3,
-      failedSegments: 1,
-      degraded: {
-        llmModelMissing: false,
-        llmUnconfigured: false,
-        llmBudgetExceeded: false,
-        llmFailed: false,
-        partialDecode: false,
-        remoteFallback: false,
-        remoteKeyMissing: false,
-        speakerDegraded: false,
-        speakerPartial: false,
-        highMemoryModel: false,
-        slowMachine: false,
-      },
-    };
-    render(<StatusBar snapshot={snapshot} meeting={meeting} meetingAudioUrl={meeting.audioUrl} />);
-
-    expect(screen.getByTestId("status-meeting-stage")).toBeInTheDocument();
-    expect(screen.getByText("转写中")).toBeInTheDocument();
-    expect(screen.getByTestId("status-meeting-speakers")).toHaveTextContent("3");
-    const audio = screen.getByTestId("meeting-audio") as HTMLAudioElement;
-    expect(audio).toHaveAttribute("src", "asset://voice.wav");
-    Object.defineProperty(audio, "duration", { configurable: true, value: 65 });
-    fireEvent.loadedMetadata(audio);
-    expect(screen.getByTestId("meeting-audio-player")).toHaveTextContent("0:00 / 1:05");
-
-    const toggle = screen.getByTestId("meeting-audio-toggle");
-    fireEvent.play(audio);
-    expect(toggle).toHaveAttribute("aria-label", "暂停");
-    fireEvent.pause(audio);
-    expect(toggle).toHaveAttribute("aria-label", "播放");
-
-    audio.currentTime = 30;
-    fireEvent.timeUpdate(audio);
-    expect(screen.getByTestId("meeting-audio-player")).toHaveTextContent("0:30 / 1:05");
-    fireEvent.change(screen.getByTestId("meeting-audio-seek"), { target: { value: "42" } });
-    expect(audio.currentTime).toBe(42);
   });
 });

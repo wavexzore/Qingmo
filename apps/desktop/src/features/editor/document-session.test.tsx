@@ -10,8 +10,6 @@ import { FakeLogPort } from "../../lib/log/fake";
 import { FakeUpdatePort } from "../../lib/update/fake";
 import {
   DocumentSessionProvider,
-  meetingRequestId,
-  meetingSourceName,
   resetPendingDocumentForTests,
   useDocumentSession,
 } from "./DocumentSessionContext";
@@ -215,57 +213,6 @@ describe("DocumentSessionProvider", () => {
 
     await waitFor(() => {
       expect(captured.current?.session?.isUntitled).toBe(true);
-    });
-  });
-
-  it("boots a meeting window without taking a pending payload", async () => {
-    const id = "11111111-2222-4333-8444-555555555555";
-    window.history.replaceState(
-      {},
-      "",
-      `/index.html?window=document&meeting=${id}&name=%E8%AE%BF%E8%B0%88`,
-    );
-    const ipc = new FakeIpc();
-    const takePending = vi.spyOn(ipc, "documentTakePending");
-    const captured: { current: ContextValue | null } = { current: null };
-
-    render(
-      <StrictMode>
-        <AppServicesProvider
-          services={{
-            ipc,
-            platform: new FakePlatform(),
-            updates: new FakeUpdatePort(),
-            logs: new FakeLogPort(),
-          }}
-        >
-          <DocumentSessionProvider>
-            <Probe
-              ipc={ipc}
-              onContext={(value) => {
-                captured.current = value;
-              }}
-            />
-          </DocumentSessionProvider>
-        </AppServicesProvider>
-      </StrictMode>,
-    );
-
-    await waitFor(() => {
-      expect(captured.current?.session).not.toBeNull();
-    });
-    expect(captured.current?.session?.isUntitled).toBe(true);
-    expect(captured.current?.session?.getSnapshot().fileName).toBe("访谈");
-    expect(takePending).not.toHaveBeenCalled();
-  });
-
-  describe("meeting query", () => {
-    it("reads only a canonical UUID and decodes the name once", () => {
-      const search = `?window=document&meeting=11111111-2222-4333-8444-555555555555&name=%E5%91%A8%E4%BC%9A%202026`;
-      expect(meetingRequestId(search)).toBe("11111111-2222-4333-8444-555555555555");
-      expect(meetingSourceName(search)).toBe("周会 2026");
-      expect(meetingRequestId("?meeting=not-a-uuid")).toBeNull();
-      expect(meetingSourceName("?window=document")).toBeNull();
     });
   });
 });

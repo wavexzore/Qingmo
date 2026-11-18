@@ -3,6 +3,6 @@ import type { WorkspaceEntryKind } from "./WorkspaceEntryKind";
 
 export type WorkspaceEntry = { name: string, kind: WorkspaceEntryKind, expandable: boolean, openable: boolean, 
 /**
- * Supported meeting audio; shown in the tree but never opened (NEXT-013).
+ * Supported audio; shown in the tree but never opened (NEXT-013).
  */
 audio: boolean, };

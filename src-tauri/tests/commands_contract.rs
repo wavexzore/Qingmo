@@ -5,14 +5,10 @@ use qingmo_lib::ipc::dto::{
     UpdateInfo, UpdatePhase, UpdateSnapshot,
 };
 use qingmo_lib::ipc::{command_permissions, COMMANDS, EVENTS};
-use qingmo_lib::services::meeting::download::{DiskProbe, SystemDiskProbe};
-use qingmo_lib::services::meeting::{ManifestCatalog, ModelCatalog};
-use qingmo_lib::state::meeting::downloads::ModelDownloads;
 use qingmo_lib::state::CloseGuard;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tauri::Manager;
 
 fn manifest_dir() -> PathBuf {
@@ -57,7 +53,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(COMMANDS.len(), 62);
+    assert_eq!(COMMANDS.len(), 48);
     assert_eq!(
         EVENTS,
         &[
@@ -71,9 +67,7 @@ fn frontend_command_mirror_contains_every_contract_name() {
             "app://document-relocated",
             "app://document-new-failed",
             "app://workspace-changed",
-            "app://workspace-index-status",
-            "app://meeting-progress",
-            "app://meeting-model-progress"
+            "app://workspace-index-status"
         ]
     );
 
@@ -84,9 +78,8 @@ fn frontend_command_mirror_contains_every_contract_name() {
         );
     }
 
-    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 15);
+    assert_eq!(qingmo_lib::ipc::contract::MENU_ACTIONS.len(), 14);
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"file.new"));
-    assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"file.meeting"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.zh-CN"));
     assert!(qingmo_lib::ipc::contract::MENU_ACTIONS.contains(&"language.en"));
 }
@@ -311,81 +304,13 @@ fn error_wire_shape_is_stable() {
         (AppErrorCode::IndexDisabled, "INDEX_DISABLED"),
         (AppErrorCode::IdentityDegraded, "IDENTITY_DEGRADED"),
         (AppErrorCode::AudioUnsupported, "AUDIO_UNSUPPORTED"),
-        (AppErrorCode::AudioTooLarge, "AUDIO_TOO_LARGE"),
-        (AppErrorCode::AudioTooLong, "AUDIO_TOO_LONG"),
-        (AppErrorCode::AudioDecodeFailed, "AUDIO_DECODE_FAILED"),
-        (AppErrorCode::ModelNotReady, "MODEL_NOT_READY"),
-        (AppErrorCode::AsrUnavailable, "ASR_UNAVAILABLE"),
-        (AppErrorCode::AsrFailed, "ASR_FAILED"),
-        (AppErrorCode::InvalidConfig, "INVALID_CONFIG"),
-        (AppErrorCode::MeetingBusy, "MEETING_BUSY"),
-        (AppErrorCode::ModelDownloadFailed, "MODEL_DOWNLOAD_FAILED"),
-        (AppErrorCode::ModelBusy, "MODEL_BUSY"),
-        (AppErrorCode::LlmNotConfigured, "LLM_NOT_CONFIGURED"),
-        (AppErrorCode::LlmFailed, "LLM_FAILED"),
     ];
-    assert_eq!(codes.len(), 36);
+    assert_eq!(codes.len(), 24);
     for (code, wire) in codes {
         let value = serde_json::to_value(AppError::new(code, "update error"))
             .expect("AppError must serialize");
         assert_eq!(value["code"], wire);
     }
-}
-
-#[test]
-fn reason_codes_are_complete_and_snake_case() {
-    use qingmo_lib::ipc::dto::ReasonCode;
-
-    assert_eq!(ReasonCode::ALL.len(), 12);
-    for reason in ReasonCode::ALL {
-        let wire = serde_json::to_value(reason).expect("ReasonCode must serialize");
-        let wire = wire
-            .as_str()
-            .expect("ReasonCode wire value must be a string");
-        assert!(
-            wire.chars()
-                .all(|character| character.is_ascii_lowercase() || character == '_'),
-            "unexpected ReasonCode wire value: {wire}"
-        );
-    }
-    assert_eq!(
-        serde_json::to_value(ReasonCode::RemoteAuth).unwrap(),
-        "remote_auth"
-    );
-}
-
-#[test]
-fn meeting_dtos_use_camel_case_wire_names() {
-    use qingmo_lib::ipc::dto::{MeetingConfigPatch, MeetingStage, ModelProgress};
-
-    let patch = MeetingConfigPatch {
-        runtime_mode: Some(qingmo_lib::ipc::dto::RuntimeMode::Cpu),
-        asr_local_model: Some("paraformer-zh-en-int8".into()),
-        ..MeetingConfigPatch::default()
-    };
-    let value = serde_json::to_value(&patch).expect("MeetingConfigPatch must serialize");
-    assert_eq!(value["runtimeMode"], "cpu");
-    assert_eq!(value["asrLocalModel"], "paraformer-zh-en-int8");
-    assert!(value["llmMode"].is_null());
-
-    let progress = ModelProgress {
-        download_id: "download".into(),
-        model_id: "paraformer-zh-en-int8".into(),
-        done_bytes: 1,
-        total_bytes: 2,
-        state: qingmo_lib::ipc::dto::DownloadState::Verifying,
-        error: None,
-    };
-    let value = serde_json::to_value(&progress).expect("ModelProgress must serialize");
-    assert_eq!(value["downloadId"], "download");
-    assert_eq!(value["modelId"], "paraformer-zh-en-int8");
-    assert_eq!(value["doneBytes"], 1);
-    assert_eq!(value["state"], "verifying");
-
-    assert_eq!(
-        serde_json::to_value(MeetingStage::PartialDone).unwrap(),
-        "partial_done"
-    );
 }
 
 /// The ACL treats the platform's real frontend origin as `local`; the mock
@@ -431,29 +356,6 @@ fn invoke_handler_registers_every_contract_command() {
         .manage(CloseGuard::new())
         .manage(qingmo_lib::state::FocusTracker::new())
         .manage(qingmo_lib::state::PreviewModes::new())
-        .manage({
-            let root = std::env::temp_dir()
-                .join(format!("qingmo-contract-models-{}", uuid::Uuid::new_v4()));
-            let catalog: Arc<dyn ModelCatalog> = Arc::new(ManifestCatalog::new(root));
-            catalog
-        })
-        .manage({
-            let root = std::env::temp_dir()
-                .join(format!("qingmo-contract-config-{}", uuid::Uuid::new_v4()));
-            std::fs::create_dir_all(&root).expect("config root");
-            qingmo_lib::state::MeetingConfigStore::open(
-                root.join("meeting/config.json"),
-                Arc::new(ManifestCatalog::new(root.join("models"))),
-            )
-            .expect("config store")
-        })
-        .manage(Arc::new(ModelDownloads::new()))
-        .manage(Arc::new(
-            qingmo_lib::services::meeting::keys::KeyService::new(Arc::new(
-                qingmo_lib::services::meeting::keys::MemoryKeyStore::default(),
-            )),
-        ))
-        .manage(Arc::new(SystemDiskProbe) as Arc<dyn DiskProbe>)
         .manage(qingmo_lib::state::ShellLocale::default())
         .manage(qingmo_lib::state::UpdateFlushGate::new())
         .manage(qingmo_lib::state::UpdateManager::new(env!(
@@ -582,86 +484,6 @@ fn invoke_handler_registers_every_contract_command() {
     let version = invoke(&settings, "app_settings_info", json!({}))
         .expect("the settings window must read the app version");
     assert_eq!(version, env!("CARGO_PKG_VERSION"));
-
-    // Meeting surface: task commands stay on document windows, config writes
-    // and keys stay on settings, and read-only meeting commands work on both.
-    for (command, body) in [
-        (
-            "meeting_config_set",
-            json!({"patch": {}, "expectedRevision": 0}),
-        ),
-        ("meeting_key_status", json!({"slot": "llm"})),
-        ("meeting_key_set", json!({"slot": "llm", "value": "sk"})),
-        ("meeting_key_clear", json!({"slot": "llm"})),
-    ] {
-        let error = invoke(&webview, command, body.clone())
-            .expect_err("settings-only meeting commands must reject document windows");
-        let denied = error.get("code").and_then(Value::as_str) == Some("PERMISSION_DENIED")
-            || error
-                .as_str()
-                .is_some_and(|message| message.contains("not allowed"));
-        assert!(denied, "{command} must be settings-only: {error}");
-
-        invoke(&settings, command, body).expect("settings may call the meeting command");
-    }
-
-    let error = invoke(&settings, "meeting_start", json!({}))
-        .expect_err("task commands must reject the settings window");
-    let denied = error.get("code").and_then(Value::as_str) == Some("PERMISSION_DENIED")
-        || error
-            .as_str()
-            .is_some_and(|message| message.contains("not allowed"));
-    assert!(denied, "meeting_start must be document-only: {error}");
-
-    let config = invoke(&settings, "meeting_config_get", json!({}))
-        .expect("settings may read the meeting config");
-    assert_eq!(config["config"]["asr"]["mode"], "local");
-    assert_eq!(config["config"]["llm"]["mode"], "local");
-    assert!(config["disk"]["asrRequiredBytes"].is_number());
-    assert!(config["disk"]["llmRequiredBytes"].is_number());
-    assert!(config["disk"]["freeBytes"].is_number());
-    invoke(
-        &settings,
-        "meeting_config_set",
-        json!({"patch": {"maxMinutes": 42}, "expectedRevision": config["config"]["revision"]}),
-    )
-    .expect("settings may write the config");
-    let config =
-        invoke(&settings, "meeting_config_get", json!({})).expect("config write is visible");
-    assert_eq!(config["config"]["maxMinutes"], 42);
-    invoke(
-        &settings,
-        "meeting_key_set",
-        json!({"slot": "asr", "value": "sk-contract"}),
-    )
-    .expect("settings may save a key");
-    assert_eq!(
-        invoke(&settings, "meeting_key_status", json!({"slot": "asr"})).unwrap(),
-        "present"
-    );
-    invoke(&settings, "meeting_key_clear", json!({"slot": "asr"}))
-        .expect("settings may clear a key");
-    assert_eq!(
-        invoke(&settings, "meeting_key_status", json!({"slot": "asr"})).unwrap(),
-        "absent"
-    );
-    let config = invoke(&webview, "meeting_config_get", json!({}))
-        .expect("document windows may read the meeting config");
-    assert!(config["preview"]["defaults"]["threads"].is_number());
-    let models =
-        invoke(&settings, "meeting_models_list", json!({})).expect("settings may list models");
-    assert_eq!(models.as_array().map(Vec::len), Some(11));
-    let denied = invoke(&webview, "meeting_model_remove", json!({"id": "x"}))
-        .expect_err("document/main windows must not remove models");
-    assert!(
-        denied
-            .as_str()
-            .is_some_and(|text| text.contains("not allowed")),
-        "capability must reject the call: {denied:?}"
-    );
-    let error = invoke(&settings, "meeting_model_remove", json!({"id": "x"}))
-        .expect_err("an unknown model cannot be removed");
-    assert_eq!(error["code"], "MODEL_NOT_READY");
 
     let stats = invoke(&webview, "app_logs_stats", json!({}))
         .expect("log stats must work without the plugin");
@@ -823,7 +645,6 @@ fn valid_labels() -> NativeShellLabels {
         open: "Open…".to_string(),
         open_folder: "Open Folder…".to_string(),
         save: "Save".to_string(),
-        meeting: "Meeting Minutes…".to_string(),
         close_window: "Close Window".to_string(),
         edit: "Edit".to_string(),
         undo: "Undo".to_string(),

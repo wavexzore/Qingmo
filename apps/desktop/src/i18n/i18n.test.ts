@@ -13,7 +13,6 @@ const EXPECTED_NAMESPACES = [
   "about",
   "settings",
   "logs",
-  "meeting",
   "menu",
   "workspace",
   "history",

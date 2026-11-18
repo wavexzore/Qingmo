@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::menu::{
@@ -25,7 +24,7 @@ use commands::about::{open_about, ABOUT_WINDOW_LABEL};
 use commands::settings::{open_settings, SETTINGS_WINDOW_LABEL};
 use ipc::contract::{
     EVENT_DOCUMENT_NEW_FAILED, EVENT_MENU_ACTION, MENU_ACTIONS, MENU_FILE_NEW, MENU_FILE_OPEN,
-    MENU_FILE_OPEN_FOLDER, MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN, MENU_MEETING,
+    MENU_FILE_OPEN_FOLDER, MENU_FILE_SAVE, MENU_LANGUAGE_EN, MENU_LANGUAGE_ZH_CN,
     MENU_PALETTE_OPEN, MENU_THEME_DARK, MENU_THEME_LIGHT, MENU_THEME_SYSTEM,
     MENU_VIEW_TOGGLE_LIVE_PREVIEW, MENU_VIEW_TOGGLE_OUTLINE, MENU_VIEW_TOGGLE_THEME,
 };
@@ -183,7 +182,6 @@ fn menu_layout<'a>(
         action(MENU_FILE_OPEN, &labels.open, Some("CmdOrCtrl+O")),
         action(MENU_FILE_OPEN_FOLDER, &labels.open_folder, None),
         action(MENU_FILE_SAVE, &labels.save, Some("CmdOrCtrl+S")),
-        action(MENU_MEETING, &labels.meeting, Some("CmdOrCtrl+Shift+M")),
     ];
     if !macos {
         file_items.push(MenuEntry::Separator);
@@ -331,7 +329,6 @@ fn startup_layout(platform: MenuPlatform) -> Vec<MenuSpec<'static>> {
     let mut file_items = vec![
         action(MENU_FILE_NEW, "New", Some("CmdOrCtrl+N")),
         action(MENU_FILE_OPEN_FOLDER, "Open Folder…", None),
-        action(MENU_MEETING, "Meeting Minutes…", Some("CmdOrCtrl+Shift+M")),
         action(MENU_CLOSE_WINDOW, "Close Window", Some("CmdOrCtrl+W")),
     ];
     if !macos {
@@ -561,19 +558,12 @@ fn resolve_window_title(
     labels: &NativeShellLabels,
     sessions: &state::WindowSessions,
     registry: &state::DocumentRegistry,
-    meetings: &state::MeetingRegistry,
 ) -> Option<String> {
     if label == ABOUT_WINDOW_LABEL {
         return Some(labels.about.clone());
     }
     if label == SETTINGS_WINDOW_LABEL {
         return Some(labels.settings.clone());
-    }
-    if let Some(title) = meetings.display_title_for_label(label) {
-        return Some(commands::document::window_title_for_untitled(
-            &title,
-            &labels.app_name,
-        ));
     }
     if let Some(path) = sessions.pending_path(label) {
         return Some(commands::document::window_title_for(
@@ -602,11 +592,8 @@ fn resolve_window_title(
 pub(crate) fn apply_window_titles<R: Runtime>(app: &AppHandle<R>, labels: &NativeShellLabels) {
     let sessions = app.state::<state::WindowSessions>();
     let registry = app.state::<state::DocumentRegistry>();
-    let meetings = app.state::<state::MeetingRegistry>();
     for window in app.webview_windows().values() {
-        if let Some(title) =
-            resolve_window_title(window.label(), labels, &sessions, &registry, &meetings)
-        {
+        if let Some(title) = resolve_window_title(window.label(), labels, &sessions, &registry) {
             if let Err(error) = window.set_title(&title) {
                 tracing::warn!(
                     %error,
@@ -1030,50 +1017,6 @@ pub fn run() {
             // but must never block startup or fall back to /tmp, which would
             // leak plaintext drafts outside the app sandbox.
             let local_data = app.path().app_local_data_dir().ok();
-            #[cfg(debug_assertions)]
-            let meeting_root = std::env::var_os("MEETING_E2E_MODELS")
-                .map(PathBuf::from)
-                .or_else(|| {
-                    local_data
-                        .as_ref()
-                        .map(|dir| services::meeting::models::data_root(dir))
-                })
-                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-models"));
-            #[cfg(not(debug_assertions))]
-            let meeting_root = local_data
-                .as_ref()
-                .map(|dir| services::meeting::models::data_root(dir))
-                .unwrap_or_else(|| std::env::temp_dir().join("qingmo-models"));
-            services::meeting::download::recover_orphans(&meeting_root);
-            let meeting_catalog: Arc<dyn services::meeting::ModelCatalog> =
-                Arc::new(services::meeting::ManifestCatalog::new(meeting_root));
-            let meeting_config = match local_data.as_ref() {
-                Some(dir) => state::MeetingConfigStore::open(
-                    dir.join("meeting").join("config.json"),
-                    Arc::clone(&meeting_catalog),
-                )
-                .unwrap_or_else(|error| {
-                    tracing::warn!(%error, "meeting config storage is unavailable");
-                    state::MeetingConfigStore::disabled(Arc::clone(&meeting_catalog))
-                }),
-                None => {
-                    tracing::warn!("application data directory is unavailable; meeting config is disabled");
-                    state::MeetingConfigStore::disabled(Arc::clone(&meeting_catalog))
-                }
-            };
-            let meeting_keys = services::meeting::keys::KeyService::system();
-            if let Err(error) = meeting_config.migrate_keyring(&meeting_keys) {
-                tracing::warn!(%error, "meeting keys could not be migrated into config.json");
-            }
-            app.manage(meeting_config);
-            app.manage(Arc::clone(&meeting_catalog));
-            app.manage(state::MeetingRegistry::new(app.handle().clone()));
-            app.manage(Arc::new(state::meeting::ModelDownloads::new()));
-            app.manage(Arc::new(meeting_keys));
-            app.manage(Arc::new(
-                services::meeting::download::SystemDiskProbe,
-            ) as Arc<dyn services::meeting::download::DiskProbe>);
-            app.manage(state::AssetScope::new(app.handle().clone()));
             let session_store = match local_data.as_ref() {
                 Some(dir) => match services::SessionStore::open(dir.join("session")) {
                     Ok(store) => store,
@@ -1314,14 +1257,6 @@ pub fn run() {
         } => {
             app_handle.state::<state::FocusTracker>().clear(&label);
             app_handle.state::<state::PreviewModes>().clear(&label);
-            // A meeting window must stop its job and drop its terminal before
-            // the document/workspace state goes away.
-            let meetings = app_handle.state::<state::MeetingRegistry>();
-            meetings.cancel_by_label(&label);
-            meetings.release_by_label(&label);
-            app_handle
-                .state::<state::AssetScope>()
-                .release_by_label(&label);
             // A window can be destroyed without the normal close handshake
             // (for example a crashed webview); release the document, workspace
             // and their watchers so no registry outlives the window.
@@ -1434,12 +1369,6 @@ pub fn run() {
 mod menu_tests {
     use super::*;
 
-    struct NoopEmitter;
-
-    impl state::meeting::progress::ProgressEmitter for NoopEmitter {
-        fn emit(&self, _window_label: &str, _progress: &state::meeting::job::MeetingProgress) {}
-    }
-
     fn labels(prefix: &str) -> NativeShellLabels {
         NativeShellLabels {
             app_name: format!("{prefix}-app"),
@@ -1455,7 +1384,6 @@ mod menu_tests {
             open: format!("{prefix}-open"),
             open_folder: format!("{prefix}-open-folder"),
             save: format!("{prefix}-save"),
-            meeting: format!("{prefix}-meeting"),
             close_window: format!("{prefix}-close"),
             edit: format!("{prefix}-edit"),
             undo: format!("{prefix}-undo"),
@@ -1604,11 +1532,6 @@ mod menu_tests {
             !file_ids.contains(&MENU_SETTINGS),
             "macOS keeps settings in the application menu"
         );
-        assert_eq!(action_label(action(file_menu, MENU_MEETING)), "zh-meeting");
-        assert_eq!(
-            action_accelerator(action(file_menu, MENU_MEETING)),
-            Some("CmdOrCtrl+Shift+M")
-        );
         assert_eq!(action_label(action(file_menu, MENU_FILE_NEW)), "zh-new");
         assert_eq!(
             action_accelerator(action(file_menu, MENU_FILE_NEW)),
@@ -1622,7 +1545,6 @@ mod menu_tests {
                 MENU_FILE_OPEN,
                 MENU_FILE_OPEN_FOLDER,
                 MENU_FILE_SAVE,
-                MENU_MEETING,
                 MENU_CLOSE_WINDOW
             ]
         );
@@ -1696,7 +1618,6 @@ mod menu_tests {
         let file_menu = menu(&layout, "en-file");
         let file_ids = action_ids(file_menu);
         assert!(file_ids.contains(&MENU_FILE_NEW));
-        assert!(file_ids.contains(&MENU_MEETING));
         assert!(file_ids.contains(&MENU_QUIT));
         assert!(file_ids.contains(&MENU_SETTINGS));
         assert_eq!(
@@ -1706,11 +1627,6 @@ mod menu_tests {
         assert_eq!(
             action_accelerator(action(file_menu, MENU_SETTINGS)),
             Some("CmdOrCtrl+,")
-        );
-        assert_eq!(action_label(action(file_menu, MENU_MEETING)), "en-meeting");
-        assert_eq!(
-            action_accelerator(action(file_menu, MENU_MEETING)),
-            Some("CmdOrCtrl+Shift+M")
         );
         assert_eq!(action_label(action(file_menu, MENU_QUIT)), "en-quit");
         assert_eq!(
@@ -1789,7 +1705,6 @@ mod menu_tests {
             );
             assert!(ids.contains(&MENU_CLOSE_WINDOW));
             assert!(ids.contains(&MENU_FILE_NEW));
-            assert!(ids.contains(&MENU_MEETING));
             assert!(!ids.contains(&MENU_ABOUT));
             assert!(!ids.contains(&MENU_SETTINGS));
             assert_every_action_has_a_handler(&layout);
@@ -1836,58 +1751,48 @@ mod menu_tests {
         let labels = labels("zh");
         let sessions = state::WindowSessions::new();
         let registry = state::DocumentRegistry::new();
-        let meetings = state::MeetingRegistry::with_emitter(std::sync::Arc::new(NoopEmitter));
 
         sessions.mark_untitled("main");
         assert_eq!(
-            resolve_window_title("main", &labels, &sessions, &registry, &meetings).as_deref(),
+            resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
             Some("zh.md — zh-app")
         );
         sessions.set_token("main", "main-token".to_string());
         assert!(!sessions.is_untitled("main"));
         assert!(
-            resolve_window_title("main", &labels, &sessions, &registry, &meetings).is_none(),
+            resolve_window_title("main", &labels, &sessions, &registry).is_none(),
             "main keeps its title while a token has no record"
         );
         sessions.release("main");
         assert_eq!(
-            resolve_window_title("main", &labels, &sessions, &registry, &meetings).as_deref(),
+            resolve_window_title("main", &labels, &sessions, &registry).as_deref(),
             Some("zh-app")
         );
 
         sessions.mark_untitled("doc-new");
         assert_eq!(
-            resolve_window_title("doc-new", &labels, &sessions, &registry, &meetings).as_deref(),
+            resolve_window_title("doc-new", &labels, &sessions, &registry).as_deref(),
             Some("zh.md — zh-app")
         );
         sessions.clear_untitled("doc-new");
         assert_eq!(
-            resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry, &meetings)
-                .as_deref(),
+            resolve_window_title(ABOUT_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
             Some("zh-about")
         );
         assert_eq!(
-            resolve_window_title(
-                SETTINGS_WINDOW_LABEL,
-                &labels,
-                &sessions,
-                &registry,
-                &meetings
-            )
-            .as_deref(),
+            resolve_window_title(SETTINGS_WINDOW_LABEL, &labels, &sessions, &registry).as_deref(),
             Some("zh-settings")
         );
 
         sessions.stage("doc-pending", payload("/docs/pending.md", "pending-token"));
         assert_eq!(
-            resolve_window_title("doc-pending", &labels, &sessions, &registry, &meetings)
-                .as_deref(),
+            resolve_window_title("doc-pending", &labels, &sessions, &registry).as_deref(),
             Some("pending.md — zh-app")
         );
 
         sessions.set_token("doc-missing", "missing-token".to_string());
         assert_eq!(
-            resolve_window_title("doc-missing", &labels, &sessions, &registry, &meetings),
+            resolve_window_title("doc-missing", &labels, &sessions, &registry),
             None,
             "a token without a registry record must keep the current title"
         );
@@ -1898,20 +1803,8 @@ mod menu_tests {
         let opened = registry.open_path(path).expect("fixture must open");
         sessions.set_token("doc-token", opened.doc_token.clone());
         assert_eq!(
-            resolve_window_title("doc-token", &labels, &sessions, &registry, &meetings).as_deref(),
+            resolve_window_title("doc-token", &labels, &sessions, &registry).as_deref(),
             Some("note.md — zh-app")
-        );
-        let (meeting_id, _) = meetings
-            .begin(
-                state::MeetingSource::new("/docs/访谈.m4a", 1, 65_000),
-                "doc-token",
-            )
-            .unwrap();
-        meetings.set_display_title(meeting_id, "访谈".into());
-        assert_eq!(
-            resolve_window_title("doc-token", &labels, &sessions, &registry, &meetings).as_deref(),
-            Some("访谈 — zh-app"),
-            "meeting titles keep the source stem across locale rebuilds"
         );
     }
 }

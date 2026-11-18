@@ -114,37 +114,6 @@ flowchart LR
 - **编辑器**：`EditorUiCopy` 经 CM6 Facet 注入，不重建 EditorState/View；`version` 同时进入 Widget `eq` 与 decoration cache key。
 - **默认值**：产品默认 `zh-CN`；启动标题/HTML title/文件关联使用中性 `Qingmo`/`Markdown`，避免语言初始化前闪烁。
 
-### 1.2 会议纪要（P0/P1 已交付）
-
-```mermaid
-flowchart LR
-  AUDIO["音频文件<br/>m4a / mp4 / wav / mp3 / flac"] --> DEC["decode<br/>symphonia → 16 kHz mono"]
-  DEC --> WIN["10 分钟窗口"]
-  WIN --> VAD["VAD / fixed grid<br/>语音段 + 绝对时间"]
-  WIN --> DIA["说话人分离<br/>pyannote + CAM++"]
-  VAD --> ROUTE{"ASR 路由"}
-  ROUTE -->|local| SHERPA["sherpa-onnx<br/>Paraformer / Zipformer / SenseVoice / FireRed"]
-  ROUTE -->|remote| REMOTE["OpenAI / Groq / Deepgram<br/>无时间戳响应按块回退"]
-  SHERPA --> SEG["Segment<br/>时间戳 / 置信度 / 复读重跑"]
-  REMOTE --> SEG
-  DIA --> JOIN["speaker join / 跨块 stitch"]
-  SEG --> CARD["summarize<br/>窗口 → CardGenerator"]
-  JOIN --> CARD
-  CARD -->|LLM 可用| LLM["Remote API 或本地 llama.cpp<br/>预算门 + 窗口超时"]
-  CARD -->|超时 / 失败| EXT["extractive 兜底<br/>last_error 可见降级"]
-  LLM --> VAL["validate<br/>引句定位 / 数字精确回查 / speaker"]
-  EXT --> VAL
-  VAL --> REN["render → Markdown"]
-  REN --> DOC["插入当前文档（唯一保存路径）"]
-  DEC --> ASSET["音频资产 URL<br/>窗口生命周期，Destroyed 释放"]
-```
-
-- **单一流水线**：只有 `CardGenerator::generate_window → reduce_cards → validate_cards → render` 一条摘要路径；LLM 只有 Remote / Local 两个实现。
-- **单一配置源**：`meeting/config.json` 是唯一配置；provider/host 变化会清空旧 key，模型与 key 的写入仅允许 Settings 窗口。
-- **数据边界**：不新增 SQLite 表或列；录音仅在用户选择后按窗口读取，音频资产按窗口标签释放。
-- **降级可见**：超时、ASR 全失败、静音、远程回退、说话人降级都写入 `Degraded`/`StopReason`，不把抽取式兜底伪装成完整摘要。
-- **取消/权限**：取消 token 贯穿 decode / VAD / ASR / LLM / download；模型下载在 commit 前复检取消，移除模型先停 worker。
-
 ---
 
 ## 2. 分层说明

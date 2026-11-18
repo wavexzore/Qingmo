@@ -11,12 +11,12 @@ import { SettingsWindow } from "./SettingsWindow";
 
 const controllers: LocaleController[] = [];
 
-function renderSettings(options: { settings?: FakeSettings; section?: "general" | "ai" } = {}) {
+function renderSettings(options: { settings?: FakeSettings } = {}) {
   const settings = options.settings ?? new FakeSettings();
   const controller = new LocaleController({ store: uiStore, i18n, native: null });
   controller.start();
   controllers.push(controller);
-  render(<SettingsWindow settings={settings} initialSection={options.section ?? "general"} />);
+  render(<SettingsWindow settings={settings} />);
   return { settings };
 }
 
@@ -35,28 +35,12 @@ afterEach(async () => {
 });
 
 describe("SettingsWindow", () => {
-  it("keeps only General and AI in the rail and follows ?section=ai", async () => {
-    renderSettings({ section: "ai" });
-
-    expect(await screen.findByRole("heading", { name: "AI 设置" })).toBeInTheDocument();
-    expect(screen.getByTestId("nav-general")).toBeInTheDocument();
-    expect(screen.getByTestId("nav-ai")).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("heading", { name: "转写模型" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "摘要模型" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "范围与产物" })).toBeInTheDocument();
-    expect(screen.getAllByTestId(/^nav-/)).toHaveLength(2);
-  });
-
-  it("switches between General and AI without leaving the sheet", async () => {
+  it("keeps only General in the rail", async () => {
     renderSettings();
 
-    fireEvent.click(screen.getByTestId("nav-ai"));
-    expect(await screen.findByRole("heading", { name: "AI 设置" })).toBeInTheDocument();
-    expect(window.location.search).toContain("section=ai");
-
-    fireEvent.click(screen.getByTestId("nav-general"));
     expect(await screen.findByRole("heading", { name: "通用设置" })).toBeInTheDocument();
-    expect(window.location.search).not.toContain("section=ai");
+    expect(screen.getByTestId("nav-general")).toHaveAttribute("aria-current", "page");
+    expect(screen.getAllByTestId(/^nav-/)).toHaveLength(1);
   });
 
   it("renders the General sections with the current language", async () => {

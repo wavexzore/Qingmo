@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 
 import {
   COMMANDS,
@@ -7,10 +6,8 @@ import {
   type CommandRequestMap,
   type CommandResponseMap,
 } from "../ipc/commands";
-import { EVENTS } from "../ipc/commands";
 import { normalizeError } from "../ipc/errors";
-import type { ModelProgress } from "@qingmo/shared";
-import type { KeySlot, SettingsPort } from "./port";
+import type { SettingsPort } from "./port";
 
 async function invokeSettings<K extends CommandName>(
   command: K,
@@ -34,41 +31,6 @@ export function createTauriSettings(): SettingsPort {
     },
     async close(): Promise<void> {
       await invokeSettings(COMMANDS.appSettingsClose, {});
-    },
-    meetingConfigGet: () => invokeSettings(COMMANDS.meetingConfigGet, {}),
-    meetingConfigSet: (patch, expectedRevision) =>
-      invokeSettings(COMMANDS.meetingConfigSet, { patch, expectedRevision }),
-    meetingKeyStatus: (slot: KeySlot) => invokeSettings(COMMANDS.meetingKeyStatus, { slot }),
-    meetingKeySet: async (slot: KeySlot, value: string) => {
-      await invokeSettings(COMMANDS.meetingKeySet, { slot, value });
-    },
-    meetingKeyClear: async (slot: KeySlot, all?: boolean) => {
-      await invokeSettings(COMMANDS.meetingKeyClear, all === undefined ? { slot } : { slot, all });
-    },
-    meetingModelsList: () => invokeSettings(COMMANDS.meetingModelsList, {}),
-    meetingModelDownload: (id: string) => invokeSettings(COMMANDS.meetingModelDownload, { id }),
-    meetingModelDownloadCancel: async (downloadId: string) => {
-      await invokeSettings(COMMANDS.meetingModelDownloadCancel, { downloadId });
-    },
-    meetingModelRemove: async (id: string) => {
-      await invokeSettings(COMMANDS.meetingModelRemove, { id });
-    },
-    onModelProgress(handler) {
-      let disposed = false;
-      let unlisten: (() => void) | null = null;
-      void listen<ModelProgress>(EVENTS.meetingModelProgress, (event) => {
-        handler(event.payload);
-      }).then((stop) => {
-        if (disposed) {
-          stop();
-        } else {
-          unlisten = stop;
-        }
-      });
-      return () => {
-        disposed = true;
-        unlisten?.();
-      };
     },
     async openExternal(href: string) {
       await invokeSettings(COMMANDS.appOpenExternal, { href });

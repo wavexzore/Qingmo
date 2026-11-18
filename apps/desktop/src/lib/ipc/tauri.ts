@@ -3,8 +3,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   DocumentChangedPayload,
   DocumentRelocatedPayload,
-  MeetingProgress,
-  ModelProgress,
   WorkspaceIndexStatusPayload,
 } from "@qingmo/shared";
 
@@ -264,100 +262,8 @@ export function createTauriIpc(): IpcPort {
     sessionDraftDiscard(id) {
       return invokeCommand(COMMANDS.sessionDraftDiscard, { id });
     },
-    meetingStart() {
-      return invokeCommand(COMMANDS.meetingStart, {});
-    },
-    meetingRetry(requestId) {
-      return invokeCommand(COMMANDS.meetingRetry, { requestId });
-    },
-    async meetingCancel(requestId) {
-      await invokeCommand(COMMANDS.meetingCancel, { requestId });
-    },
-    meetingStatus(requestId) {
-      return invokeCommand(COMMANDS.meetingStatus, { requestId });
-    },
-    meetingTakeResult(requestId) {
-      return invokeCommand(COMMANDS.meetingTakeResult, { requestId });
-    },
-    meetingConfigGet() {
-      return invokeCommand(COMMANDS.meetingConfigGet, {});
-    },
-    meetingConfigSet(patch, expectedRevision) {
-      return invokeCommand(COMMANDS.meetingConfigSet, { patch, expectedRevision });
-    },
-    meetingKeyStatus(slot) {
-      return invokeCommand(COMMANDS.meetingKeyStatus, { slot });
-    },
-    async meetingKeySet(slot, value) {
-      await invokeCommand(COMMANDS.meetingKeySet, { slot, value });
-    },
-    async meetingKeyClear(slot, all) {
-      await invokeCommand(COMMANDS.meetingKeyClear, {
-        slot,
-        ...(all === undefined ? {} : { all }),
-      });
-    },
-    meetingModelsList() {
-      return invokeCommand(COMMANDS.meetingModelsList, {});
-    },
-    meetingModelDownload(id) {
-      return invokeCommand(COMMANDS.meetingModelDownload, { id });
-    },
-    async meetingModelDownloadCancel(downloadId) {
-      await invokeCommand(COMMANDS.meetingModelDownloadCancel, { downloadId });
-    },
-    async meetingModelRemove(id) {
-      await invokeCommand(COMMANDS.meetingModelRemove, { id });
-    },
-    async appSettingsOpen(section) {
-      await invokeCommand(COMMANDS.appSettingsOpen, section === undefined ? {} : { section });
-    },
-    onMeetingProgress(callback) {
-      let disposed = false;
-      let unlisten: UnlistenFn | undefined;
-
-      void listen<MeetingProgress>(EVENTS.meetingProgress, (event) => {
-        if (!disposed) callback(event.payload);
-      })
-        .then((stop) => {
-          if (disposed) stop();
-          else unlisten = stop;
-        })
-        .catch((error: unknown) => {
-          // `meeting_status` still recovers the latest progress after a miss.
-          console.error("failed to subscribe to app://meeting-progress", normalizeError(error));
-        });
-
-      return () => {
-        disposed = true;
-        unlisten?.();
-        unlisten = undefined;
-      };
-    },
-    onMeetingModelProgress(callback) {
-      let disposed = false;
-      let unlisten: UnlistenFn | undefined;
-
-      void listen<ModelProgress>(EVENTS.meetingModelProgress, (event) => {
-        if (!disposed) callback(event.payload);
-      })
-        .then((stop) => {
-          if (disposed) stop();
-          else unlisten = stop;
-        })
-        .catch((error: unknown) => {
-          // The model list keeps polling while the settings window is open.
-          console.error(
-            "failed to subscribe to app://meeting-model-progress",
-            normalizeError(error),
-          );
-        });
-
-      return () => {
-        disposed = true;
-        unlisten?.();
-        unlisten = undefined;
-      };
+    async appSettingsOpen() {
+      await invokeCommand(COMMANDS.appSettingsOpen, {});
     },
   };
 }

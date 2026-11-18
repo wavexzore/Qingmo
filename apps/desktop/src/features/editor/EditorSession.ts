@@ -701,10 +701,9 @@ export class EditorSession {
   }
 
   /**
-   * Replaces the whole document with generated meeting minutes in one
-   * transaction, marks it dirty and notifies the journal. One `Mod+Z` undoes
-   * the entire insertion. Works without an attached view because MeetingBoot
-   * replaces EditorHost until the result has landed.
+   * Replaces the whole document with generated text in one transaction, marks
+   * it dirty and notifies the journal. One `Mod+Z` undoes the entire insertion.
+   * Works without an attached view.
    */
   insertDocumentText(markdown: string): void {
     if (this.disposed) {

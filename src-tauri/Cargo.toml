@@ -43,38 +43,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "parking_lot"]
 tracing-appender = "0.2"
 ts-rs = { version = "12.0.1", features = ["serde-json-impl"] }
 uuid = { version = "1.29.0", features = ["v4", "serde"] }
-symphonia = { version = "0.6.1", default-features = false, features = ["aac", "isomp4", "mp3", "alac", "flac", "wav", "pcm"] }
-rubato = "0.16.2"
-tokio-util = { version = "0.7", features = ["rt"] }
-sha2 = "0.10"
-percent-encoding = "2.3.2"
-tar = "0.4"
-bzip2 = "0.6"
-sysinfo = "0.37.2"
-sherpa-onnx = "=2.0.1"
-llama-cpp-2 = { version = "=0.1.161", default-features = false }
-self_cell = "1"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "blocking", "multipart"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
-llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["metal"] }
-keyring = { version = "3.6.3", features = ["apple-native"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3.6.3", features = ["sync-secret-service"] }
-
 [target.'cfg(windows)'.dependencies]
-keyring = { version = "3.6.3", features = ["windows-native"] }
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }
 tempfile = "3"
 wiremock = "0.6"
-
-[patch.crates-io]
-sherpa-onnx = { path = "vendor/sherpa-onnx" }

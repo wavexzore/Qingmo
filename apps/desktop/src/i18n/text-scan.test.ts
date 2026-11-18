@@ -55,8 +55,7 @@ describe("single translation source", () => {
       return (
         isTestFile(path) ||
         path.includes(`${sep}i18n${sep}locales${sep}`) ||
-        path.endsWith(`${sep}e2e${sep}bridge.ts`) ||
-        path.endsWith(`${sep}e2e${sep}meetingFake.ts`)
+        path.endsWith(`${sep}e2e${sep}bridge.ts`)
       );
     });
 

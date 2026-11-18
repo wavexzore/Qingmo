@@ -1,23 +1,15 @@
 use qingmo_lib::error::AppError;
 use qingmo_lib::ipc::dto::{
-    AboutInfo, AboutLink, Accel, AppLanguage, AppSettingsOpenRequest, ApplyLocaleRequest,
-    AsrBackend, AsrConfigView, AsrFamily, AsrMode, CloseCancelledPayload, CloseRequestedPayload,
-    ConflictDetails, Degraded, DocumentChangeKind, DocumentChangedPayload,
-    DocumentRelocatedPayload, DownloadState, DraftKind, DraftMeta, DraftRecord, DraftWriteRequest,
+    AboutInfo, AboutLink, AppLanguage, ApplyLocaleRequest, CloseCancelledPayload,
+    CloseRequestedPayload, ConflictDetails, DocumentChangeKind, DocumentChangedPayload,
+    DocumentRelocatedPayload, DraftKind, DraftMeta, DraftRecord, DraftWriteRequest,
     EditorViewState, EditorViewStateInput, FilePayload, HistoryEntry, HistoryRecord,
-    ImageSaveResult, KeyStatus, LlmConfigView, LlmMode, LogEntry, LogLevel, LogStats,
-    MeetingConfigGetResponse, MeetingConfigPatch, MeetingConfigSetRequest,
-    MeetingConfigSetResponse, MeetingConfigView, MeetingKeyClearRequest, MeetingKeySetRequest,
-    MeetingOutcome, MeetingProgress, MeetingResult, MeetingRetryResponse, MeetingStage,
-    MeetingStartResponse, MeetingStats, MenuActionPayload, ModelDownloadCancelRequest,
-    ModelDownloadRequest, ModelDownloadResponse, ModelKind, ModelOrigin, ModelProgress, ModelState,
-    ModelView, NativeShellLabels, PeakBasis, ReasonCode, RemoteProvider, ResolvedModelsView,
-    RuntimeMode, RuntimeNote, RuntimePreview, RuntimeView, SaveRequest, SaveResult, SearchHit,
-    SearchIndexState, SearchMode, SearchResponse, SearchStatus, TierDefaultsView, TrashEntry,
-    TrashEntryState, TrashRestoreMode, TrashRestoreResult, UpdateFlushRequest, UpdateInfo,
-    UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot, WindowBounds, WindowIntent,
-    WindowPhase, WindowProgress, WorkspaceEntry, WorkspaceEntryKind, WorkspaceIndexStatusPayload,
-    WorkspaceInfo, WorkspaceListing, WorkspaceTruncationReason,
+    ImageSaveResult, LogEntry, LogLevel, LogStats, MenuActionPayload, NativeShellLabels,
+    SaveRequest, SaveResult, SearchHit, SearchIndexState, SearchMode, SearchResponse, SearchStatus,
+    TrashEntry, TrashEntryState, TrashRestoreMode, TrashRestoreResult, UpdateFlushRequest,
+    UpdateInfo, UpdatePhase, UpdateProgress, UpdateProgressPayload, UpdateSnapshot, WindowBounds,
+    WindowIntent, WorkspaceEntry, WorkspaceEntryKind, WorkspaceIndexStatusPayload, WorkspaceInfo,
+    WorkspaceListing, WorkspaceTruncationReason,
 };
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
@@ -87,55 +79,4 @@ fn export_bindings() {
     WindowBounds::export_all(&config).expect("WindowBounds bindings must export");
     WindowIntent::export_all(&config).expect("WindowIntent bindings must export");
     CloseCancelledPayload::export_all(&config).expect("CloseCancelledPayload bindings must export");
-
-    RuntimeMode::export_all(&config).expect("RuntimeMode bindings must export");
-    AsrMode::export_all(&config).expect("AsrMode bindings must export");
-    LlmMode::export_all(&config).expect("LlmMode bindings must export");
-    RemoteProvider::export_all(&config).expect("RemoteProvider bindings must export");
-    Accel::export_all(&config).expect("Accel bindings must export");
-    ModelKind::export_all(&config).expect("ModelKind bindings must export");
-    AsrFamily::export_all(&config).expect("AsrFamily bindings must export");
-    PeakBasis::export_all(&config).expect("PeakBasis bindings must export");
-    ModelState::export_all(&config).expect("ModelState bindings must export");
-    KeyStatus::export_all(&config).expect("KeyStatus bindings must export");
-    MeetingStage::export_all(&config).expect("MeetingStage bindings must export");
-    WindowPhase::export_all(&config).expect("WindowPhase bindings must export");
-    AsrBackend::export_all(&config).expect("AsrBackend bindings must export");
-    RuntimeNote::export_all(&config).expect("RuntimeNote bindings must export");
-    ModelOrigin::export_all(&config).expect("ModelOrigin bindings must export");
-    ReasonCode::export_all(&config).expect("ReasonCode bindings must export");
-    WindowProgress::export_all(&config).expect("WindowProgress bindings must export");
-    Degraded::export_all(&config).expect("Degraded bindings must export");
-    MeetingStats::export_all(&config).expect("MeetingStats bindings must export");
-    MeetingProgress::export_all(&config).expect("MeetingProgress bindings must export");
-    MeetingResult::export_all(&config).expect("MeetingResult bindings must export");
-    MeetingOutcome::export_all(&config).expect("MeetingOutcome bindings must export");
-    MeetingStartResponse::export_all(&config).expect("MeetingStartResponse bindings must export");
-    MeetingRetryResponse::export_all(&config).expect("MeetingRetryResponse bindings must export");
-    RuntimeView::export_all(&config).expect("RuntimeView bindings must export");
-    AsrConfigView::export_all(&config).expect("AsrConfigView bindings must export");
-    LlmConfigView::export_all(&config).expect("LlmConfigView bindings must export");
-    MeetingConfigView::export_all(&config).expect("MeetingConfigView bindings must export");
-    MeetingConfigPatch::export_all(&config).expect("MeetingConfigPatch bindings must export");
-    TierDefaultsView::export_all(&config).expect("TierDefaultsView bindings must export");
-    ResolvedModelsView::export_all(&config).expect("ResolvedModelsView bindings must export");
-    RuntimePreview::export_all(&config).expect("RuntimePreview bindings must export");
-    MeetingConfigGetResponse::export_all(&config)
-        .expect("MeetingConfigGetResponse bindings must export");
-    MeetingConfigSetRequest::export_all(&config)
-        .expect("MeetingConfigSetRequest bindings must export");
-    MeetingConfigSetResponse::export_all(&config)
-        .expect("MeetingConfigSetResponse bindings must export");
-    MeetingKeySetRequest::export_all(&config).expect("MeetingKeySetRequest bindings must export");
-    MeetingKeyClearRequest::export_all(&config)
-        .expect("MeetingKeyClearRequest bindings must export");
-    ModelView::export_all(&config).expect("ModelView bindings must export");
-    ModelDownloadRequest::export_all(&config).expect("ModelDownloadRequest bindings must export");
-    ModelDownloadResponse::export_all(&config).expect("ModelDownloadResponse bindings must export");
-    ModelDownloadCancelRequest::export_all(&config)
-        .expect("ModelDownloadCancelRequest bindings must export");
-    DownloadState::export_all(&config).expect("DownloadState bindings must export");
-    ModelProgress::export_all(&config).expect("ModelProgress bindings must export");
-    AppSettingsOpenRequest::export_all(&config)
-        .expect("AppSettingsOpenRequest bindings must export");
 }

@@ -104,3 +104,20 @@ pub fn app_settings_close<R: Runtime>(window: WebviewWindow<R>) -> Result<(), Ap
         )
     })
 }
+
+/// Opens (or focuses) the Settings window from a document, main or settings
+/// window.
+#[tauri::command]
+pub fn app_settings_open<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+) -> Result<(), AppError> {
+    let label = window.label();
+    if label != SETTINGS_WINDOW_LABEL && label != "main" && !label.starts_with("doc-") {
+        return Err(AppError::new(
+            AppErrorCode::PermissionDenied,
+            "this command is only available to document, main and settings windows",
+        ));
+    }
+    open_settings(&app)
+}

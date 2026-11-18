@@ -5,7 +5,7 @@
 | 版本 | 0.3 / Living |
 | 日期 | 2026-11-13（初版 2026-10-26） |
 | 状态 | 实施中：P1 已交付（v0.1.4），P2 工作区/数据安全/本地搜索已交付，P0/P1 收尾审查修复完成，插件系统未开始 |
-| 代码基线 | `feat/p0-p1-closure`（v0.1.4，以分支 HEAD 为准）；审查修复记录见 `docs/todo/meeting-minutes/05-多轮评审记录.md` |
+| 代码基线 | `feat/p0-p1-closure`（v0.1.4，以分支 HEAD 为准）；审查修复记录见 `docs/todo/meeting-minutes/05-多轮评审记录.md`（目录已随功能删除） |
 | 目标平台 | macOS / Windows / Linux（Tauri 2）；macOS 是唯一完整发布/更新链路 |
 | 核心栈 | Tauri 2 + React 19 + Vite 7 + TypeScript 5.9 + TailwindCSS 4 + CodeMirror 6 |
 | 配套文档 | [调研](RESEARCH.md) · [拓扑](TOPOLOGY.md) · [业务路线图](roadmap.md) · [功能审计](analysis/04-qingmo-feature-status.md) · [实施级 ADR](adr/README.md) |
@@ -185,7 +185,7 @@ Qingmo 面向长期写作与知识管理：打开即写、随时可带走、插�
 - 移动端（Tauri 2 支持移动，但 v1 不做）。
 - 与 Typora 100% 一致的 WYSIWYG。
 - 运行时加载原生 Rust 插件。
-- 通用 AI 助手（会议纪要作为垂直能力已交付；通用对话/续写仍以插件形式后置）。
+- 通用 AI 助手（通用对话/续写以插件形式后置）。
 - 自带云同步服务（只提供可选适配器接口）。
 
 ---

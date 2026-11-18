@@ -601,7 +601,7 @@ describe("EditorSession", () => {
     expect(detached.getSnapshot().selection).toEqual({ anchor: 2, head: 2 });
   });
 
-  it("inserts meeting text in one undoable transaction and marks the draft dirty", () => {
+  it("inserts generated text in one undoable transaction and marks the draft dirty", () => {
     const session = EditorSession.createUntitled("未命名");
     const parent = document.createElement("div");
     document.body.append(parent);
@@ -626,7 +626,7 @@ describe("EditorSession", () => {
     }
   });
 
-  it("inserts meeting text without an attached view and notifies the journal", () => {
+  it("inserts generated text without an attached view and notifies the journal", () => {
     const session = EditorSession.createUntitled("未命名");
     const changes = vi.fn();
     const unsubscribe = session.onDocChanged(changes);

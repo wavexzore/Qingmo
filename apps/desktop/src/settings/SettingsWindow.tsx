@@ -3,35 +3,19 @@ import { useTranslation } from "react-i18next";
 
 import type { SettingsPort } from "../lib/settings/port";
 import { GeneralSettings } from "./GeneralSettings";
-import { MeetingSettings } from "./MeetingSettings";
-
-export type SettingsSection = "general" | "ai";
 
 export interface SettingsWindowProps {
   settings: SettingsPort;
-  initialSection?: SettingsSection;
-}
-
-function applySection(section: SettingsSection): void {
-  const url = new URL(window.location.href);
-  if (section === "ai") {
-    url.searchParams.set("section", "ai");
-  } else {
-    url.searchParams.delete("section");
-  }
-  window.history.replaceState(null, "", url);
 }
 
 /**
  * The Colophon settings window.
  *
  * The native window is transparent and decoration-free, so this sheet owns the
- * whole visible surface. General preferences go through `uiStore`; meeting AI
- * settings stay in Rust and are mirrored by `MeetingSettings`.
+ * whole visible surface. General preferences go through `uiStore`.
  */
-export function SettingsWindow({ settings, initialSection = "general" }: SettingsWindowProps) {
+export function SettingsWindow({ settings }: SettingsWindowProps) {
   const { t } = useTranslation("settings");
-  const [section, setSection] = useState<SettingsSection>(initialSection);
   const [version, setVersion] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
@@ -47,11 +31,6 @@ export function SettingsWindow({ settings, initialSection = "general" }: Setting
       setToast(null);
       toastTimer.current = null;
     }, 2200);
-  }, []);
-
-  const navigate = useCallback((next: SettingsSection) => {
-    setSection(next);
-    applySection(next);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -153,27 +132,12 @@ export function SettingsWindow({ settings, initialSection = "general" }: Setting
               className="settings-nav-item"
               type="button"
               data-testid="nav-general"
-              aria-current={section === "general" ? "page" : undefined}
-              onClick={() => navigate("general")}
+              aria-current="page"
             >
               <span className="settings-nav-index">01</span>
               <span className="settings-nav-copy">
                 <span className="settings-nav-label">{t("nav.general")}</span>
                 <span className="settings-nav-note">{t("nav.generalNote")}</span>
-              </span>
-              <span className="settings-nav-mark" aria-hidden="true" />
-            </button>
-            <button
-              className="settings-nav-item"
-              type="button"
-              data-testid="nav-ai"
-              aria-current={section === "ai" ? "page" : undefined}
-              onClick={() => navigate("ai")}
-            >
-              <span className="settings-nav-index">02</span>
-              <span className="settings-nav-copy">
-                <span className="settings-nav-label">{t("nav.ai")}</span>
-                <span className="settings-nav-note">{t("nav.aiNote")}</span>
               </span>
               <span className="settings-nav-mark" aria-hidden="true" />
             </button>
@@ -194,19 +158,15 @@ export function SettingsWindow({ settings, initialSection = "general" }: Setting
               <span className="settings-slash" aria-hidden="true">
                 /
               </span>
-              <span>{t(section === "ai" ? "breadcrumb.ai" : "breadcrumb.general")}</span>
+              <span>{t("breadcrumb.general")}</span>
             </p>
 
             <header className="settings-head">
-              <h1>{t(section === "ai" ? "ai.heading" : "heading")}</h1>
-              <p>{t(section === "ai" ? "ai.description" : "description")}</p>
+              <h1>{t("heading")}</h1>
+              <p>{t("description")}</p>
             </header>
 
-            {section === "general" ? (
-              <GeneralSettings onToast={showToast} />
-            ) : (
-              <MeetingSettings settings={settings} onToast={showToast} />
-            )}
+            <GeneralSettings onToast={showToast} />
           </div>
 
           <footer className="settings-footer">
