@@ -2,6 +2,32 @@
   "releaseNotesUrl": "https://github.com/wavexzore/Qingmo/releases/tag/v",
   "versions": [
     {
+      "version": "0.1.5",
+      "date": "2026-11-18",
+      "notes": {
+        "zh-CN": [
+          "工作区树单击文件改为在当前窗口原地切换，不再每点一次就新开窗口；File > Open 与 Finder 打开的文件会自动带出其所在文件夹的工作区。",
+          "新增编辑器排版设置：字号滑杆、字体族选择与实时预览，支持一键恢复默认，更改立即应用到所有窗口。",
+          "补齐可信编辑与数据安全链路：跨进程文件锁、明确的文件大小边界、保存历史与回收站、窗口恢复，以及可重建的本地 SQLite 全文搜索。",
+          "启动与更新更稳：清理同 Bundle ID 的旧副本注册，冷启动打开文件不再与主窗口创建竞争，第二实例交给已有窗口，Dock 重开可恢复窗口；安装更新前会等待所有窗口保存完成。",
+          "窄窗口状态栏改用容器查询，不再折行或省略；树内切换因保存失败取消时，选中与焦点回到原文档。",
+          "重绘 DMG 安装窗口：纸墨背景、应用与 Applications 图标同排对齐、无滚动条，LICENSE 随应用 Resources 分发。",
+          "会议纪要能力整体下线：安装包不再包含 ASR、模型下载与 AI 设置页，体积更小；工作区仍会列出常见音频文件并标记为暂不可打开。",
+          "本版本提供 macOS universal DMG 与 Windows NSIS 安装包；Windows 安装器仍未做 Authenticode 签名，SmartScreen 可能提示。"
+        ],
+        "en-US": [
+          "Clicking a file in the workspace tree now switches the current window in place instead of opening a new one, and File > Open or Finder opens automatically bring up the containing folder's workspace.",
+          "Added editor typography settings: a font-size slider, font-family choice, live preview and one-click reset; changes apply to every window immediately.",
+          "Completed the trusted-editing and data-safety chain: cross-process file locks, explicit size limits, save history and trash, window restore, and a rebuildable local SQLite full-text search.",
+          "More reliable startup and updates: stale LaunchServices registrations for the same bundle ID are cleaned up, cold-start document opens no longer race window creation, a second instance hands over to the running window, Dock reopen restores windows, and installs wait for every window to flush.",
+          "The narrow-window status bar uses container queries, so labels no longer wrap or get dropped; a cancelled tree switch restores selection and focus to the previous document.",
+          "Redesigned the DMG installer window with a paper-ink background, aligned app and Applications icons and no scrolling; LICENSE now ships in the app Resources.",
+          "Meeting minutes are removed entirely: the bundle no longer carries ASR, model downloads or the AI settings page, so it is smaller; the workspace still lists common audio files and marks them as not openable yet.",
+          "This release ships a macOS universal DMG and a Windows NSIS installer; the Windows installer is still not Authenticode-signed, so SmartScreen may warn."
+        ]
+      }
+    },
+    {
       "version": "0.1.4",
       "date": "2026-11-04",
       "notes": {
